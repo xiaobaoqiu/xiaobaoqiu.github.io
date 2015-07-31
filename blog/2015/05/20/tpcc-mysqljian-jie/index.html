@@ -1,0 +1,228 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>TPCC-MySQL简介 - xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="TPC(Tracsaction Processing Performance Council) 事务处理性能协会是一个评价大型数据库系统软硬件性能的非盈利的组织,TPC-C是TPC协会制定的，用来测试典型的复杂OLTP系统的性能； Tpcc-mysql是percona基于tpcc衍生出来的产品， &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/05/20/tpcc-mysqljian-jie/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Keep Runnnnnnnnnning...</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">TPCC-MySQL简介</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-05-20T06:47:02+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>20</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:47 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>TPC(Tracsaction Processing Performance Council) 事务处理性能协会是一个评价大型数据库系统软硬件性能的非盈利的组织,TPC-C是TPC协会制定的，用来测试典型的复杂OLTP系统的性能；</p>
+
+<p>Tpcc-mysql是percona基于tpcc衍生出来的产品，专用于mysql基准测试，其源码放在bazaar上，因此需要先安装bazaar客户端.</p>
+
+<h1>1.OLTP and OLAP</h1>
+
+<p>一般来说，可将数据库的应用类型分为OLTP(OnLine Transaction Processing，联机事务处理)和OLAP(OnLine Analysis Processing，联机分析处理)两种。OLTP是传统关系型数据库的主要应用，其主要面向基本的、日常的事务处理，例如银行交易。OLAP是数据仓库系统的主要应用，支持复杂的分析操作，侧重决策支持，并且提供直观易懂的查询结果.</p>
+
+<p>OLTP也被称为面向交易的处理系统，其基本特征是可以立即将顾客的原始数据传送到计算中心进行处理，并在很短的时间内给出处理结果，这个过程的最大优点是可以即时地处理输入的数据、及时地回答，因此OLTP又被称为实时系统(Real Time System)。衡量OLTP系统的一个重要性能指标是系统性能，具体体现为实时响应时间(Response Time,简称RT)，即从用户在终端输入数据到计算机对这个请求做出回复所需的时间。OLTP 数据库旨在使事务应用程序仅完成对所需数据的写入，以便尽快处理单个事务。</p>
+
+<p>OLAP的概念最早是由关系数据库之父E.F.Codd博士于1993年提出的，是一种用于组织大型商务数据库和支持商务智能的技术。OLAP数据库分为一个或多个多维数据集，每个多维数据集都由多维数据集管理员组织和设计，以适应用户检索和分析数据的方式，从而更易于创建和使用所需的数据透视表和数据透视图。</p>
+
+<h1>2.Tpcc-mysql</h1>
+
+<p>Tpcc-mysql简单说就是mysql的一个基准测试工具.一般用于比较Mysql在不同配置下的性能差异,从而选择一个相对较优的配置.</p>
+
+<p>参考:
+<a href="http://www.zhaokunyao.com/archives/5793">http://www.zhaokunyao.com/archives/5793</a></p>
+
+<h1>3.NoSQL测试</h1>
+
+<p>顺便记录一下一个NOSQL的测试case:</p>
+
+<p><a href="https://www.aerospike.com/wp-content/uploads/2013/02/Ultra-High-Performance-NoSQL-Benchmarking_zh-CN.pdf">https://www.aerospike.com/wp-content/uploads/2013/02/Ultra-High-Performance-NoSQL-Benchmarking_zh-CN.pdf</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">xiaobaoqiu</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2015-05-20T06:47:02+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>20</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:47 am</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/mysql/'>mysql</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/05/20/tpcc-mysqljian-jie/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/05/20/tpcc-mysqljian-jie/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2015/05/20/crate-jdbccha-xun-si-xun-huan-bug/" title="Previous Post: Crate jdbc查询死循环bug">&laquo; Crate jdbc查询死循环bug</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2015/05/20/elasticsearch/" title="Next Post: elasticsearch">elasticsearch &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2015/07/17/fen-ci/">分词</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2015 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

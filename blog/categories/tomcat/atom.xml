@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Tomcat | xiaobaoqiu Blog]]></title>
+  <link href="http://xiaobaoqiu.github.io/blog/categories/tomcat/atom.xml" rel="self"/>
+  <link href="http://xiaobaoqiu.github.io/"/>
+  <updated>2015-07-31T13:33:53+08:00</updated>
+  <id>http://xiaobaoqiu.github.io/</id>
+  <author>
+    <name><![CDATA[xiaobaoqiu]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Tomcat架构]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/03/18/tomcatjia-gou/"/>
+    <updated>2015-03-18T19:03:09+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/03/18/tomcatjia-gou</id>
+    <content type="html"><![CDATA[<p>主要整理Tomcat的整体架构.分析各个主要模块的功能.</p>
+
+<h1>1.整体结构</h1>
+
+<p>Tomcat基本结构图如下所示:</p>
+
+<p><img src="/images/tomcat/struct.gif"></p>
+
+<p>简单介绍:</p>
+
+<pre><code>1.一个serve包括多个service;
+2.一个service包含两个核心部件:一个容器(Container)和多个连接器(Connector),Connector主要负责对外交流,Container主要处理Connector接受的请求,主要是处理内部事务;
+3.Tomcat基于JMX(Java Management Extensions,即Java管理扩展,是一个为应用程序、设备、系统等植入管理功能的框架)管理这些组件,另外实现以上接口的组件也实现了代表生存期的接口Lifecycle,使其组件履行固定的生存期,在其整个生存期的过程中通过事件侦听LifecycleEvent实现扩展;
+</code></pre>
+
+<h1>2.核心部件</h1>
+
+<p>Tomcat的核心类图如下所示：</p>
+
+<p><img src="/images/tomcat/classes.jpg"></p>
+
+<p>其中Container是一个接口,定义一些容器的行为, 比如addChild(),getPipeline()等.每个Container都有一个Pipeline,其中包含一系列的表示请求处理器的Valve,注意Pipeline不是通过server.xml配置产生的,是必须有的,在pipeline上配置不同的valve,当需要调用此容器实现逻辑时,就会按照顺序将此pipeline上的所有valve调用一遍,类似于责任链模式.Engine,Host,Context和Wrapper都是实现了Container这个接口.Container还包含用来处理安全里授权与认证Realm等组件.</p>
+
+<p>Tomcat(Container)的容器分成4个等级,如下：</p>
+
+<p><img src="/images/tomcat/tomcat_containner.jpg"></p>
+
+<p>假设访问的URL是
+<a href="http://www.mydomain.com/app/index.html">http://www.mydomain.com/app/index.html</a>
+各个容器处理的详细情况如图所示:</p>
+
+<p><img src="/images/tomcat/tomcat_path.jpg"></p>
+
+<p>Wrapper封装了具体的访问资源,例如 index.html
+Context 封装了各个wrapper资源的集合,例如 app
+Host 封装了各个context资源的集合,例如 www.mydomain.com</p>
+
+<p>下面简单介绍一下各个类:</p>
+
+<h3>2.1 Bootstrap</h3>
+
+<p>Bootstrap简单说就是Tomcat的启动类,它只负责创建Catalina实例并将输入参数传递给Catalina实例;</p>
+
+<h3>2.2 Catalina</h3>
+
+<p>Catalina是Tomcat实际的入口,执行Tomcat的初始化,启动,停止等关键逻辑;
+(1).初始化的逻辑中初始化一个解析配置文件的Digester,这个Digester使用SAX方式解析xml文件,它获取解析conf目录下的server.xml这个配置文件并会生成Server等实例;并执行Server的初始化;Server会顺序往后执行Service,Connector,Containner等的初始化.
+(2).启动逻辑就是调用Server的启动;
+(3).停止逻辑就是调用Server的停止;</p>
+
+<h3>2.3 Server</h3>
+
+<p>Server(参考StandardServer类)是整个Tomcat组件的容器,包含一个或多个Service.
+<code>
+public void addService(Service service);
+</code></p>
+
+<h3>2.4 Service</h3>
+
+<p>Service(参考StandardService类)是包含Connector和Container的集合,Service用适当的Connector接收用户的请求,再发给相应的Container来处理.</p>
+
+<h3>2.5 Connector</h3>
+
+<p>Connector是网络socket相关接口模块,默认实现HTTP、AJP等协议的.connector主要作用包括:</p>
+
+<pre><code>(1).接收socket
+(2).从socket获取数据包,并解析成HttpServletRequest对象
+(3).从engine容器开始走调用流程,经过各层valve,最后调用servlet完成业务逻辑
+(4).返回response,关闭socket
+</code></pre>
+
+<p>connector配置举例为:
+<code>
+&lt;Connector port="80" URIEncoding="UTF-8" protocol="HTTP/1.1"
+               connectionTimeout="20000"
+               redirectPort="7443" /&gt;
+</code>
+其中protocol的选择包括
+    (1).BIO实现:
+    org.apache.coyote.http11.Http11Protocol
+    (2).NIO实现
+    org.apache.coyote.http11.Http11NioProtocol</p>
+
+<p>以Http11Protocol举例解析connector结构:</p>
+
+<p><img src="/images/tomcat/connector.jpg"></p>
+
+<p>Http11ConnectionHandler对象维护了一个Http11Processor对象池, 完成http request的解析和分派.</p>
+
+<p>JIoEndpoint维护了两个线程池,Acceptor及Worker
+Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理socket,如果worker线程池没有空闲线程,则Acceptor将阻塞;Worker是典型的线程池实现.Worker线程拿到socket后,就从Http11Processor对象池中获取Http11Processor对象;</p>
+
+<p>Mapper维护了一个从Host到Wrapper的各级容器的快照.它主要是为了,当http request被解析后,能够将http request绑定到相应的servlet进行业务处理.</p>
+
+<p>CoyoteAdapter将http request解析成HttpServletRequest对象,之后绑定相应的容器,然后从engine开始逐层调用.</p>
+
+<h3>2.6 Engine</h3>
+
+<p>Engine(参考StandardEngine类)</p>
+
+<h3>2.7 Host</h3>
+
+<p>Host(参考StandardHost类)就是我们所理解的虚拟主机.</p>
+
+<h3>2.8 Context</h3>
+
+<p>Context(参考StandardContext类)就是我们所部属的具体Web应用的上下文,每个请求都在是相应的上下文里处理的.</p>
+
+<h3>2.9 Wrapper</h3>
+
+<p>Wrapper(参考StandardWrapper类)Wrapper是针对每个Servlet的Container,每个Servlet都有相应的Wrapper来管理.</p>
+
+<p>它封装的处理资源的每个具体的servlet,除了上面提到的Pipeline和Valve之外,还包含我们熟悉的servlet对象.</p>
+
+<p>wrapper主要包括三大类</p>
+
+<pre><code>(1).处理静态资源的一个wrapper：例如html, jpg.对应wrapper为org.apache.catalina.servlets.DefaultServlet
+(2).处理jsp文件,对应wrapper为org.apache.jasper.servlet.JspServlet
+(3).自定义的servlet对象. 在web.xml中定义的serlvet
+</code></pre>
+
+<h3>2.10 Pipeline和Valve</h3>
+
+<p>Pipeline(参考StandardPipeline类),Pipeline就是一串Valve.请求到达当前容器,则从前往后执行每个Valve的逻辑.</p>
+
+<p>Valve实现具体业务逻辑单元.可以定制化valve（实现特定接口）,然后配置在server.xml里.对其包含的所有host里的应用有效.定制化的valve是可选的,但是每个容器有一个缺省的valve,例如engine的StandardEngineValve,是在StandardEngine里自带的,它主要实现了对其子host对象的StandardHostValve的调用,以此类推.</p>
+
+<p>缺省的valve的Valve实在Pipeline的最后面.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Tomcat简介]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/03/13/tomcatjian-jie/"/>
+    <updated>2015-03-13T04:34:51+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/03/13/tomcatjian-jie</id>
+    <content type="html"><![CDATA[<p>最近会重新看一下Tomcat的源代码，整理一些东西，包括但不限于：</p>
+
+<pre><code>1.Tomcat架构
+2.Tomcat启动过程
+3.请求在Tomcat中的流转
+4.Tomcat目录结构与配置
+</code></pre>
+
+<p>这里会首先简单介绍一些Tomcat的知识。后面会逐渐详细介绍。</p>
+
+<p>Tomcat是由Apache软件基金会下属的Jakarta项目开发的一个Servlet容器，按照Sun Microsystems提供的技术规范，实现了对Servlet和JavaServer Page(JSP)的支持，并提供了作为Web服务器的一些特有功能,如Tomcat管理和控制平台、安全域管理和Tomcat阀等。由于Tomcat本身也内含了一个HTTP服务器，它也可以被视作一个单独的Web服务器。</p>
+
+<p>由于有了Sun的参与和支持，最新的Servlet和Jsp规范总能在Tomcat中得到体现。而进来因为Tomcat 技术先进、性能稳定，而且免费，因而深受Java 爱好者的喜爱并得到了部分软件开发商的认可，成为目前比较流行的Web 应用服务器。</p>
+
+<p>官方网站：<a href="http://tomcat.apache.org/">http://tomcat.apache.org/</a></p>
+
+<p>Tomcat wiki：<a href="http://wiki.apache.org/tomcat/FrontPage">http://wiki.apache.org/tomcat/FrontPage</a></p>
+
+<h1>1.JSP和Servlet</h1>
+
+<p>Jsp（JavaServer Page）是在普通Html中嵌入了Java代码的一个脚本，在这一点上，它与其它的脚本语言（如Php）一样，但它与其它语言不同的是：其它脚本语言由服务器直接解释这个脚本，而Jsp则由Jsp容器（如Tomcat）首先将其转化为Servlet，然后再调用Javac将Servlet编译为Class文件。</p>
+
+<p>Servlet其实是一个特殊的Java类，Servlet类一般从HttpServlet类继承而来，在这个类中至少要实现doGet或者doPost函数，在这两个函数中处理来自客户的请求，然后将结果返回。</p>
+
+<h1>2.Servlet容器</h1>
+
+<p>负责处理客户请求、把请求传送给Servlet并把结果返回给客户。不同程序的容器实际实现可能有所变化，但容器与Servlet之间的接口是由Servlet API定义好的，这个接口定义了Servlet容器在Servlet上要调用的方法及传递给Servlet的对象类。</p>
+
+<h1>3.Servlet生命周期</h1>
+
+<pre><code>1.Servlet容器创建Servlet的一个实例
+2.容器调用该实例的init()方法
+3.如果容器对该Servlet有请求，则调用此实例的service()方法
+4.容器在销毁本实例前调用它的destroy()方法
+5.销毁并标记该实例以供作为垃圾收集
+</code></pre>
+
+<h1>4.Tomcat简介</h1>
+
+<p>Tomcat中的Servlet容器称之为Catalina。</p>
+
+<p>Tomcat中的应用程序是一个WAR（Web Archive）文件。WAR是Sun提出的一种Web应用程序格式，与JAR类似，也是许多文件的一个压缩包。这个包中的文件按一定目录结构来组织：通常其根目录下包含有Html和Jsp文件或者包含这两种文件的目录，另外还会有一个WEB-INF目录，这个目录很重要。通常在WEB-INF目录下有一个web.xml文件和一个classes目录，web.xml是这个应用的配置文件，而classes目录下则包含编译好的Servlet类和Jsp或Servlet所依赖的其它类（如JavaBean）。</p>
+
+<p>在Tomcat中，应用程序的部署很简单，你只需将你的WAR放到Tomcat的webapp目录下，Tomcat会自动检测到这个文件，并将其解压。你在浏览器中访问这个应用的Jsp时，通常第一次会很慢，因为Tomcat要将Jsp转化为Servlet文件，然后编译。编译以后，访问将会很快。另外Tomcat也提供了一个应用：manager，访问这个应用需要用户名和密码，用户名和密码存储在一个xml文件中。通过这个应用，你可以在远程通过Web部署和撤销应用。</p>
+
+<h1>5.Tomcat各个版本</h1>
+
+<p><a href="http://wiki.apache.org/tomcat/TomcatVersions">http://wiki.apache.org/tomcat/TomcatVersions</a></p>
+
+<h1>6.参考：</h1>
+
+<p><a href="http://zh.wikipedia.org/wiki/Apache_Tomcat">http://zh.wikipedia.org/wiki/Apache_Tomcat</a></p>
+
+<p><a href="http://www.ibm.com/developerworks/cn/java/j-lo-tomcat1/">http://www.ibm.com/developerworks/cn/java/j-lo-tomcat1/</a></p>
+
+<p><a href="http://gearever.iteye.com/category/223001">http://gearever.iteye.com/category/223001</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Tomcat Access Log配置]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2014/12/30/tomcat-access-logpei-zhi/"/>
+    <updated>2014-12-30T18:39:56+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2014/12/30/tomcat-access-logpei-zhi</id>
+    <content type="html"><![CDATA[<p>最近在跟一个图片请求超时的问题，需要在项目的access log中增加请求的响应时间参数。正好学习一下tomcat access log中参数的配置。</p>
+
+<p>我们假设将我的工程命名为project.com,即目录的文件名为project.com。</p>
+
+<h1>1.配置的位置</h1>
+
+<p>项目conf目录下的server.xml文件，其中的AccessLogValve这个Valve的配置，比如下面这个配置：
+<code>
+&lt;Valve className="org.apache.catalina.valves.AccessLogValve" directory="logs" prefix="access." suffix=".log"
+        pattern="%h %l %u %t &amp;quot;%r&amp;quot; %s %b &amp;quot;%{Referer}i&amp;quot; &amp;quot;%{User-Agent}i&amp;quot; %{X-Forwarded-For}i &amp;quot;%Dms&amp;quot;" resolveHosts="false"/&gt;
+</code></p>
+
+<h1>2.参数详解</h1>
+
+<p>Tomcat AccessLogValve支持写列配置参数：</p>
+
+<h3>2.1 className</h3>
+
+<p>执行Access Log任务的类，默认是org.apache.catalina.valves.AccessLogValve;也可以使用org.apache.catalina.valves.FastCommonAccessLogValve，但这时候只支持common和combined patterns。</p>
+
+<h3>2.2 directory</h3>
+
+<p>AccessLogValve产生的Access Log文件存放目录的绝对路径或者相对路径。如果是相对路径，那么是相对$CATALINA_HOME的。如果没有指定这个参数，默认值是"logs"(相对$CATALINA_HOME)。</p>
+
+<h3>2.3 pattern</h3>
+
+<p>用于指定展示在Access Log中的各种request和response的信息字段的格式，也可以使用单词common或者combined来选择一种标准的日志形式。下一节会详细介绍。</p>
+
+<p>注意优化的access只支持common和combined格式。</p>
+
+<h3>2.4 prefix</h3>
+
+<p>每个Access Log文件的文件名前缀，如果没有指定，默认是"access_log.&ldquo;，如果想没有前缀，则指定一个空的字符串(zero-length string)。</p>
+
+<h3>2.5 resolveHosts</h3>
+
+<p>如果设置为true，则会通过DNS lookup将远程主机的IP地址转换成对应的主机。设置成false则跳过这个DNS lookup过程，然后在日志中直接展示IP地址。</p>
+
+<h3>2.6 suffix</h3>
+
+<p>每个Access Log文件的文件名后缀，如果没有指定，默认值是“”，如果想没有后缀，则指定一个空的字符串(zero-length string)。</p>
+
+<h3>2.7 rotatable</h3>
+
+<p>默认为true。这个参数决定是否需要切换切换日志文件，如果被设置为false，则日志文件不会切换，即所有文件打到同一个日志文件中，并且fileDateFormat参数也会被忽略。小心使用这个参数。</p>
+
+<h3>2.8 condition</h3>
+
+<p>设置是否打开条件日志，如果设置了这个参数，requests只有当ServletRequest.getAttribute()为null的时候才会被记录日志。比如这个值被设置成junk，然后当一个特定请求的ServletRequest.getAttribute(&ldquo;junk&rdquo;) == null的时候，这个request会被记录。使用Filters很容易在ServletRequest中设置或者不设置这个属性。</p>
+
+<h3>2.9 fileDateFormat</h3>
+
+<p>Tomcat允许指定Access Log文件名中日期格式。日期格式同时也决定了如何切换日志文件的策略，比如如果你想每小时生成一个日志文件，设置这个值为yyyy-MM-dd.HH。</p>
+
+<h1>3.pattern参数</h1>
+
+<p>pattern属性有一系列的字符串参数组成，每个参数都有前缀"%&ldquo;，目前支持下面这些参数：</p>
+
+<pre><code>%a - 远程IP地址
+%A - 本地IP地址
+%b - 发送的字节数(Bytes sent), 不包括HTTP headers的字节，如果为0则展示'-'
+%B - 发送的字节数(Bytes sent), 不包括HTTP headers的字节
+%h - 远程主机名称(如果resolveHosts为false则展示IP)
+%H - 请求协议
+%l - 远程用户名，始终为'-'(Remote logical username from identd)
+%m - 请求的方法(GET, POST等)
+%p - 接受请求的本地端口
+%q - 查询字符串，如果存在，有一个前置的'?'
+%r - 请求的第一行(包括请求方法和请求的URI)
+%s - response的HTTP状态码(200,404等)
+%S - 用户的session ID
+%t - 日期和时间，Common Log Format格式
+%u - 被认证的远程用户, 不存在则展示'-'
+%U - 请求URL路径
+%v - 本地服务名
+%D - 处理请求的时间，单位为毫秒
+%T - 处理请求的时间，单位为秒
+%I - 当前请求的线程名(can compare later with stacktraces)
+</code></pre>
+
+<p>另外，Access Log中也支持cookie，请求header，响应headers，Session或者其他在ServletRequest中的对象的信息。格式遵循apache语法：</p>
+
+<pre><code>%{xxx}i 请求headers的信息
+%{xxx}o 响应headers的信息
+%{xxx}c 请求cookie的信息
+%{xxx}r xxx是ServletRequest的一个属性
+%{xxx}s xxx是HttpSession的一个属性
+</code></pre>
+
+<p>common模式的pattern(即默认pattern参数)的格式为'%h %l %u %t &ldquo;%r&rdquo; %s %b'。</p>
+
+<p>combined模式的pattern可以增加Referer和User-Agent headers的参数形式，每个参数用双引号包起来，引号中的内容还是上面列举的参数。比如&quot;%{User-Agent}i&quot;使其为”%{User-Agent}i“，即请求的User-Agent(客户端，浏览器)。</p>
+
+<p>关于Common Log Format参考：<a href="http://baike.baidu.com/view/2948003.htm">http://baike.baidu.com/view/2948003.htm</a></p>
+
+<h1>3.参考</h1>
+
+<p><a href="http://tomcat.apache.org/tomcat-5.5-doc/config/valve.html">http://tomcat.apache.org/tomcat-5.5-doc/config/valve.html</a></p>
+]]></content>
+  </entry>
+  
+</feed>

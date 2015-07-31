@@ -1,0 +1,910 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Mysql | xiaobaoqiu Blog]]></title>
+  <link href="http://xiaobaoqiu.github.io/blog/categories/mysql/atom.xml" rel="self"/>
+  <link href="http://xiaobaoqiu.github.io/"/>
+  <updated>2015-07-31T13:33:53+08:00</updated>
+  <id>http://xiaobaoqiu.github.io/</id>
+  <author>
+    <name><![CDATA[xiaobaoqiu]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Mysql InnoDB锁和死锁]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/06/03/mysql-innodbsi-suo/"/>
+    <updated>2015-06-03T01:09:23+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/06/03/mysql-innodbsi-suo</id>
+    <content type="html"><![CDATA[<p>在使用Mysql的业务中,经常会碰到各种Mysql的死锁.一直以来,都对Mysql的死锁不甚了解,这次我们的发布中也出现了一次死锁,趁这次机会,好好学习一下Mysql的死锁.我们的死锁的讨论是在InnoDB引擎基础上的.</p>
+
+<h1>1.MySQL索引</h1>
+
+<h3>1.1 聚簇索引(Clustered Indexes)</h3>
+
+<p>InnoDB存储引擎的数据组织方式,是聚簇索引表：完整的记录,存储在主键索引中,通过主键索引,就可以获取记录所有的列.</p>
+
+<p>每个InnoDB的表有一个特殊的索引称之为聚簇索引,每行的数据就是存储在聚簇索引中.通常,聚簇索引和主键同义.</p>
+
+<p>当你在你的表上面定义一个主键时,InnoDB将其作为聚簇索引.建议为你的表都创建一个主键.如果没有唯一并且非空的一列或者多列(用来做你的主键),那么可以创建一个自动填充的自增列(比如ID)</p>
+
+<p>如果你的表没有定义主键,MySQL会将第一个所有列都非空的UNIQUE索引作为聚簇索引.</p>
+
+<p>如果你的表不存在这样的UNIQUE索引(见上),InnoDB内部会自动隐式生成一个包含行ID的列并在其上面建立聚簇索引.这一列按行ID排序.行ID是一个6-byte的严格单调自增的字段.因此,按照行在物理上是按照插入顺序排序的.</p>
+
+<p>聚簇所有是如何加速查询的呢?通过聚簇所有访问一行非常快,这是因为在聚簇索引上搜索会直接定位到包含你需要的行的数据所在的页上(page).</p>
+
+<p>参考: <a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-index-types.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-index-types.html</a></p>
+
+<h3>1.2 二级索引(Secondary Indexes)</h3>
+
+<p>除了聚簇索引其他索引都是二级索引.在InnoDB中每个二级索引记录都包含了这一行的主键列和当前这个二级索引包含的列.InnoDB使用二级索引中包含的主键取索引这一行对应的聚簇索引,进而找到这一行完整的数据.</p>
+
+<p>如果主键很长,则二级索引会占有更多的空间,因此建议使用短的列做主键.</p>
+
+<h1>2.MySQL锁</h1>
+
+<p>Innodb具备表锁和行锁,其中表锁是MySQL提供的,跟存储引擎无关;行锁是Innodb存储引擎实现.</p>
+
+<h3>2.1 共享锁和排他锁</h3>
+
+<pre><code>1.共享锁(S)
+允许一个事务去读一行,阻止其他事务获得相同数据集的排他锁.
+2.排他锁(X)
+允许获得排他锁的事务更新数据,阻止其他事务取得相同数据集的共享读锁和排他写锁.
+</code></pre>
+
+<p>另外,为了允许行锁和表锁共存,实现多粒度锁机制,InnoDB还有两种内部使用的意向锁(Intention Locks),这两种意向锁都是表锁.</p>
+
+<pre><code>1.意向共享锁(IS)
+事务打算给数据行加行共享锁,事务在给一个数据行加共享锁前必须先取得该表的IS锁.
+2.意向排他锁(IX)
+事务打算给数据行加行排他锁,事务在给一个数据行加排他锁前必须先取得该表的IX锁.
+</code></pre>
+
+<p>上面这四种锁的兼容性Conflict表示冲突不能共存,Compatible表示可以共存:</p>
+
+<pre><code>   |     X     |      IX     |      S     |  IS
+X  | Conflict  |  Conflict   | Conflict   | Conflict
+IX | Conflict  |  Compatible | Conflict   | Compatible
+S  | Conflict  |  Conflict   | Compatible | Compatible
+IS | Conflict  |  Compatible | Compatible | Compatible
+</code></pre>
+
+<h3>2.2 什么时候会加锁</h3>
+
+<pre><code>1.共享锁(S)
+    SELECT * FROM table_name WHERE ... LOCK IN SHARE MODE
+2.排他锁(X)
+    SELECT * FROM table_name WHERE ... FOR UPDATE
+</code></pre>
+
+<p>参考: <a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-lock-modes.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-lock-modes.html</a></p>
+
+<h3>2.3 当前请求锁</h3>
+
+<p>使用show engine innodb status命令查看当前请求锁的信息.</p>
+
+<pre><code>mysql&gt; show engine innodb status \G;
+</code></pre>
+
+<p>可以从information_schema.INNODB_LOCKS表中查看锁的信息.
+比如事物A:</p>
+
+<pre><code>mysql&gt; select * from t;
++----+------+
+| id | num  |
++----+------+
+| 10 |    0 |
+|  1 |    1 |
+|  3 |    4 |
+|  2 |    7 |
+| 11 |    8 |
+|  4 |    9 |
++----+------+
+6 rows in set (0.00 sec)
+
+mysql&gt; select * from t where num &lt; 4 lock in share mode;
++----+------+
+| id | num  |
++----+------+
+| 10 |    0 |
+|  1 |    1 |
++----+------+
+2 rows in set (0.00 sec)
+</code></pre>
+
+<p>然后事物B去做插入就可能被阻塞:</p>
+
+<pre><code>mysql&gt; insert into t(num) values(4);
+</code></pre>
+
+<p>这是很可以查询锁信息:</p>
+
+<pre><code>mysql&gt; select * from information_schema.INNODB_LOCKS \G;
+*************************** 1. row ***************************
+    lock_id: 5E05:0:138228:3
+lock_trx_id: 5E05
+  lock_mode: X,GAP
+  lock_type: RECORD
+ lock_table: `test`.`t`
+ lock_index: `n`
+ lock_space: 0
+  lock_page: 138228
+   lock_rec: 3
+  lock_data: 7, 2
+*************************** 2. row ***************************
+    lock_id: 5E02:0:138228:3
+lock_trx_id: 5E02
+  lock_mode: S
+  lock_type: RECORD
+ lock_table: `test`.`t`
+ lock_index: `n`
+ lock_space: 0
+  lock_page: 138228
+   lock_rec: 3
+  lock_data: 7, 2
+</code></pre>
+
+<h3>2.2 锁的算法(Record Lock,Gap Lock,Next-Key Lock)</h3>
+
+<p>InnoDB有三种类型的行锁:record locks,gap locks和next-key locks:索引锁是在单个索引记录上的锁;区间锁是两个索引记录之间的锁,或者第一个索引之前的锁,或者最后一个索引之后的锁;Next-Key锁是索引锁和该索引之前的gap锁的结合.</p>
+
+<pre><code>1.索引锁(Record Lock)
+索引锁总是锁定索引(可能多条),即使表上面没有索引(这种情况,InnoDB会隐式的用自增id创建一个聚簇索引).一级索引只对一级索引加锁,二级索引对二级索引和对应的一级索引加锁.注意记录锁锁的是索引记录,不是具体的数据记录.
+
+2.区间锁(Gap Lock)
+锁定索引记录间隙的锁,确保索引记录的间隙不变,间隙锁是针对事务隔离等级是可重复读(Repeatable Read)或以上级别而言的.
+
+间隙锁一般是针对非唯一索引而言的
+
+3.Next-Key Lock
+默认情况,InnoDB使用REPEATABLE READ事物隔离级别,并且innodb_locks_unsafe_for_binlog这个系统设置无效.这时InnoDB使用next-key锁来做搜索(searches)和索引扫描(index scans),以此来防止幻读(参考:http://dev.mysql.com/doc/refman/5.6/en/innodb-next-key-locking.html).
+</code></pre>
+
+<h3>2.3 区间锁</h3>
+
+<p>区间锁的一个简单例子:</p>
+
+<pre><code>CREATE TABLE `t` (
+  `id` int(11) unsigned NOT NULL AUTO_INCREMENT COMMENT '自增主键',
+  `num` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `n` (`num`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8
+
+insert into t(`num`) values(1, 7, 4, 9);
+
+mysql&gt; select * from t;
++----+------+
+| id | num  |
++----+------+
+|  1 |    1 |
+|  3 |    4 |
+|  2 |    7 |
+|  4 |    9 |
++----+------+
+4 rows in set (0.01 sec)
+</code></pre>
+
+<p>表中现在有4条记录,其中普通索引(二级索引n)生成了5个Gap:</p>
+
+<pre><code>(负无穷, 1), (1, 4), (4, 7), (7, 9), (9, 正无穷)
+</code></pre>
+
+<p>现在Session A以共享锁获取num=4的数据,Session B想要插入数据,就有可能造成锁等待导致超时从而重启事务,因为Session A以共享锁获取num=4的数据,会产生gap锁将区间(1, 4)和区间(4, 7)锁住,因此这两个区间的插入会失败:</p>
+
+<p><img src="/images/mysql/gap_lock.png"></p>
+
+<p>间隙锁在InnoDB的作用就是防止其它事务的插入操作，以此来达到防止幻读的发生。另外，在上面的例子中，我们选择的是一个普通（非唯一）索引字段来测试的，这不是随便选的，因为如果InnoDB扫描的是一个主键、或是一个唯一索引的话，那InnoDB只会采用行锁方式来加锁，而不会使用Next-Key Lock的方式，也就是说不会对索引之间的间隙加锁.</p>
+
+<p>要禁止间隙锁的话，可以把隔离级别降为读已提交，或者开启参数innodb_locks_unsafe_for_binlog.</p>
+
+<p>参考:
+<a href="http://www.cnblogs.com/sliverdang/p/3163455.html">http://www.cnblogs.com/sliverdang/p/3163455.html</a></p>
+
+<p><a href="http://ouyanggod.iteye.com/blog/2166215">http://ouyanggod.iteye.com/blog/2166215</a></p>
+
+<p><a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html</a></p>
+
+<h1>3.snapshot read和current read</h1>
+
+<p>MySQL的两种read方式:</p>
+
+<pre><code>1.快照读(snapshot read或者consistent read)
+快照读,读取的是记录的可见版本(有可能是历史版本),不用加锁;
+
+通常,简单的select操作,属于快照读,不加锁,比如:
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>select * from table where ?</span></code></pre></td></tr></table></div></figure>
+2.当前读(current read或者lock read)
+当前读,读取的是记录的最新版本,并且,当前读返回的记录,都会加上锁,保证其他事务不会再并发修改这条记录.
+
+特殊的读操作,插入/更新/删除操作,属于当前读,需要加锁.比如:
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>select * from table where ? lock in share mode
+</span><span class='line'>select * from table where ? for update
+</span><span class='line'>insert into table values (…)
+</span><span class='line'>update table set ? where ?
+</span><span class='line'>delete from table where ?</span></code></pre></td></tr></table></div></figure>
+所有以上的语句,都属于当前读,读取记录的最新版本.并且,读取之后,还需要保证其他并发事务不能修改当前记录,对读取记录加锁.其中,除了第一条语句,对读取记录加S锁 (共享锁)外,其他的操作,都加的是X锁(排它锁).
+</code></pre>
+
+<p>总之一句话:有加锁的查询都认为是当前读.</p>
+
+<p>快照读大大的提高了数据读取的并发.快照读的一个简单示意图,快照数据就是当前数据之前的版本数据,可能有多个版本的快照数据,每个快照数据中包含了版本信息(如时间戳等):</p>
+
+<p><img src="/images/mysql/snapshot_read.png"></p>
+
+<p>为什么将插入/更新/删除操作,都归为当前读?可以看看下面这个更新操作,在数据库中的执行流程：</p>
+
+<p><img src="/images/mysql/update-lock.jpg"></p>
+
+<p>从图中,可以看到,一个Update操作的具体流程.当Update SQL被发给MySQL后,MySQL Server会根据where条件,读取第一条满足条件的记录,然后InnoDB引擎会将第一条记录返回,并加锁(current read).待MySQL Server收到这条加锁的记录之后,会再发起一个Update请求,更新这条记录.一条记录操作完成,再读取下一条记录,直至没有满足条件的记录为止.因此,Update操作内部,就包含了一个当前读.同理,Delete操作也一样.Insert操作会稍微有些不同,简单来说,就是Insert操作可能会触发Unique Key的冲突检查,也会进行一个当前读.</p>
+
+<p>注：根据上图的交互,针对一条当前读的SQL语句,InnoDB与MySQL Server的交互,是一条一条进行的,因此,加锁也是一条一条进行的.先对一条满足条件的记录加锁,返回给MySQL Server,做一些DML操作；然后在读取下一条加锁,直至读取完毕.</p>
+
+<h3>3.1不同隔离界别下的snapshot read</h3>
+
+<p>在Read Committed级别下,快照读总是读取被锁定行的最新的快照数据.而在Repeatable Read和Serializable级别,快照读读取的是事物开始时候的行数据版本.</p>
+
+<p>下面是一个简单的例子,一个很简单的表,插入一条数据:</p>
+
+<pre><code>CREATE TABLE `parent` (   `id` int(10) NOT NULL,   PRIMARY KEY (`id`) ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+insert into parent (id) values(1);
+</code></pre>
+
+<p>我们起两个事务,一个读取(Session A),一个更新(Session B),用来验证不同事务隔离级别下快照读的差异:</p>
+
+<pre><code>1.Session A中首先开始事物,查询id=1的数据,这时候,无论在Read Committed还是Repeatable Read级别,结果都是1;
+2.Session B然后开始事物,并执行update操作,没有commit;
+3.这时候Session A再查询id=1的数据,显然Read Committed还是Repeatable Read级别,结果都是1;(在Read Uncommited灰度到未提交的脏数据).
+4.Session B提交事物;
+5.这时候Session A再查询id=1的数据,就发现差异:Read Committed级别下读取到被修改的数据,而Repeatable Read读取的还是老数据.因为Read Committed只读取最新的快照数据,而Repeatable Read是参考当前事物开始时间来读取快照数据.
+</code></pre>
+
+<p>首先是Repeatable Read的结果:</p>
+
+<pre><code>mysql&gt; SELECT @@session.tx_isolation;
++------------------------+
+| @@session.tx_isolation |
++------------------------+
+| REPEATABLE-READ        |
++------------------------+
+
+mysql&gt; select * from parent where id = 1;
++----+
+| id |
++----+
+|  1 |
++----+
+</code></pre>
+
+<p><img src="/images/mysql/snapshot_read_RR.png"></p>
+
+<p>下面是Read Committed的结果(Session B一旦提交,Session A未commit的情况下就能读到Session B提交的数据.):</p>
+
+<pre><code>mysql&gt; SELECT @@session.tx_isolation;
++------------------------+
+| @@session.tx_isolation |
++------------------------+
+| READ-COMMITTED         |
++------------------------+
+
+mysql&gt; select * from parent where id = 1;
++----+
+| id |
++----+
+|  1 |
++----+
+</code></pre>
+
+<p><img src="/images/mysql/snapshot_read_RC.png"></p>
+
+<h1>4.InnoDB MVCC</h1>
+
+<p>InnoDB是一种多版本存储引擎,它必须保存各行老版本信息,这个信息存在一个称之为回滚段(rollback segment)的数据结构中.</p>
+
+<p>在Mysql内部,InnoDB为每行数据额外增加三个字段:</p>
+
+<pre><code>1.一个6-byte的名为DB_TRX_ID字段,用来表示最后一个插入(insert)或者更新(update)这行记录的事物的标记.注意,删除(delete)也被当成一种更新,只是标记这一行的一个额外的bit位来表征这个数据被删除.
+2.一个7-byte的名为DB_ROLL_PTR字段,称之为回滚指针(roll pointer).这个指针指向写在rollback segment中的undo log记录.如果这一行被更新了,undo log就包含了能够将这一行完全恢复到修改之前的信息.
+3.一个6-byte的DB_ROW_ID字段,用来存行id(row ID),行id是插入数据的时候自动严格递增生成的.如果InnoDB自动产生了一个聚簇索引(clustered index),这个索引就包含行id.否在行id就不会在任何索引中出现.
+</code></pre>
+
+<p>InnoDB使用存储在rollback segment中的信息(undo log)去实现事物回滚时候的undo操作.另外,InnoDB也是使用这个信息构建快照读(consistent read或者snapshot read)时候的行数据.</p>
+
+<p>rollback segment中的Undo logs分为插入(insert)和更新(update)的undo logs.</p>
+
+<p>经常提交你的事物,包括那些只是consistent reads的事物.否则(长时间不提事物)会导致InnoDB不能及时废弃update undo logs中的数据,进而导致rollback segment中数据太大挤占你的表空间(tablespace).</p>
+
+<p>rollback segment中undo log记录的物理大小(physical size)通常小于对应的插入或者更新的行数.你可以使用这个信息取计算你的rollback segment需要的空间.</p>
+
+<p>在InnoDB多版本方案中,当你删除一行记录,实际上行不会立即被物理删除.只有当这个删除对应的update undo log被废弃的时候这行记录才会真正被物理删除.此删除操作被称为清除(purge)是通过Purge后台进程实现的,这个过程非常的快,通常其顺序和SQL语句执行删除的顺序一致.Purge进程定期扫描InnoDB的undo,按照先读老undo,再读新undo的顺序,读取每条undo record.</p>
+
+<p>参考:
+<a href="http://hedengcheng.com/?p=148">http://hedengcheng.com/?p=148</a>
+<a href="https://dev.mysql.com/doc/refman/5.0/en/innodb-multi-versioning.html">https://dev.mysql.com/doc/refman/5.0/en/innodb-multi-versioning.html</a></p>
+
+<h1>5.隔离级别(Isolation Level)</h1>
+
+<h3>5.1 InnoDB的4种隔离级别</h3>
+
+<p>MySQL InnoDB定义的4种隔离级别：</p>
+
+<pre><code>1.Read Uncommited
+2.Read Committed (RC)
+3.Repeatable Read (RR)
+4.Serializable
+</code></pre>
+
+<p>Read Uncommited安全级别比较低,因此很少使用.Serializable隔离级别读写冲突,因此并发度急剧下降,在MySQL/InnoDB下不建议使用.
+Repeatable Read是InnoDB默认的事物级别.Oracle和MS SQL的默认级别是Read Committed.</p>
+
+<h3>5.2脏读,不可重复读,幻读</h3>
+
+<p>在事务并行下出现的几个问题:</p>
+
+<pre><code>1.脏读
+可能读取到其他会话中未提交事务修改的数据,在Read Uncommited级别下可能出现.
+2.不可重复读
+同一个事物中前后两次读取的内容不一致,在Read Uncommited和Read Committed会出现.
+3.幻读
+如果另一个事务同时提交了新数据(本事务查询时候感知不到这个变更),本事务再更新时,就会惊奇的发现了这些新数据(比如触发违反了uniq key等),就好像之前读到的数据是鬼影一样的幻觉.这种情况就是上述说的,快照读和当前读一起存在的情况,会出现幻读的场景.必须使用当前读,才能避免幻读.比如：select ...lock in share mode和select ...for update.
+</code></pre>
+
+<p>各个事物界别下可能出现的问题:</p>
+
+<table>
+<thead>
+<tr>
+<th>隔离级别</th>
+<th style="text-align:center;">脏读(Dirty Read)</th>
+<th style="text-align:center;">不可重复读(NonRepeatable Read)</th>
+<th style="text-align:center;">幻读(Phantom Read)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read Uncommited</td>
+<td style="text-align:center;">可能</td>
+<td style="text-align:center;">可能</td>
+<td style="text-align:center;">可能</td>
+</tr>
+<tr>
+<td>Read Committed</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">可能</td>
+<td style="text-align:center;">可能</td>
+</tr>
+<tr>
+<td>Repeatable Read</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">可能</td>
+</tr>
+<tr>
+<td>Serializable</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">不可能</td>
+</tr>
+</tbody>
+</table>
+
+
+<p>幻读的一个示例,Session A在insert之前先select查看数据是否存在,结果告知可以插入,这时候Session B变更数据并提交.Session A再插入会因为主键冲突失败:</p>
+
+<pre><code>mysql&gt; SELECT @@session.tx_isolation;
++------------------------+
+| @@session.tx_isolation |
++------------------------+
+| READ-COMMITTED         |
++------------------------+
+
+mysql&gt; select * from parent where id = 1;
++----+
+| id |
++----+
+|  1 |
++----+
+</code></pre>
+
+<p><img src="/images/mysql/phantom_read.png"></p>
+
+<p>那么，InnoDB指出的可以避免幻读是怎么回事呢?</p>
+
+<pre><code>http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html
+
+By default, InnoDB operates in REPEATABLE READ transaction isolation level and with the innodb_locks_unsafe_for_binlog system variable disabled. In this case, InnoDB uses next-key locks for searches and index scans, which prevents phantom rows (see Section 13.6.8.5, “Avoiding the Phantom Problem Using Next-Key Locking”).
+</code></pre>
+
+<p>简单翻译就是，当隔离级别是可重复读，且禁用innodb_locks_unsafe_for_binlog的情况下，在搜索和扫描index的时候使用的next-key locks可以避免幻读.</p>
+
+<p>关键点在于，是InnoDB默认对一个普通的查询也会加next-key locks，还是说需要应用自己来加锁呢？如果单看这一句，可能会以为InnoDB对普通的查询也加了锁，如果是，那和序列化（SERIALIZABLE）的区别又在哪里呢?</p>
+
+<p>MySQL manual里还有一段:</p>
+
+<pre><code>http://dev.mysql.com/doc/refman/5.6/en/innodb-next-key-locking.html
+Avoiding the Phantom Problem Using Next-Key Locking
+
+To prevent phantoms, InnoDB uses an algorithm called next-key locking that combines index-row locking with gap locking.
+
+You can use next-key locking to implement a uniqueness check in your application: If you read your data in share mode and do not see a duplicate for a row you are going to insert, then you can safely insert your row and know that the next-key lock set on the successor of your row during the read prevents anyone meanwhile inserting a duplicate for your row. Thus, the next-key locking enables you to “lock” the nonexistence of something in your table.
+</code></pre>
+
+<p>根据这一段,我们可以理解为,InnoDB提供了next-key locks，但需要应用程序自己去加锁,才能防止幻读.manual里提供一个例子:</p>
+
+<pre><code>SELECT * FROM child WHERE id &gt; 100 FOR UPDATE;
+</code></pre>
+
+<p>这样,InnoDB会给id大于100的行(假如child表里有一行id为102),以及100-102,102+的gap都加上锁.可以使用show innodb status来查看是否给表加上了锁.</p>
+
+<p>结论就是:MySQL InnoDB的REPEATABLE READ并不保证避免幻读,需要应用使用加锁读来保证.而这个加锁度使用到的机制就是next-key locks.</p>
+
+<h3>5.3 修改隔离级别</h3>
+
+<p>InnoDB默认是可重复读的(REPEATABLE READ).可以在命令行用&ndash;transaction-isolation选项,或在选项文件里,为所有连接设置默认隔离级别.</p>
+
+<p>在my.inf文件的[mysqld]节里类似如下设置该选项:</p>
+
+<pre><code>transaction-isolation = {READ-UNCOMMITTED | READ-COMMITTED | REPEATABLE-READ | SERIALIZABLE}
+</code></pre>
+
+<p>用户可以用SET TRANSACTION语句改变单个会话或者所有新进连接的隔离级别:</p>
+
+<pre><code>SET [SESSION | GLOBAL] TRANSACTION ISOLATION LEVEL {READ UNCOMMITTED | READ COMMITTED | REPEATABLE READ | SERIALIZABLE}
+</code></pre>
+
+<h1>6.死锁</h1>
+
+<pre><code>1.死锁发生的条件
+互斥条件：一个资源每次只能被一个进程使用；
+请求与保持条件：一个进程因请求资源而阻塞时，对已获得的资源保持不放；
+不剥夺条件:进程已获得的资源，在末使用完之前，不能强行剥夺；
+循环等待条件:若干进程之间形成一种头尾相接的循环等待资源关系。
+</code></pre>
+
+<p>系统检测到死锁后,会自动回滚其中事务较小的一个(记得好像根据undo日志的大小来决定).</p>
+
+<p>对于DB而言，导致死锁意味着发生了循环等待，在InnoDB中由于行锁的引入，比较容易发生死锁，下面总结一些发生死锁的情况（不全）：
+    1. 同一索引上,两个session相反的顺序加锁多行记录;
+    2. Primary key和Secondary index，通过primary key找到记录，更新Secondary index字段与通过Secondary index更新记录;
+    3. UPDATE/DELETE通过不同的二级索引更新多条记录,可能造成在Primary key上不同的加锁顺序,可以参考之前一篇博客:<a href="http://www.gpfeng.com/?p=406">http://www.gpfeng.com/?p=406</a></p>
+
+<h3>6.1死锁实例</h3>
+
+<h3>6.2查看死锁信息</h3>
+
+<h3>6.3解决死锁</h3>
+
+<p>参考:</p>
+
+<p><a href="http://hedengcheng.com/?p=771">http://hedengcheng.com/?p=771</a></p>
+
+<p><a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html</a></p>
+
+<p><a href="http://novoland.github.io/%E6%95%B0%E6%8D%AE%E5%BA%93/2014/07/26/MySQL%E6%80%BB%E7%BB%93.html">http://novoland.github.io/%E6%95%B0%E6%8D%AE%E5%BA%93/2014/07/26/MySQL%E6%80%BB%E7%BB%93.html</a></p>
+
+<p><a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=76820049">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=76820049</a>
+<a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=50520113">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=50520113</a></p>
+
+<p>Mysql锁基础知识 <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=64807317">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=64807317</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[TPCC-MySQL简介]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/05/20/tpcc-mysqljian-jie/"/>
+    <updated>2015-05-20T06:47:02+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/05/20/tpcc-mysqljian-jie</id>
+    <content type="html"><![CDATA[<p>TPC(Tracsaction Processing Performance Council) 事务处理性能协会是一个评价大型数据库系统软硬件性能的非盈利的组织,TPC-C是TPC协会制定的，用来测试典型的复杂OLTP系统的性能；</p>
+
+<p>Tpcc-mysql是percona基于tpcc衍生出来的产品，专用于mysql基准测试，其源码放在bazaar上，因此需要先安装bazaar客户端.</p>
+
+<h1>1.OLTP and OLAP</h1>
+
+<p>一般来说，可将数据库的应用类型分为OLTP(OnLine Transaction Processing，联机事务处理)和OLAP(OnLine Analysis Processing，联机分析处理)两种。OLTP是传统关系型数据库的主要应用，其主要面向基本的、日常的事务处理，例如银行交易。OLAP是数据仓库系统的主要应用，支持复杂的分析操作，侧重决策支持，并且提供直观易懂的查询结果.</p>
+
+<p>OLTP也被称为面向交易的处理系统，其基本特征是可以立即将顾客的原始数据传送到计算中心进行处理，并在很短的时间内给出处理结果，这个过程的最大优点是可以即时地处理输入的数据、及时地回答，因此OLTP又被称为实时系统(Real Time System)。衡量OLTP系统的一个重要性能指标是系统性能，具体体现为实时响应时间(Response Time,简称RT)，即从用户在终端输入数据到计算机对这个请求做出回复所需的时间。OLTP 数据库旨在使事务应用程序仅完成对所需数据的写入，以便尽快处理单个事务。</p>
+
+<p>OLAP的概念最早是由关系数据库之父E.F.Codd博士于1993年提出的，是一种用于组织大型商务数据库和支持商务智能的技术。OLAP数据库分为一个或多个多维数据集，每个多维数据集都由多维数据集管理员组织和设计，以适应用户检索和分析数据的方式，从而更易于创建和使用所需的数据透视表和数据透视图。</p>
+
+<h1>2.Tpcc-mysql</h1>
+
+<p>Tpcc-mysql简单说就是mysql的一个基准测试工具.一般用于比较Mysql在不同配置下的性能差异,从而选择一个相对较优的配置.</p>
+
+<p>参考:
+<a href="http://www.zhaokunyao.com/archives/5793">http://www.zhaokunyao.com/archives/5793</a></p>
+
+<h1>3.NoSQL测试</h1>
+
+<p>顺便记录一下一个NOSQL的测试case:</p>
+
+<p><a href="https://www.aerospike.com/wp-content/uploads/2013/02/Ultra-High-Performance-NoSQL-Benchmarking_zh-CN.pdf">https://www.aerospike.com/wp-content/uploads/2013/02/Ultra-High-Performance-NoSQL-Benchmarking_zh-CN.pdf</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Mysql Thread_pool_size]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/05/19/mysql-thread-pool-size/"/>
+    <updated>2015-05-19T06:23:18+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/05/19/mysql-thread-pool-size</id>
+    <content type="html"><![CDATA[<p>最近项目中的beta环境,多个应用(10+个)连接数据库,使用的是连接池管理数据库连接.</p>
+
+<p>最近应用中经常抛出数据库连接异常(我们使用的连接池是druid),简单的就是说无法获取Mysql的连接,创建连接失败(create connection error):
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[2015-05-14 15:50:51 ERROR com.alibaba.druid.pool.DruidDataSource:1363] create connection error
+</span><span class='line'>com.mysql.jdbc.exceptions.jdbc4.CommunicationsException: Communications link failure&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+</span><span class='line'>    at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method) ~[na:1.7.0_45]
+</span><span class='line'>    at sun.reflect.NativeConstructorAccessorImpl.newInstance(NativeConstructorAccessorImpl.java:57) ~[na:1.7.0_45]
+</span><span class='line'>    at sun.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45) ~[na:1.7.0_45]
+</span><span class='line'>    at java.lang.reflect.Constructor.newInstance(Constructor.java:526) ~[na:1.7.0_45]
+</span><span class='line'>    at com.mysql.jdbc.Util.handleNewInstance(Util.java:411) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.SQLError.createCommunicationsException(SQLError.java:1117) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.MysqlIO.&lt;init&gt;(MysqlIO.java:350) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.coreConnect(ConnectionImpl.java:2393) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.connectOneTryOnly(ConnectionImpl.java:2430) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.createNewIO(ConnectionImpl.java:2215) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.&lt;init&gt;(ConnectionImpl.java:813) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.JDBC4Connection.&lt;init&gt;(JDBC4Connection.java:47) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at sun.reflect.GeneratedConstructorAccessor34.newInstance(Unknown Source) ~[na:na]
+</span><span class='line'>    at sun.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45) ~[na:1.7.0_45]
+</span><span class='line'>    at java.lang.reflect.Constructor.newInstance(Constructor.java:526) ~[na:1.7.0_45]
+</span><span class='line'>    at com.mysql.jdbc.Util.handleNewInstance(Util.java:411) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.getInstance(ConnectionImpl.java:399) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.NonRegisteringDriver.connect(NonRegisteringDriver.java:334) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.alibaba.druid.pool.DruidAbstractDataSource.createPhysicalConnection(DruidAbstractDataSource.java:1296) ~[druid-0.2.18.jar:0.2.18]
+</span><span class='line'>    at com.alibaba.druid.pool.DruidAbstractDataSource.createPhysicalConnection(DruidAbstractDataSource.java:1352) ~[druid-0.2.18.jar:0.2.18]
+</span><span class='line'>    at com.alibaba.druid.pool.DruidDataSource$CreateConnectionThread.run(DruidDataSource.java:1361) ~[druid-0.2.18.jar:0.2.18]
+</span><span class='line'>Caused by: java.net.ConnectException: Connection refused
+</span><span class='line'>        at java.net.PlainSocketImpl.socketConnect(Native Method) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.AbstractPlainSocketImpl.doConnect(AbstractPlainSocketImpl.java:339) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.AbstractPlainSocketImpl.connectToAddress(AbstractPlainSocketImpl.java:200) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.AbstractPlainSocketImpl.connect(AbstractPlainSocketImpl.java:182) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.SocksSocketImpl.connect(SocksSocketImpl.java:392) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.Socket.connect(Socket.java:579) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.Socket.connect(Socket.java:528) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.Socket.&lt;init&gt;(Socket.java:425) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.Socket.&lt;init&gt;(Socket.java:241) ~[na:1.7.0_45]
+</span><span class='line'>        at com.mysql.jdbc.StandardSocketFactory.connect(StandardSocketFactory.java:257) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>        at com.mysql.jdbc.MysqlIO.&lt;init&gt;(MysqlIO.java:300) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>        &hellip; 14 common frames omitted</span></code></pre></td></tr></table></div></figure></p>
+
+<p>开始怀疑机器的压力过大,将一些应用停止,还是出现这个问题.</p>
+
+<p>但是相同的代码在dev环境一切正常,beta环境的机器配置要优于dev环境的.</p>
+
+<h1>1.Druid配置</h1>
+
+<p>首先怀疑那块的代码问题导致的Mysql连接没有被释放.</p>
+
+<p>由于我们使用Druid连接池,尝试使用Druid的removeAbandoned功能,这个配置的意义就是连接泄漏监测,通过这个监控没有发现异常.</p>
+
+<p>当程序存在缺陷时，申请的连接忘记关闭，这时候，就存在连接泄漏了。Druid提供了RemoveAbandanded相关配置，用来关闭长时间不使用的连接.</p>
+
+<p>配置removeAbandoned对性能会有一些影响，建议怀疑存在泄漏之后再打开。
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;property name="removeAbandoned" value="true" /&gt; &lt;!-- 打开removeAbandoned功能--&gt;
+</span><span class='line'>&lt;property name="removeAbandonedTimeout" value="600" /&gt; &lt;!-- 600秒，也就是10分钟--&gt;
+</span><span class='line'>&lt;property name="logAbandoned" value="true" /&gt; &lt;!-- 关闭abanded连接时输出错误日志--&gt;</span></code></pre></td></tr></table></div></figure>`
+当removeAbandoned=true之后，可以在内置监控界面datasource.html中的查看ActiveConnection StackTrace属性的，可以看到未关闭连接的具体堆栈信息，从而方便查出哪些连接泄漏了。</p>
+
+<p>参考:
+<a href="https://github.com/alibaba/druid/wiki/%E8%BF%9E%E6%8E%A5%E6%B3%84%E6%BC%8F%E7%9B%91%E6%B5%8B">https://github.com/alibaba/druid/wiki/%E8%BF%9E%E6%8E%A5%E6%B3%84%E6%BC%8F%E7%9B%91%E6%B5%8B</a></p>
+
+<h1>2.diff mysql status</h1>
+
+<p>既然dev环境正常,因此我们的做法是拿出dev环境和beta环境的show status结果进行diff,结果发现了一个比较可疑的参数的配置有差异:
+<code>
+thread_pool_size
+</code></p>
+
+<p>dev环境配置是16,而beta环境是4,同时线上环境的配置是24.初步判断beta环境的thread_pool_size设置应该是有问题的.</p>
+
+<h1>3.thread_pool_size</h1>
+
+<p>参考官网的描述
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>thread_pool_size is the most important parameter controlling thread pool performance. It can be set only at server startup. Our experience in testing the thread pool indicates the following:&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;If the primary storage engine is InnoDB, the optimal thread_pool_size setting is likely to be between 16 and 36, with the most common optimal values tending to be from 24 to 36. We have not seen any situation where the setting has been optimal beyond 36. There may be special cases where a value smaller than 16 is optimal.&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;For workloads such as DBT2 and Sysbench, the optimum for InnoDB seems to be usually around 36. For very write-intensive workloads, the optimal setting can sometimes be lower.&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;If the primary storage engine is MyISAM, the thread_pool_size setting should be fairly low. We tend to get optimal performance for values from 4 to 8. Higher values tend to have a slightly negative but not dramatic impact on performance.</span></code></pre></td></tr></table></div></figure>
+简单的翻译一下:
+thread_pool_size是控制线程池性能最重要的一个参数,这个参数只能在Mysql服务启动的时候设置(这是官网5.5版本的文档,5.6版本证明是可以动态修改的).官网的推荐设置:</p>
+
+<pre><code>1.如果存储引擎是InnoDB,thread_pool_size值设置16到36之间比较好,一般配置在24到36之间;
+2.如果存储引擎是MyISAM,thread_pool_size值应该被设置得相当小,倾向于设置在4到8之间;
+</code></pre>
+
+<p>官方网站:
+<a href="https://dev.mysql.com/doc/refman/5.5/en/thread-pool-tuning.html">https://dev.mysql.com/doc/refman/5.5/en/thread-pool-tuning.html</a></p>
+
+<h3>3.1 thread_pool_size意义</h3>
+
+<p>参数thread_pool_size的命令可能会让大家产生误解，它不是指的线程池的大小，而是线程组的大小。</p>
+
+<p>类似所有创建的线程都在某一个group里，group的编号从1~thread_pool_size，每个group里的worker线程数可以通过参数thread_pool_oversubscribe来控制（默认为3）.</p>
+
+<p>同时活跃的最大worker线程数=thread_pool_size * (thread_pool_oversubscribe + 1);</p>
+
+<p>thread_pool_size默认值为CPU核心数，最大为128(MAX_THREAD_GROUPS)，在启动时，就会把128个Group对应的结构体(all_groups)初始化好。每个group(编号小于等于thread_pool_size)会创建一个epoll对象；</p>
+
+<p>当MySQL建立connection时, MySQL根据connection的thread id对thread_pool_size取模,将 connection发起的sql语句分配到对应的group.若worker达到最大数量后还是不足以处理回话请求, 则连接在本group上等待,导致sql语句的RT(Response time)增大。</p>
+
+<p>简单示意图如下:</p>
+
+<p><img src="/images/mysql/Mysql_Pool.png"></p>
+
+<p>所有之前的问题出现的情况是:</p>
+
+<pre><code>1.thread_pool_size为4,即mysql每个thread pool的group中work线程的大小为4,如果有多个应用,恰好多个线程的connection被分发到某一个group上(假设为group-2),并且相当长一段时间一致在占有(比如我们在beta环境的连接,会占用并忙碌长达半小时),这时候,新来的连接正好也分发到group-2上,这时候Mysql上的group-2就没有多余的work线程来为其服务,即其无法和mysql创建连接,从而出现create connection error的异常.
+</code></pre>
+
+<p>参考:
+<a href="http://get.jobdeer.com/908.get">http://get.jobdeer.com/908.get</a>
+<a href="http://chuansong.me/n/1192563">http://chuansong.me/n/1192563</a>
+<a href="http://mysqllover.com/?p=826">http://mysqllover.com/?p=826</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Mysql Utf8mb4]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/04/08/mysql-utf8mb4/"/>
+    <updated>2015-04-08T04:50:24+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/04/08/mysql-utf8mb4</id>
+    <content type="html"><![CDATA[<p>MYSQL 5.5 之前， UTF8 编码只支持1-3个字节，只支持BMP这部分的unicode编码区， BMP是从哪到哪，到
+<a href="http://en.wikipedia.org/wiki/Mapping_of_Unicode_characters">http://en.wikipedia.org/wiki/Mapping_of_Unicode_characters</a>
+这里看，基本就是0000～FFFF这一区。 从MYSQL5.5开始，可支持4个字节UTF编码utf8mb4，一个字符最多能有4字节，所以能支持更多的字符集。</p>
+
+<p>utf8mb4兼容utf8，且比utf8能表示更多的字符。</p>
+
+<p>在做移动应用时，会遇到ios用户会在文本的区域输入emoji表情，emoji就是表情符号，在手机短信里面已经是很流行使用的一种表情。</p>
+
+<p>因为utf8mb4是utf8的超集，理论上即使client修改字符集为utf8mb4，也会不会对已有的utf8编码读取产生任何问题。</p>
+
+<h1>1.问题</h1>
+
+<pre><code>1.MySQL在处理utf8mb4数据时,要比utf8慢;
+2.存储字符数量,utf8mb4要比utf8少;
+3.TIMESTAMP NOT NULL DEFAULT 类型的字段，当我们在程序中传入NULL时，Mysql 5.5会自动填充默认值，而5.6不会自动填充，这就违反了非空约束，会报错;
+4.在mysql 5.6版本, utf8的表和utf8mb4的表join查询会导致索引失效;
+</code></pre>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Mysql架构]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/04/03/mysqljia-gou/"/>
+    <updated>2015-04-03T04:07:44+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/04/03/mysqljia-gou</id>
+    <content type="html"><![CDATA[<p>这里想总结一下使用Mysql的一些架构，注意不是Mysql源码的架构。</p>
+
+<h1>1.单点</h1>
+
+<p>数据量不大，业务简单的情况下，直接单点的mysql instance足够。</p>
+
+<p><img src="/images/mysql/one_instance.PNG"></p>
+
+<h3>1.1 优点</h3>
+
+<pre><code>1.简单，不存在数据一致性等问题;
+</code></pre>
+
+<h3>1.2 缺点瓶颈</h3>
+
+<pre><code>1.单机存储数据量有限;
+2.数据索引单机内存可能放不下,导致和只能加载部分索引，印象性能;
+3.单机访问速度有极限;
+4.读写混合，不正当的写操作导致的锁表等问题，可能导致读操作也失败，进而拖死整个系统;
+5.无法容灾;
+</code></pre>
+
+<p>很多业务场景简单的，单表可以一般足够，比如对于用户信息这类表 （3个索引），16G内存能放下大概2000W行数据的索引，简单的读和写混合访问量3000/s左右没有问题。</p>
+
+<h1>2.垂直拆分</h1>
+
+<p>当单表遇到瓶颈的时候，最简单的想法是垂直拆分，从业务角度来看，将关联性不强的数据拆分到不同的instance上，从而达到消除瓶颈的目标。</p>
+
+<p>另外，绝大部分的业务常见读写复合2-8原则，即80%的数据库操作会是读操作，因此对于重复读类型比较多的场景，我们还可以加一层cache，来减少对DB的压力。</p>
+
+<p><img src="/images/mysql/v_multi_instance.PNG"></p>
+
+<h3>2.1 优点</h3>
+
+<pre><code>1.业务隔离，互不影响;
+</code></pre>
+
+<h3>2.2 缺点瓶颈</h3>
+
+<pre><code>1.读写混合的问题依然存在;
+</code></pre>
+
+<h1>3.Master-Slave</h1>
+
+<p>基于业务的读写2-8原则，我们将读写分离，即读和写打到不同的数据库服务器，通常读服务器会有多台，这即典型的Master-Slave结构，主库(Master)抗写压力，通过从库(Slave)来分担读压力。MS结构非常适合读多写少的应用场景，比如博客类网站等。</p>
+
+<p><img src="/images/mysql/master_slave.PNG"></p>
+
+<p>Slave通过binlog来同步Master的数据变更：
+<img src="/images/mysql/master-salve.jpg"></p>
+
+<p>主从机器的硬件配置和MySQL版本、各种参数配置最好都要一样，这样才能保证出问题时应用程 序能够平滑地从主库切换到备库上。</p>
+
+<h3>3.1 优点</h3>
+
+<pre><code>1.读写分离，减少相互影响;
+2.实时备份;
+</code></pre>
+
+<h3>3.2 缺点瓶颈</h3>
+
+<pre><code>1.数据一致性难以保障;
+2.主从切换麻烦，而且切换所带来的麻烦会随着备库的增多而逐步上升;
+</code></pre>
+
+<h1>4.Proxy</h1>
+
+<p>在Application和DB中间加以层Proxy，Proxy来解析sql协议，按sharding key 来寻找cluster, 判断是读操作还是写操作来请求主服务器或者从服务器，这一切内部的细节都由proxy来屏蔽。</p>
+
+<p>Proxy做的工作包括：</p>
+
+<pre><code>1.SQL解析
+2.SQL改写
+3.查询Dispatch
+4.读写分离、主从切换逻辑
+5.缓冲区控制
+6.归并+排序
+</code></pre>
+
+<h1>5.Heartbeat+DRBD</h1>
+
+<h3>5.1 Heartbeat介绍</h3>
+
+<p>heartbeat可以资源(VIP地址及程序服务)从一台有故障的服务器快速的转移到另一台正常的服务器提供服务，heartbeat和keepalived相似，heartbeat可以实现failover功能，但不能实现对后端的健康检查。</p>
+
+<p><a href="http://linux-ha.org/wiki/Main_Page">http://linux-ha.org/wiki/Main_Page</a></p>
+
+<h3>5.2 DRBD介绍</h3>
+
+<p>DRBD(Distributed Replicated Block Device)是一个基于块设备级别在远程服务器直接同步和镜像数据的软件，用软件实现的、无共享的、服务器之间镜像块设备内容的存储复制解决方案。</p>
+
+<p>它可以实现在网络中两台服务器之间基于块设备级别的实时镜像或同步复制(两台服务器都写入成功)/异步复制(本地服务器写入成功)，相当于网络的RAID1，由于是基于块设备(磁盘，LVM逻辑卷)，在文件系统的底层，所以数据复制要比cp命令更快。DRBD已经被MySQL官方写入文档手册作为推荐的高可用的方案之一。</p>
+
+<p>官方站点：<a href="http://www.drbd.org/">http://www.drbd.org/</a></p>
+
+<h3>5.3 Heartbeat+DRBD</h3>
+
+<p>适用于数据库访问量不太大，短期内访问量增长不会太快，对数据库可用性要求非常高的场景。</p>
+
+<h1>6.MMM</h1>
+
+<p>主从切换是Master-Slave结构的一个硬伤，如果备库只是用来实时备份数据和承担小部分读压力，那么MM结构将会是取代MS结构的不二之选。MM(Master-Master)就是主主结构,任意一个时刻，只有一个实际意义上的Master，另外一个作为Slave，只有当前的Master出现故障或者问题的使用，两台Master的角色切换，即原始的Master变为Slave，而原始的Slave切换为Master。</p>
+
+<p>MMM(Master-Master replication manager for MySQ)是一套支持双主故障切换和双主日常管理的脚本程序。MMM使用Perl语言开发，主要用来监控和管理MySQL Master-Master复制。</p>
+
+<p>MMM项目来自 Google：<a href="http://code.google.com/p/mysql-master-master">http://code.google.com/p/mysql-master-master</a></p>
+
+<p>官方网站为：<a href="http://mysql-mmm.org">http://mysql-mmm.org</a></p>
+
+<p>虽然叫做双主复制，但是业务上同一时刻只允许对一个主进行写入，另一台备选主上提供部分读服务，以加速在主主切换时刻备选主的预热，可以说MMM这套脚本程序一方面实现了故障切换的功能，另一方面其内部附加的工具脚本也可以实现多个slave的read负载均衡。</p>
+
+<h3>6.1 MMM两种典型的使用</h3>
+
+<p>典型的MM结构，即只有两台数据库Master服务器：
+<img src="/images/mysql/MMM-usage1.png"></p>
+
+<p>MM+Slaves结构，即两台数据库Master服务器加多台Slave服务器：
+<img src="/images/mysql/MMM-usage2.png"></p>
+
+<h3>6.2 Master切换的原理</h3>
+
+<p>MMM主要的功能通过下面三个脚本来实现：</p>
+
+<pre><code>mmm_mond： 负责所有的监控工作的监控守护进程，决定节点的活动;
+mmm_agentd：运行在mysql服务器上的代理守护进程，通过远程服务提供给监控节点;
+mmm_control：通过命令行管理mmm_mond进程;
+</code></pre>
+
+<p>mysql-mmm的监管端会提供多个虚拟IP(VIP)，包括一个可写VIP，多个可读VIP，通过监管端每十秒种(默认间隔)轮询一次MySQL节点来检查其状态，仅其中的一台服务器接收到写入器角色(写的VIP，Master的某一个)，其他的可以拥有阅读器角色(读VIP，包括一个备份的Master),当写库不可用(比如宕机等)，MMM会自动将写VIP给另外一台Master。</p>
+
+<p>Mysql需要创建一个mmm_monitor和多个mmm_agent账户并授权。</p>
+
+<h3>6.3 优点</h3>
+
+<pre><code>1.克服了MS结构主从切换困难的问题;
+2.是一种HA(高可用)架构(Easy Failover)
+</code></pre>
+
+<h3>6.4 缺点瓶颈</h3>
+
+<pre><code>1.MMM不适用于对数据一致性要求很高的环境,某种情况下存在双写的问题
+</code></pre>
+
+<p>其他问题参考：</p>
+
+<pre><code>1.[What's wrong with MMM?](http://www.xaprb.com/blog/2011/05/04/whats-wrong-with-mmm/)
+2.[Problems with MMM for MySQL](http://code.openark.org/blog/mysql/problems-with-mmm-for-mysql)
+</code></pre>
+
+<p>最近我们系统遇到过一次MMM导致的问题：</p>
+
+<pre><code>1.在当前的主Master(称之为Master-A)上有读写请求，从T1时刻开始，由于大量的慢查询，且这台机器善有多个Mysql Instance，导致在业务高峰期，当前的主Master对Monitor(Master-A)没有响应，因此Monitor认为这个Master(Master-A)宕机了，因此在T2时刻将读和写的VIP都漂移到另外一台备份Master(Master-B)上，这种情况下，Master-A和Master-B之间的双写复制中断，但是实际上Master-A上的写操作还在进行，即在T2之后的一段时间内，Master-A和Master-B上都存在写操作，并且不存在双写复制，当Master-A机器恢复，读VIP漂移到Master-A上，开始执行双写复制，发现存在冲突，因此双写导致数据存在冲突(比如自增ID)。
+</code></pre>
+
+<h1>7.PXC</h1>
+
+<h3>7.1 优点</h3>
+
+<h3>7.2 缺点瓶颈</h3>
+
+<p><a href="http://www.infoq.com/cn/news/2013/03/MySQL-Reference-Architectures">http://www.infoq.com/cn/news/2013/03/MySQL-Reference-Architectures</a>
+<a href="http://www.admin10000.com/document/4539.html">http://www.admin10000.com/document/4539.html</a>
+<a href="http://www.open-open.com/lib/view/open1341302877043.html">http://www.open-open.com/lib/view/open1341302877043.html</a>
+<a href="http://mysql-mmm.org/mysql-mmm.html">http://mysql-mmm.org/mysql-mmm.html</a>
+<a href="http://www.cnblogs.com/gomysql/p/3671896.html">http://www.cnblogs.com/gomysql/p/3671896.html</a>
+<a href="http://www.luocs.com/archives/849.http">http://www.luocs.com/archives/849.http</a>
+html://wiki.corp.qunar.com/download/attachments/63242976/%E5%91%A8%E5%BD%A6%E4%BC%9F%E3%80%8AMySQL%E9%AB%98%E5%8F%AF%E7%94%A8%E6%9E%B6%E6%9E%84%E6%BC%94%E5%8F%98%E4%B9%8B%E8%B7%AF_%E4%BB%8EMMM%E5%88%B0PXC%E3%80%8B.pdf?version=1&amp;modificationDate=1418272276416</p>
+
+<p><a href="http://www.cnblogs.com/bamboos/p/3543309.html">http://www.cnblogs.com/bamboos/p/3543309.html</a></p>
+]]></content>
+  </entry>
+  
+</feed>

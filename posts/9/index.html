@@ -1,0 +1,3208 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="第二章：线程安全 1.什么是线程安全 当多个线程并发的访问一个类,如果不用考虑多个线程运行时的调度执行顺序,且不需要做额外的同步及代码调用时候的限制,这个类的结果依然是正确的,则可以称之为线程安全. 无状态的类是线程安全的,无状态指不包含域也没有引用其他类的域.如下面这个类: 1
+2
+3
+4
+5 &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/posts/9/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Keep Runnnnnnnnnning...</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div class="blog-index">
+  
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/05/30/java-concurrency-in-practice-2/">Java Concurrency in Practice 2 : 线程安全</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-05-30T15:52:06+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>30</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>3:52 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p><strong>第二章：线程安全</strong></p>
+
+<h3>1.什么是线程安全</h3>
+
+<p>当多个线程并发的访问一个类,如果不用考虑多个线程运行时的调度执行顺序,且不需要做额外的同步及代码调用时候的限制,这个类的结果依然是正确的,则可以称之为线程安全.</p>
+
+<p>无状态的类是线程安全的,无状态指不包含域也没有引用其他类的域.如下面这个类:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">StateLess</span> <span class="kd">extends</span> <span class="n">HttpServlet</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 从请求中获取两个数字,并计算两个数字的最大公约数,返回</span>
+</span><span class='line'><span class="cm">     *</span>
+</span><span class='line'><span class="cm">     * @param req</span>
+</span><span class='line'><span class="cm">     * @param resp</span>
+</span><span class='line'><span class="cm">     * @throws ServletException</span>
+</span><span class='line'><span class="cm">     * @throws IOException</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">protected</span> <span class="kt">void</span> <span class="nf">service</span><span class="o">(</span><span class="n">HttpServletRequest</span> <span class="n">req</span><span class="o">,</span> <span class="n">HttpServletResponse</span> <span class="n">resp</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">ServletException</span><span class="o">,</span> <span class="n">IOException</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Pair</span><span class="o">&lt;</span><span class="n">Integer</span><span class="o">,</span> <span class="n">Integer</span><span class="o">&gt;</span> <span class="n">number</span> <span class="o">=</span> <span class="n">extract</span><span class="o">(</span><span class="n">req</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">result</span> <span class="o">=</span> <span class="n">computer</span><span class="o">(</span><span class="n">number</span><span class="o">.</span><span class="na">getLeft</span><span class="o">(),</span> <span class="n">number</span><span class="o">.</span><span class="na">getRight</span><span class="o">());</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">setToResponse</span><span class="o">(</span><span class="n">resp</span><span class="o">,</span> <span class="n">result</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2.原子性</h3>
+
+<p>常见的竞争条件1:检查再运行(check_then_act).检查再运行指使用潜在的过期值来做决策或者执行计算.如下面的代码:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Account</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 余额</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">float</span> <span class="n">balance</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 取款</span>
+</span><span class='line'><span class="cm">     * @param count</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">withdrawing</span><span class="o">(</span><span class="kt">float</span> <span class="n">count</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">balance</span> <span class="o">&gt;</span> <span class="n">count</span><span class="o">){</span>         <span class="c1">//check</span>
+</span><span class='line'>            <span class="n">doWithdrawing</span><span class="o">(</span><span class="n">count</span><span class="o">);</span>     <span class="c1">//act</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">void</span> <span class="nf">doWithdrawing</span><span class="o">(</span><span class="kt">float</span> <span class="n">count</span><span class="o">){</span>
+</span><span class='line'>        <span class="n">balance</span> <span class="o">-=</span> <span class="n">count</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>常见的竞争条件2:读-改-写.如count++ 这种非原子的操作,其实包含三个原子操作</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">Read</span>
+</span><span class='line'><span class="n">Add</span>
+</span><span class='line'><span class="n">Write</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>什么是原子操作:</p>
+
+<p>假设有操作A,在其他线程来看,执行操作A的线程执行时,要么操作A执行完成,要么一点都没有执行.则称之为原子操作.</p>
+
+<p>如果前面的例子是原子的,则不会出现检查再运行和读-改-写的竞争条件.</p>
+
+<p>为例保证线程安全,操作必须原子的执行.</p>
+
+<p>比如count++,我们可以使用AtomicInteger:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">count</span><span class="o">.</span><span class="na">getAndIncrement</span><span class="o">();</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>3.锁</h3>
+
+<p>java提供了强制原子性的内置锁机制:synchronized块.一个synchronized块包含两部分:1.锁对象的引用;2.锁对象保护的代码块;</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">synchronized</span><span class="o">(</span><span class="n">lock</span><span class="o">){</span>
+</span><span class='line'>  <span class="c1">// code</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>每个java对象都代表一个互斥锁(称之为内部锁或者监视器锁),因此每个java对象都可以扮演lock的角色.对于方法级别的synchronized,获取的是方法所在对象的锁.对于静态方法,从Class对象上获取锁.</p>
+
+<p>当一个线程请求另外一个线程持有的锁时候,请求线程将会被阻塞.但是,内部锁是可以重入(Reentrancy)的,即线程请求它自己占有的锁的时候,是会成功的.这表示锁的请求是基于每个线程(per-thread)的,而不是基于每个调用(per-invocation)的.</p>
+
+<h3>4.用锁来保护状态</h3>
+
+<p>对于可以被多个线程访问的可变状态变量,如果所有访问它的线程在执行时都占有同一个锁,则称这个变量是由这个锁保护的.</p>
+
+<p>并不是所有数据都需要锁的保护,只有哪些被多个线程访问的可变数据.</p>
+
+<p>如果类的不变约束涉及到多个变量,则需要用同一个锁来保护这多个变量.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Account</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 余额</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">float</span> <span class="n">balance</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 操作次数</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 取款</span>
+</span><span class='line'><span class="cm">     * @param value</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">withdrawing</span><span class="o">(</span><span class="kt">float</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">synchronized</span> <span class="o">(</span><span class="k">this</span><span class="o">){</span>    <span class="c1">//同一个锁保护多个可变变量</span>
+</span><span class='line'>            <span class="k">if</span><span class="o">(</span><span class="n">balance</span> <span class="o">&gt;</span> <span class="n">value</span><span class="o">){</span>
+</span><span class='line'>                <span class="n">doWithdrawing</span><span class="o">(</span><span class="n">value</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="n">count</span><span class="o">++;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>5.活跃度和性能</h3>
+
+<p>为了达到安全的目的,我们完全可以将方法设置为synchronized,但是这样带来的问题是:我们期房方法能提供并发访问,但是为了安全,实际上变成的串行访问.</p>
+
+<p>因此在使用synchronized的时候需要考虑安全(不能妥协),简单性和性能.</p>
+
+<p>比如网络或者IO这种耗时的操作器件,不应该占用锁.</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/05/30/sublimeshu-ru-zhong-wen/">Sublime输入中文</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-05-30T13:02:58+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>30</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>1:02 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>环境:Ubuntu 13.04</p>
+
+<h4>1.保存下述代码为 sublime-imfix.c 文件</h4>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/* C
+</span><span class='line'>sublime-imfix.c
+</span><span class='line'>Use LD_PRELOAD to interpose some function to fix sublime input method support for linux.
+</span><span class='line'>By Cjacker Huang &lt;jianzhong.huang at i-soft.com.cn&gt;
+</span><span class='line'>
+</span><span class='line'>gcc -shared -o libsublime-imfix.so sublime_imfix.c  `pkg-config --libs --cflags gtk+-2.0` -fPIC
+</span><span class='line'>LD_PRELOAD=./libsublime-imfix.so sublime_text
+</span><span class='line'>*/
+</span><span class='line'>#include &lt;gtk/gtk.h&gt;
+</span><span class='line'>#include &lt;gdk/gdkx.h&gt;
+</span><span class='line'>typedef GdkSegment GdkRegionBox;
+</span><span class='line'>
+</span><span class='line'>struct _GdkRegion
+</span><span class='line'>{
+</span><span class='line'>  long size;
+</span><span class='line'>  long numRects;
+</span><span class='line'>  GdkRegionBox *rects;
+</span><span class='line'>  GdkRegionBox extents;
+</span><span class='line'>};
+</span><span class='line'>
+</span><span class='line'>GtkIMContext *local_context;
+</span><span class='line'>
+</span><span class='line'>void
+</span><span class='line'>gdk_region_get_clipbox (const GdkRegion *region,
+</span><span class='line'>            GdkRectangle    *rectangle)
+</span><span class='line'>{
+</span><span class='line'>  g_return_if_fail (region != NULL);
+</span><span class='line'>  g_return_if_fail (rectangle != NULL);
+</span><span class='line'>
+</span><span class='line'>  rectangle-&gt;x = region-&gt;extents.x1;
+</span><span class='line'>  rectangle-&gt;y = region-&gt;extents.y1;
+</span><span class='line'>  rectangle-&gt;width = region-&gt;extents.x2 - region-&gt;extents.x1;
+</span><span class='line'>  rectangle-&gt;height = region-&gt;extents.y2 - region-&gt;extents.y1;
+</span><span class='line'>  GdkRectangle rect;
+</span><span class='line'>  rect.x = rectangle-&gt;x;
+</span><span class='line'>  rect.y = rectangle-&gt;y;
+</span><span class='line'>  rect.width = 0;
+</span><span class='line'>  rect.height = rectangle-&gt;height; 
+</span><span class='line'>  //The caret width is 2; 
+</span><span class='line'>  //Maybe sometimes we will make a mistake, but for most of the time, it should be the caret.
+</span><span class='line'>  if(rectangle-&gt;width == 2 && GTK_IS_IM_CONTEXT(local_context)) {
+</span><span class='line'>        gtk_im_context_set_cursor_location(local_context, rectangle);
+</span><span class='line'>  }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>//this is needed, for example, if you input something in file dialog and return back the edit area
+</span><span class='line'>//context will lost, so here we set it again.
+</span><span class='line'>
+</span><span class='line'>static GdkFilterReturn event_filter (GdkXEvent *xevent, GdkEvent *event, gpointer im_context)
+</span><span class='line'>{
+</span><span class='line'>    XEvent *xev = (XEvent *)xevent;
+</span><span class='line'>    if(xev-&gt;type == KeyRelease && GTK_IS_IM_CONTEXT(im_context)) {
+</span><span class='line'>       GdkWindow * win = g_object_get_data(G_OBJECT(im_context),"window");
+</span><span class='line'>       if(GDK_IS_WINDOW(win))
+</span><span class='line'>         gtk_im_context_set_client_window(im_context, win);
+</span><span class='line'>    }
+</span><span class='line'>    return GDK_FILTER_CONTINUE;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>void gtk_im_context_set_client_window (GtkIMContext *context,
+</span><span class='line'>          GdkWindow    *window)
+</span><span class='line'>{
+</span><span class='line'>  GtkIMContextClass *klass;
+</span><span class='line'>  g_return_if_fail (GTK_IS_IM_CONTEXT (context));
+</span><span class='line'>  klass = GTK_IM_CONTEXT_GET_CLASS (context);
+</span><span class='line'>  if (klass-&gt;set_client_window)
+</span><span class='line'>    klass-&gt;set_client_window (context, window);
+</span><span class='line'>
+</span><span class='line'>  if(!GDK_IS_WINDOW (window))
+</span><span class='line'>    return;
+</span><span class='line'>  g_object_set_data(G_OBJECT(context),"window",window);
+</span><span class='line'>  int width = gdk_window_get_width(window);
+</span><span class='line'>  int height = gdk_window_get_height(window);
+</span><span class='line'>  if(width != 0 && height !=0) {
+</span><span class='line'>    gtk_im_context_focus_in(context);
+</span><span class='line'>    local_context = context;
+</span><span class='line'>  }
+</span><span class='line'>  gdk_window_add_filter (window, event_filter, context); 
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h4>2.安装C/C++的编译环境和gtk libgtk2.0-dev</h4>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install build-essential
+</span><span class='line'>sudo apt-get install libgtk2.0-dev</span></code></pre></td></tr></table></div></figure>
+
+
+<h4>3.编译共享内库</h4>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>gcc -shared -o libsublime-imfix.so sublime_imfix.c  `pkg-config --libs --cflags gtk+-2.0` -fPIC</span></code></pre></td></tr></table></div></figure>
+
+
+<h4>4.启动 Sublime Text 2</h4>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>LD_PRELOAD=./libsublime-imfix.so sublime_text</span></code></pre></td></tr></table></div></figure>
+
+
+<p>现在就可以输入中文了.</p>
+
+<h4>5.别名</h4>
+
+<p>每次这样启动sublime,很是别扭,我们取个别名就可以了.同时libsublime-imfix.so放在~目录下很是别扭,哪天可能不小心删除了,也把它移个位置:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ whereis sublime
+</span><span class='line'>sublime: /usr/local/bin/sublime
+</span><span class='line'>
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ cd /usr/local/bin/
+</span><span class='line'>
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:/usr/local/bin$ sudo cp ~/libsublime-imfix.so .
+</span><span class='line'>
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ vim ~/.bashrc</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在.bashrc文件中加一个别名:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#sublime
+</span><span class='line'>alias sublime='LD_PRELOAD=/usr/local/bin/libsublime-imfix.so sublime_text'</span></code></pre></td></tr></table></div></figure>
+
+
+<p>退出之后:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ source ~/.bashrc</span></code></pre></td></tr></table></div></figure>
+
+
+<p>现在,在命令行下直接输入sublime就可以开启可以输入中文的sublime了.</p>
+
+<h4>附上截图</h4>
+
+<p><img src="/images/sublime_chinese.png"></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/05/30/k-th-smallest-element-in-the-union-of-two-sorted-arrays/">两个已序数组的第k小元素</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-05-30T10:44:06+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>30</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>10:44 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><h2>Problem:</h2>
+
+<p>两个已序数组(从小到大)的第k小元素.数组分别记为A(长度m)和B(长度n).</p>
+
+<h2>Solutions</h2>
+
+<h3>方法1</h3>
+
+<p>将两个数组merge成一个有序数组(m+n大小),再直接取第k个元素.</p>
+
+<p>时间复杂度:O(m+n).</p>
+
+<p>空间复杂度:O(m+n).</p>
+
+<h3>方法2</h3>
+
+<p>两个指针i和j分别从小到大遍历两个数组,代码大致如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>i=0, j=0
+</span><span class='line'>while((i+j)&lt;k && (i&lt;m || j&lt;n)){
+</span><span class='line'>    if(A[i] &lt; B[j]) i++;
+</span><span class='line'>    else j++;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>时间复杂度:O(k).</p>
+
+<p>空间复杂度:O(1).</p>
+
+<h3>方法3</h3>
+
+<p>利用方法2,我们发现,如果</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>B[j-1] &lt; A[i] &lt; B[j]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>则,A[i]为第i+j+1小的元素,同理,如果</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>A[i-1] &lt; B[j] &lt; A[i]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>则B[j]是第i+j+1小的元素.令</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>i+j+1 = k
+</span><span class='line'>即
+</span><span class='line'>i+j=k-1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>则找到了我们需要的第k小元素.</p>
+
+<p>下面是我们的方法:</p>
+
+<ol>
+<li><p>二分搜索数组A,i的初值:
+<code>
+i = (int)((double)m / (m+n) * (k-1));
+</code>
+令j = k-1-i;</p></li>
+<li><p>比较,如果
+<code>
+B[j-1] &lt; A[i] &lt; B[j]
+</code>
+则返回A[i]. 如果
+<code>
+A[i-1] &lt; B[j] &lt; A[i]
+</code>
+则返回B[j];</p></li>
+<li><p>步骤2未结束,则比较A[i]和B[j]</p>
+
+<p>如果A[i]&lt;B[j],则我们可以排除比A[i]小的元素和比B[j]大的元素,即</p>
+
+<p>在A[i+1, m]和B[0, j]中查找第k-i小的元素</p>
+
+<p>否在,可以排除比B[j]小的元素和比A[i]大的元素,即</p>
+
+<p>在A[0, i]和B[j+1, n]中查找第k-j小的元素</p></li>
+</ol>
+
+
+<p>简单示例代码(不完整):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>int kthSmallest(int A[], int m, int B[], int n, int k) {
+</span><span class='line'>  
+</span><span class='line'>  int i = (int)((double)m / (m+n) * (k-1));
+</span><span class='line'>  int j = (k-1) - i;
+</span><span class='line'>
+</span><span class='line'>  int Ai_1 = ((i == 0) ? INT_MIN : A[i-1]);
+</span><span class='line'>  int Bj_1 = ((j == 0) ? INT_MIN : B[j-1]);
+</span><span class='line'>  int Ai   = ((i == m) ? INT_MAX : A[i]);
+</span><span class='line'>  int Bj   = ((j == n) ? INT_MAX : B[j]);
+</span><span class='line'> 
+</span><span class='line'>  if (Bj_1 &lt; Ai && Ai &lt; Bj)
+</span><span class='line'>    return Ai;
+</span><span class='line'>  else if (Ai_1 &lt; Bj && Bj &lt; Ai)
+</span><span class='line'>    return Bj;
+</span><span class='line'> 
+</span><span class='line'>  if (Ai &lt; Bj)
+</span><span class='line'>    return kthSmallest(A+i+1, m-i-1, B, j, k-i);
+</span><span class='line'>  else
+</span><span class='line'>    return kthSmallest(A, i, B+j+1, n-j-1, k-j);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>时间复杂度:O(logm + logn)</p>
+
+<p>空间复杂度:O(1)</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/05/24/mysqlpei-zhi-wen-jian/">MySQL配置文件</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-05-24T15:39:50+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>24</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>3:39 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>MySQL配置文件my.cnf解析：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://www.blogjava.net/hunter129/archive/2009/01/18/251744.html</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/05/21/numberical-algorithm/">Numberical Algorithm</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-05-21T00:20:34+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>21</span><span class='date-suffix'>st</span>, <span class='date-year'>2014</span></span> <span class='time'>12:20 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><h1>数论算法</h1>
+
+<h2>1. x*y</h2>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="cm">/**</span>
+</span><span class='line'><span class="cm"> * x乘以y</span>
+</span><span class='line'><span class="cm"> * 限制：y &gt;= 0</span>
+</span><span class='line'><span class="cm"> *</span>
+</span><span class='line'><span class="cm"> * 原理:         | (x*(y&gt;&gt;1))&lt;&lt;1      y偶数</span>
+</span><span class='line'><span class="cm"> *      x * y = | x + (x*(y&gt;&gt;1))&lt;&lt;1  y奇数</span>
+</span><span class='line'><span class="cm"> *              | 0                  y == 0</span>
+</span><span class='line'><span class="cm"> * @param x</span>
+</span><span class='line'><span class="cm"> * @param y</span>
+</span><span class='line'><span class="cm"> * @return</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="kd">private</span> <span class="kd">static</span> <span class="kt">int</span> <span class="nf">doMuliply</span><span class="o">(</span><span class="kt">int</span> <span class="n">x</span><span class="o">,</span> <span class="kt">int</span> <span class="n">y</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">y</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="k">return</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">z</span> <span class="o">=</span> <span class="n">doMuliply</span><span class="o">(</span><span class="n">x</span><span class="o">,</span> <span class="n">y</span> <span class="o">&gt;&gt;</span> <span class="mi">1</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">return</span> <span class="n">NumberUtils</span><span class="o">.</span><span class="na">isEven</span><span class="o">(</span><span class="n">y</span><span class="o">)</span> <span class="o">?</span> <span class="n">z</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span> <span class="o">:</span> <span class="n">x</span> <span class="o">+</span> <span class="o">(</span><span class="n">z</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>2. x/y</h2>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="cm">/**</span>
+</span><span class='line'><span class="cm"> * x除以y</span>
+</span><span class='line'><span class="cm"> * 限制：x &gt; 0 ，y &gt; 0</span>
+</span><span class='line'><span class="cm"> *</span>
+</span><span class='line'><span class="cm"> *              | ArithmeticException                     y == 0</span>
+</span><span class='line'><span class="cm"> * 原理          | (0, 0)                                  x == 0</span>
+</span><span class='line'><span class="cm"> *      x / y = | (q&#39;&lt;&lt;1, r&#39;&lt;&lt;1) 其中(q&#39;,r&#39;)=(x&gt;&gt;1)/y      x偶数</span>
+</span><span class='line'><span class="cm"> *              | (q&#39;&lt;&lt;1, r&#39;&lt;&lt;1 + 1) 其中(q&#39;,r&#39;)=(x&gt;&gt;1)/y  x奇数</span>
+</span><span class='line'><span class="cm"> * @param x</span>
+</span><span class='line'><span class="cm"> * @param y</span>
+</span><span class='line'><span class="cm"> * @return : 商，余</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="n">Pair</span><span class="o">&lt;</span><span class="n">Integer</span><span class="o">,</span> <span class="n">Integer</span><span class="o">&gt;</span> <span class="nf">doDivide</span><span class="o">(</span><span class="kt">int</span> <span class="n">x</span><span class="o">,</span> <span class="kt">int</span> <span class="n">y</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">y</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="k">throw</span> <span class="k">new</span> <span class="nf">ArithmeticException</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">x</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="k">return</span> <span class="n">Pair</span><span class="o">.</span><span class="na">build</span><span class="o">(</span><span class="mi">0</span><span class="o">,</span> <span class="mi">0</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">Pair</span><span class="o">&lt;</span><span class="n">Integer</span><span class="o">,</span> <span class="n">Integer</span><span class="o">&gt;</span> <span class="n">half</span> <span class="o">=</span> <span class="n">doDivide</span><span class="o">(</span><span class="n">x</span> <span class="o">&gt;&gt;</span> <span class="mi">1</span><span class="o">,</span> <span class="n">y</span><span class="o">);</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">left</span> <span class="o">=</span> <span class="n">half</span><span class="o">.</span><span class="na">getLeft</span><span class="o">()</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">right</span> <span class="o">=</span> <span class="n">half</span><span class="o">.</span><span class="na">getRight</span><span class="o">()</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">NumberUtils</span><span class="o">.</span><span class="na">isOdd</span><span class="o">(</span><span class="n">x</span><span class="o">))</span> <span class="n">right</span> <span class="o">+=</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">return</span> <span class="o">(</span><span class="n">right</span> <span class="o">&lt;</span> <span class="n">y</span><span class="o">)</span> <span class="o">?</span> <span class="n">Pair</span><span class="o">.</span><span class="na">build</span><span class="o">(</span><span class="n">left</span><span class="o">,</span> <span class="n">right</span><span class="o">)</span> <span class="o">:</span> <span class="n">Pair</span><span class="o">.</span><span class="na">build</span><span class="o">(</span><span class="n">left</span><span class="o">+</span><span class="mi">1</span><span class="o">,</span> <span class="n">right</span><span class="o">-</span><span class="n">y</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>3. pow(x, y) % N</h2>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="cm">/**</span>
+</span><span class='line'><span class="cm"> * pow(x, y) % N</span>
+</span><span class='line'><span class="cm"> * 限制：x &gt; 0, y &gt; 0, N &gt; 1</span>
+</span><span class='line'><span class="cm"> *</span>
+</span><span class='line'><span class="cm"> * 原理:                  | (pow(x, y&gt;&gt;1) &lt;&lt; 1) % N       y是偶数</span>
+</span><span class='line'><span class="cm"> *        pow(x, y) % N =|</span>
+</span><span class='line'><span class="cm"> *                       | x * (pow(x, y&gt;&gt;1) &lt;&lt; 1) % N   y是奇数</span>
+</span><span class='line'><span class="cm"> * @param x</span>
+</span><span class='line'><span class="cm"> * @param y</span>
+</span><span class='line'><span class="cm"> * @param N</span>
+</span><span class='line'><span class="cm"> * @return</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="kt">int</span> <span class="nf">powerMod</span><span class="o">(</span><span class="kt">int</span> <span class="n">x</span><span class="o">,</span> <span class="kt">int</span> <span class="n">y</span><span class="o">,</span> <span class="kt">int</span> <span class="n">N</span><span class="o">){</span>
+</span><span class='line'>    <span class="k">if</span><span class="o">(</span><span class="n">y</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="k">return</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">half</span> <span class="o">=</span> <span class="n">powerMod</span><span class="o">(</span><span class="n">x</span><span class="o">,</span> <span class="n">y</span><span class="o">&gt;&gt;</span><span class="mi">1</span><span class="o">,</span> <span class="n">N</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">return</span> <span class="n">NumberUtils</span><span class="o">.</span><span class="na">isEven</span><span class="o">(</span><span class="n">y</span><span class="o">)</span> <span class="o">?</span> <span class="o">(</span><span class="n">half</span> <span class="o">*</span> <span class="n">half</span><span class="o">)</span> <span class="o">%</span> <span class="n">N</span> <span class="o">:</span> <span class="o">(</span><span class="n">x</span> <span class="o">*</span><span class="n">half</span> <span class="o">*</span> <span class="n">half</span><span class="o">)</span> <span class="o">%</span> <span class="n">N</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>4. 欧几里德GCD算法</h2>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="cm">/**</span>
+</span><span class='line'><span class="cm"> * GCD(x, y)</span>
+</span><span class='line'><span class="cm"> * 限制：x &gt; y &gt; 0</span>
+</span><span class='line'><span class="cm"> *</span>
+</span><span class='line'><span class="cm"> * 原理：</span>
+</span><span class='line'><span class="cm"> *       GCD(x, y) = GCD(y, x%y)</span>
+</span><span class='line'><span class="cm"> *</span>
+</span><span class='line'><span class="cm"> * @param x</span>
+</span><span class='line'><span class="cm"> * @param y</span>
+</span><span class='line'><span class="cm"> * @return</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="kt">int</span> <span class="nf">gcd</span><span class="o">(</span><span class="kt">int</span> <span class="n">x</span><span class="o">,</span> <span class="kt">int</span> <span class="n">y</span><span class="o">){</span>
+</span><span class='line'>    <span class="k">if</span><span class="o">(</span><span class="n">y</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="k">return</span> <span class="n">x</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">gcd</span><span class="o">(</span><span class="n">y</span><span class="o">,</span> <span class="n">x</span> <span class="o">%</span> <span class="n">y</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>5. 素数测试</h2>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="cm">/**</span>
+</span><span class='line'><span class="cm"> * 素数测试</span>
+</span><span class='line'><span class="cm"> * 限制：x &gt; 0, K &gt; 0</span>
+</span><span class='line'><span class="cm"> *</span>
+</span><span class='line'><span class="cm"> * 原理：</span>
+</span><span class='line'><span class="cm"> * 费马定理：如果p是素数，则对任意的 1 &lt;= a &lt; x,有 pow(a, x-1) = 1 (mod x)</span>
+</span><span class='line'><span class="cm"> * 这是素数的必要条件，但不是充分条件。</span>
+</span><span class='line'><span class="cm"> * 随机选k个a，分别用费马定理去测试。</span>
+</span><span class='line'><span class="cm"> *</span>
+</span><span class='line'><span class="cm"> * @param x</span>
+</span><span class='line'><span class="cm"> * @return</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="kt">boolean</span> <span class="nf">isPrime</span><span class="o">(</span><span class="kt">int</span> <span class="n">x</span><span class="o">,</span> <span class="kt">int</span> <span class="n">K</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">K</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">a</span> <span class="o">=</span> <span class="o">(</span><span class="kt">int</span><span class="o">)(</span><span class="n">Math</span><span class="o">.</span><span class="na">random</span><span class="o">()</span> <span class="o">*</span> <span class="n">x</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">powerMod</span><span class="o">(</span><span class="n">a</span><span class="o">,</span> <span class="n">x</span><span class="o">-</span><span class="mi">1</span><span class="o">,</span> <span class="n">x</span><span class="o">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="o">){</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>总结：
+《Algorithm》这本书我的理解，关注更多的是工业级别（或者说实用级别）的算法，这一点和算法导论不同，算法导论可以说是学院派，这个是工程师派。
+比如上面的素数测试，这本书利用多次费马定理，从而降低误判概率（理论上还是存在误判的情况），但是正像作者说的，很多伟大的算法，都是很大概率正确的算法（而不是完全正确）。</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/05/20/postgresql/">PostgreSQL</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-05-20T21:37:19+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>20</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>9:37 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><h2>1.什么是PostgreSQL</h2>
+
+<p>The World&rsquo;s most advanced open source database.</p>
+
+<p>PostgreSQL is a powerful, open source object-relational database system.</p>
+
+<p>主页：<a href="http://www.postgresql.org/">http://www.postgresql.org/</a></p>
+
+<p>支持的系统：Linux, UNIX (AIX, BSD, HP-UX, SGI IRIX, Mac OS X, Solaris, Tru64), and Windows.</p>
+
+<p>功能：has full support for foreign keys, joins, views, triggers, and stored procedures.</p>
+
+<p>数据类型：It includes most SQL:2008 data types, including INTEGER, NUMERIC, BOOLEAN, CHAR, VARCHAR, DATE, INTERVAL, and TIMESTAMP. It also supports storage of binary large objects, including pictures, sounds, or video.此外，用户可以创建自定义数据类型，通常通过PostgreSQL的GiST机制，它们也能被很好得索引，比如PostGIS地理信息系统的数据类型.</p>
+
+<p>语言支持：It has native programming interfaces for C/C++, Java, .Net, Perl, Python, Ruby, Tcl, ODBC, among others, and exceptional documentation.</p>
+
+<p>用户手册：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://www.postgresql.org/docs/manuals/
+</span><span class='line'>http://www.highgo.com.cn/docs/docs90cn/index.html</span></code></pre></td></tr></table></div></figure>
+
+
+<p>大小限制：</p>
+
+<p>Maximum Database Size   Unlimited</p>
+
+<p>Maximum Table Size  32 TB</p>
+
+<p>Maximum Row Size    1.6 TB</p>
+
+<p>Maximum Field Size  1 GB</p>
+
+<p>Maximum Rows per Table  Unlimited</p>
+
+<p>Maximum Columns per Table   250 - 1600 depending on column types</p>
+
+<p>Maximum Indexes per Table   Unlimited</p>
+
+<p>扩展库：</p>
+
+<p>(1)地理数据对象：PostGIS GPL</p>
+
+<p>(2)全文检索：通过Tsearch2或OpenFTS</p>
+
+<p>人物：老何</p>
+
+<h2>2.PostgreSQL历史</h2>
+
+<p>参见wiki：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://zh.wikipedia.org/wiki/PostgreSQL</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>3.PostgreSQL VS MySQL</h2>
+
+<p>MySQL：Slashdot、Twitter、Facebook、Wikipedia</p>
+
+<p>PostgreSQL：Yahoo、Disqus</p>
+
+<h2>4.PostgreSQL安装</h2>
+
+<h4>1. 命令行安装（Ubuntu为例子）</h4>
+
+<h5>(1)安装PostgreSQL客户端</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install postgresql-client</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(2)安装PostgreSQL服务器</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install postgresql</span></code></pre></td></tr></table></div></figure>
+
+
+<p>正常情况下，安装完成后，PostgreSQL服务器会自动在本机的5432端口开启。</p>
+
+<h5>(3)安装图形管理界面：</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install pgadmin3</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(4)安装PostGis：</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install postgresql-9.1-postgis</span></code></pre></td></tr></table></div></figure>
+
+
+<p>本机安装的时候，postgresql-9.1-postgis最终的postgis版本为1.5</p>
+
+<h4>2. 可视化安装</h4>
+
+<h5>(1)安装包：</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://www.enterprisedb.com/products-services-training/pgdownload</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(2)安装PostgreSQL</h5>
+
+<p>下载完成之后，直接安装（Ubuntu为例）：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Download$ sudo ./postgresql-9.3.4-3-linux-x64.run</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(3)安装PostGis</h5>
+
+<p>在安装快结束的时候要将StackBuilder那个勾打上，可以用来下载安装扩展工具包。Finish之后进入StackBuiler选择本地的PostgreSQL，点next，之后在展开Spatial Extensions下勾选PostGIS，则会下载安装PostGis。</p>
+
+<h5>(4)设置环境变量</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/etc/profile 加上 /opt/PostgreSQL/9.3/bin</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>5.PostgreSQL简单使用</h2>
+
+<h5>1. 查看版本</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:/var/run/postgresql$ psql --version
+</span><span class='line'>psql (PostgreSQL) 9.3.4</span></code></pre></td></tr></table></div></figure>
+
+
+<p>初次安装后，默认生成一个名为postgres的数据库和一个名为postgres的数据库用户。这里需要注意的是，同时还生成了一个名为postgres的Linux系统用户。</p>
+
+<h5>2. 登录 psql -h host -U user -d database_name -p port</h5>
+
+<p>PostgreSQL默认端口为5432,-d参数指定数据库名称：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:/var/run/postgresql$ psql -h localhost -U postgres
+</span><span class='line'>Password for user postgres: 
+</span><span class='line'>psql.bin (9.3.4)
+</span><span class='line'>Type "help" for help.</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>3. 退出</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>\q</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>4. 所有用户</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>postgis_template=# \du
+</span><span class='line'>                             List of roles
+</span><span class='line'> Role name |                   Attributes                   | Member of 
+</span><span class='line'>-----------+------------------------------------------------+-----------
+</span><span class='line'> postgres  | Superuser, Create role, Create DB, Replication | {}</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>4. 连接信息</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>postgres=# \conninfo
+</span><span class='line'>You are connected to database "postgres" as user "postgres" on host "localhost" at port "5432".</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>4. show databases</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>hotel=# \l
+</span><span class='line'>                                      List of databases
+</span><span class='line'>        Name         |  Owner   | Encoding |  Collate   |   Ctype    |   Access privileges   
+</span><span class='line'>---------------------+----------+----------+------------+------------+-----------------------
+</span><span class='line'> fb_stat             | postgres | UTF8     | en_US.utf8 | en_US.utf8 | </span></code></pre></td></tr></table></div></figure>
+
+
+<h5>5. switch database</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>postgres=# \c postgis_template
+</span><span class='line'>You are now connected to database "postgis_template" as user "postgres".</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>6. show tables</h5>
+
+<p>\d 显示所有表</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>postgis_template=# \d
+</span><span class='line'>                 List of relations
+</span><span class='line'>  Schema  |       Name        |   Type   |  Owner   
+</span><span class='line'>----------+-------------------+----------+----------
+</span><span class='line'> public   | geography_columns | view     | postgres
+</span><span class='line'> public   | geometry_columns  | view     | postgres
+</span><span class='line'> public   | spatial_ref_sys   | table    | postgres
+</span><span class='line'> topology | layer             | table    | postgres
+</span><span class='line'> topology | topology          | table    | postgres
+</span><span class='line'> topology | topology_id_seq   | sequence | postgres
+</span><span class='line'>(6 rows)
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>\d table_name</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>postgis_template=# \d geography_columns
+</span><span class='line'>     View "public.geography_columns"
+</span><span class='line'>       Column       |  Type   | Modifiers 
+</span><span class='line'>--------------------+---------+-----------
+</span><span class='line'> f_table_catalog    | name    | 
+</span><span class='line'> f_table_schema     | name    | 
+</span><span class='line'> f_table_name       | name    | 
+</span><span class='line'> f_geography_column | name    | 
+</span><span class='line'> coord_dimension    | integer | 
+</span><span class='line'> srid               | integer | 
+</span><span class='line'> type               | text    |
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>7. 数据库操作</h5>
+
+<p>基本的数据库操作，就是使用一般的SQL语言:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># 创建表 
+</span><span class='line'>CREATE TABLE user_tbl(name VARCHAR(20), signup_date DATE);
+</span><span class='line'>
+</span><span class='line'># 插入数据 
+</span><span class='line'>INSERT INTO user_tbl(name, signup_date) VALUES('张三', '2013-12-22');
+</span><span class='line'>
+</span><span class='line'># 选择记录 
+</span><span class='line'>SELECT * FROM user_tbl;
+</span><span class='line'>
+</span><span class='line'># 更新数据 
+</span><span class='line'>UPDATE user_tbl set name = '李四' WHERE name = '张三';
+</span><span class='line'>
+</span><span class='line'># 删除记录 
+</span><span class='line'>DELETE FROM user_tbl WHERE name = '李四' ;
+</span><span class='line'>
+</span><span class='line'># 添加列
+</span><span class='line'>ALTER TABLE user_tbl ADD email VARCHAR(40);
+</span><span class='line'>
+</span><span class='line'># 更新表结构 
+</span><span class='line'>ALTER TABLE user_tbl ALTER COLUMN signup_date SET NOT NULL;
+</span><span class='line'>
+</span><span class='line'># 更名列 
+</span><span class='line'>ALTER TABLE user_tbl RENAME COLUMN signup_date TO signup;
+</span><span class='line'>
+</span><span class='line'># 删除列 
+</span><span class='line'>ALTER TABLE user_tbl DROP COLUMN email;
+</span><span class='line'>
+</span><span class='line'># 表格更名 
+</span><span class='line'>ALTER TABLE user_tbl RENAME TO backup_tbl;
+</span><span class='line'>
+</span><span class='line'># 删除表格 
+</span><span class='line'>DROP TABLE IF EXISTS backup_tbl;
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>8. PostgreSQL Client支持的一些命令（直接在shell运行）：</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>clusterdb -- cluster a PostgreSQL database
+</span><span class='line'>createdb -- create a new PostgreSQL database
+</span><span class='line'>createlang -- install a PostgreSQL procedural language
+</span><span class='line'>createuser -- define a new PostgreSQL user account
+</span><span class='line'>dropdb -- remove a PostgreSQL database
+</span><span class='line'>droplang -- remove a PostgreSQL procedural language
+</span><span class='line'>dropuser -- remove a PostgreSQL user account
+</span><span class='line'>ecpg -- embedded SQL C preprocessor
+</span><span class='line'>pg_basebackup -- take a base backup of a PostgreSQL cluster
+</span><span class='line'>pg_config -- retrieve information about the installed version of PostgreSQL
+</span><span class='line'>pg_dump --  extract a PostgreSQL database into a script file or other archive file
+</span><span class='line'>pg_dumpall -- extract a PostgreSQL database cluster into a script file
+</span><span class='line'>pg_receivexlog -- streams transaction logs from a PostgreSQL cluster
+</span><span class='line'>pg_restore --  restore a PostgreSQL database from an archive file created by pg_dump
+</span><span class='line'>psql --  PostgreSQL interactive terminal
+</span><span class='line'>reindexdb -- reindex a PostgreSQL database
+</span><span class='line'>vacuumdb -- garbage-collect and analyze a PostgreSQL database
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>6.Client</h2>
+
+<h5>1.JDBC Driver</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://jdbc.postgresql.org/
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>2.maven package:</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;!--postgresql--&gt;
+</span><span class='line'>&lt;dependency&gt;
+</span><span class='line'>    &lt;groupId&gt;postgresql&lt;/groupId&gt;
+</span><span class='line'>    &lt;artifactId&gt;postgresql&lt;/artifactId&gt;
+</span><span class='line'>&lt;/dependency&gt;
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>7.PostGis</h2>
+
+<p>PostGIS是一个重要的开源GIS基础软件，因为目前它是为数不多的开源空间数据库存储方案之一，它为PostgreSQL提供了存储空间地理数据的支持，使PostgreSQL成为了一个空间数据库，能够进行空间数据管理、数量测量与几何拓扑分析。</p>
+
+<p>支持空间对象模型：点、折线、多边形、多点、多折线、多多边形与几何集合。</p>
+
+<p>空间分析功能：如求交、求并、求差、缓冲区等;</p>
+
+<p>空间索引：利用R-tree与GiST实现了空间索引，大大加快了正交查询的速度;</p>
+
+<p>存储：Well-known text与well-known binary，前者是一种用文本表示空间对象的注记方法，后者是一种用二进制流表示空间对象的存储方法。PostGIS使用中两种格式在数据库中存储空间对象。</p>
+
+<p>手册：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://postgis.net/docs/manual-2.0/
+</span><span class='line'>http://workshops.boundlessgeo.com/postgis-intro/
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Geography：latitude/longitude，球坐标</p>
+
+<p>常用4326坐标系统，4326坐标系统指的是WGS 84（World Geodetic System，世界坐标系）标准提供地球的球体参照面，是全球定位系统（Global Positioning System，简称 GPS）使用的空间参照系。WGS 84的坐标原点是地球的质心，精度可达到 ±1 米。WGS 84坐标单位是度，其中，第一个坐标是经度，范围是 -180 到 180；第二个坐标是纬度，范围是 -90 到 90。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Los Angeles: POINT(-118.4079 33.9434)
+</span><span class='line'>Paris: POINT(2.3490 48.8533)
+</span><span class='line'>#距离
+</span><span class='line'>SELECT ST_Distance(
+</span><span class='line'>  ST_GeometryFromText('POINT(-118.4079 33.9434)', 4326), -- Los Angeles (LAX)
+</span><span class='line'>  ST_GeometryFromText('POINT(2.5559 49.0083)', 4326)     -- Paris (CDG)
+</span><span class='line'>  );
+</span><span class='line'>121.898285970107度
+</span><span class='line'>#距离米
+</span><span class='line'>SELECT ST_Distance(
+</span><span class='line'>  ST_GeographyFromText('POINT(-118.4079 33.9434)'), -- Los Angeles (LAX)
+</span><span class='line'>  ST_GeographyFromText('POINT(2.5559 49.0083)')     -- Paris (CDG)
+</span><span class='line'>  );
+</span><span class='line'>9124665.26917268米
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Geometry ：几何坐标</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>ST_AsText
+</span><span class='line'>
+</span><span class='line'>#点
+</span><span class='line'>ST_X ST_Y
+</span><span class='line'>#线
+</span><span class='line'>ST_Length 线长度
+</span><span class='line'>ST_StartPoint 起点
+</span><span class='line'>ST_EndPoint 终点
+</span><span class='line'>ST_NPoints 点数
+</span><span class='line'>#多边形
+</span><span class='line'>ST_Area(geometry)面积
+</span><span class='line'>ST_NRings(geometry)环个数
+</span><span class='line'>ST_ExteriorRing(geometry) 外接环
+</span><span class='line'>ST_InteriorRingN(geometry,n) 内接环
+</span><span class='line'>ST_Perimeter(geometry) 所有环的长度
+</span><span class='line'>#集合
+</span><span class='line'>MultiPoint, a collection of points
+</span><span class='line'>MultiLineString, a collection of linestrings
+</span><span class='line'>MultiPolygon, a collection of polygons
+</span><span class='line'>GeometryCollection, a heterogeneous collection of any geometry (including other collections)
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>
+实用case：
+gpoint表示坐标：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> gpoint       | geography(Point,4326)       |
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>距离坐标(117.28243891065 39.096105298613)最近的10个地标数据（在1km以内搜索）：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>SELECT id, name, city_code, st_astext(gpoint) FROM poi
+</span><span class='line'>WHERE ST_DWithin(GeomFromText('POINT(117.28243891065 39.096105298613)',4326), gpoint, 1000)
+</span><span class='line'>ORDER BY ST_Distance(GeomFromText('POINT(117.28243891065 39.096105298613)',4326), gpoint)
+</span><span class='line'>LIMIT 10;
+</span></code></pre></td></tr></table></div></figure>
+
+
+
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/05/19/mysql-binlog/">Mysql Binlog</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-05-19T16:19:22+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>19</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>4:19 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><h3>1.什么是binlog</h3>
+
+<p>MySQL有几个不同的日志文件，包括错误日志、慢查询日志、二进制日志等，可以帮助你找出mysqld内部发生的事情，比如慢日志经常用于发现我们系统中存在的慢查询，便于我们优化sql语句性能。</p>
+
+<p>日志存放目录（/var/log/mysql/，目录位置在my.cnf文件中配置）：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ ls /var/log/mysql/
+</span><span class='line'>error.log       error.log.6.gz    mysql-bin.000283  mysql-bin.000289  mysql-bin.000295  mysql-slow.log.1.gz  mysql-slow.log.7.gz
+</span><span class='line'>error.log.1.gz  error.log.7.gz    mysql-bin.000284  mysql-bin.000290  mysql-bin.000296  mysql-slow.log.2.gz
+</span><span class='line'>error.log.2.gz  mysql-bin.000279  mysql-bin.000285  mysql-bin.000291  mysql-bin.000297  mysql-slow.log.3.gz
+</span><span class='line'>error.log.3.gz  mysql-bin.000280  mysql-bin.000286  mysql-bin.000292  mysql-bin.000298  mysql-slow.log.4.gz
+</span><span class='line'>error.log.4.gz  mysql-bin.000281  mysql-bin.000287  mysql-bin.000293  mysql-bin.index   mysql-slow.log.5.gz
+</span><span class='line'>error.log.5.gz  mysql-bin.000282  mysql-bin.000288  mysql-bin.000294  mysql-slow.log    mysql-slow.log.6.gz</span></code></pre></td></tr></table></div></figure>
+
+
+<p>二进制日志（binlog）是最重要的一类文件，它是用于记录数据库的修改的二进制文件，改变数据库的SQL语句执行结束时,将在binlog的末尾写入一条记录,同时通知语句解析器,语句执行完毕.</p>
+
+<h3>2.如何开启binlog</h3>
+
+<p>在mysql配置文件/etc/mysql/my.cnf文件中配置,打开配置项：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>log_bin                 = /var/log/mysql/mysql-bin.log</span></code></pre></td></tr></table></div></figure>
+
+
+<p>重启mysql服务后生效：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sudo service mysql restart;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>查看binlog是否打开：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show variables like 'log_bin'; 
+</span><span class='line'>+---------------+-------+
+</span><span class='line'>| Variable_name | Value |
+</span><span class='line'>+---------------+-------+
+</span><span class='line'>| log_bin       | ON    |
+</span><span class='line'>+---------------+-------+
+</span><span class='line'>1 row in set (0.00 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>binlog文件的另外几个参数，后面会讲到：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>expire_logs_days        = 10
+</span><span class='line'>max_binlog_size         = 100M</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>3.binlog文件种类</h3>
+
+<p>binlog文件有实际包含两类文件，一个索引文件和一系列日志文件，如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ ls /var/log/mysql/ | grep bin
+</span><span class='line'>mysql-bin.000279
+</span><span class='line'>mysql-bin.000280
+</span><span class='line'>mysql-bin.000281
+</span><span class='line'>mysql-bin.000282
+</span><span class='line'>mysql-bin.000283
+</span><span class='line'>mysql-bin.000284
+</span><span class='line'>mysql-bin.000285
+</span><span class='line'>mysql-bin.000286
+</span><span class='line'>mysql-bin.000287
+</span><span class='line'>mysql-bin.000288
+</span><span class='line'>mysql-bin.000289
+</span><span class='line'>mysql-bin.000290
+</span><span class='line'>mysql-bin.000291
+</span><span class='line'>mysql-bin.000292
+</span><span class='line'>mysql-bin.000293
+</span><span class='line'>mysql-bin.000294
+</span><span class='line'>mysql-bin.000295
+</span><span class='line'>mysql-bin.000296
+</span><span class='line'>mysql-bin.000297
+</span><span class='line'>mysql-bin.000298
+</span><span class='line'>mysql-bin.index</span></code></pre></td></tr></table></div></figure>
+
+
+<p>索引文件跟踪所有的binlog日志文件，控制日志文件的创建和命名，索引文件的每一行都包含一个完整的日志文件。要查看所有的日志文件，可以使用命令show binary logs，它正是读取我们的索引文件：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show binary logs;
+</span><span class='line'>+------------------+-----------+
+</span><span class='line'>| Log_name         | File_size |
+</span><span class='line'>+------------------+-----------+
+</span><span class='line'>| mysql-bin.000279 |       126 |
+</span><span class='line'>| mysql-bin.000280 |       150 |
+</span><span class='line'>| mysql-bin.000281 |       126 |
+</span><span class='line'>| mysql-bin.000282 |       150 |
+</span><span class='line'>| mysql-bin.000283 |       126 |
+</span><span class='line'>| mysql-bin.000284 |       150 |
+</span><span class='line'>| mysql-bin.000285 |       126 |
+</span><span class='line'>| mysql-bin.000286 |       126 |
+</span><span class='line'>| mysql-bin.000287 |       150 |
+</span><span class='line'>| mysql-bin.000288 |       126 |
+</span><span class='line'>| mysql-bin.000289 |       150 |
+</span><span class='line'>| mysql-bin.000290 |       126 |
+</span><span class='line'>| mysql-bin.000291 |       150 |
+</span><span class='line'>| mysql-bin.000292 |       126 |
+</span><span class='line'>| mysql-bin.000293 |       150 |
+</span><span class='line'>| mysql-bin.000294 |       126 |
+</span><span class='line'>| mysql-bin.000295 |       150 |
+</span><span class='line'>| mysql-bin.000296 |       126 |
+</span><span class='line'>| mysql-bin.000297 |       150 |
+</span><span class='line'>| mysql-bin.000298 |       935 |
+</span><span class='line'>+------------------+-----------+
+</span><span class='line'>20 rows in set (0.00 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个命令会列出所有的binlog文件及其每个文件的大小。</p>
+
+<h3>4.binlog文件关键参数</h3>
+
+<p>(1). max_binlog_size</p>
+
+<p>binlog文件的最大大小由变量max_binlog_size控制，可以在my.cnf中配置：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>max_binlog_size         = 100M</span></code></pre></td></tr></table></div></figure>
+
+
+<p>如果超过这个值会重新创建一个新的binlog文件。另外，mysql服务重启、日志被刷新（flush logs命令）也会创建一个新的binlog文件。
+我们可以修改这个参数：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; set global max_binlog_size=1024*1024;
+</span><span class='line'>Query OK, 0 rows affected (0.00 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; show variables like 'max_binlog_size'; 
+</span><span class='line'>+-----------------+---------+
+</span><span class='line'>| Variable_name   | Value   |
+</span><span class='line'>+-----------------+---------+
+</span><span class='line'>| max_binlog_size | 1048576 |
+</span><span class='line'>+-----------------+---------+
+</span><span class='line'>1 row in set (0.00 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>(2). expire_logs_days
+通过binlog参数expire_logs_days来实现mysql自动删除binlog，其单位是天，在mysql中可以看到默认设置是10：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show variables like 'expire_logs_days'; 
+</span><span class='line'>+------------------+-------+
+</span><span class='line'>| Variable_name    | Value |
+</span><span class='line'>+------------------+-------+
+</span><span class='line'>| expire_logs_days | 10    |
+</span><span class='line'>+------------------+-------+
+</span><span class='line'>1 row in set (0.00 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>配置在my.cnf文件中：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>expire_logs_days        = 10</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们也可以改变这个参数（必须管理员权限）：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; set global expire_logs_days=3;
+</span><span class='line'>Query OK, 0 rows affected (0.00 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; show variables like 'expire_logs_days'; 
+</span><span class='line'>+------------------+-------+
+</span><span class='line'>| Variable_name    | Value |
+</span><span class='line'>+------------------+-------+
+</span><span class='line'>| expire_logs_days | 3     |
+</span><span class='line'>+------------------+-------+
+</span><span class='line'>1 row in set (0.00 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>5.binlog结构</h3>
+
+<p>binlog文件是二进制文件，直接打开是没意义的。可以使用mysqlbinlog工具查看：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:/var/log/mysql$ mysqlbinlog  mysql-bin.000298 &gt; ~/mysql-bin.000298.text</span></code></pre></td></tr></table></div></figure>
+
+
+<p>文件如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/*!50530 SET @@SESSION.PSEUDO_SLAVE_MODE=1*/;
+</span><span class='line'>/*!40019 SET @@session.max_insert_delayed_threads=0*/;
+</span><span class='line'>/*!50003 SET @OLD_COMPLETION_TYPE=@@COMPLETION_TYPE,COMPLETION_TYPE=0*/;
+</span><span class='line'>DELIMITER /*!*/;
+</span><span class='line'># at 4
+</span><span class='line'>#140524 14:15:56 server id 1  end_log_pos 107   Start: binlog v 4, server v 5.5.34-0ubuntu0.13.04.1-log created 140524 14:15:56
+</span><span class='line'>BINLOG '
+</span><span class='line'>HDmAUw8BAAAAZwAAAGsAAAAAAAQANS41LjM0LTB1YnVudHUwLjEzLjA0LjEtbG9nAAAAAAAAAAAA
+</span><span class='line'>AAAAAAAAAAAAAAAAAAAAAAAAEzgNAAgAEgAEBAQEEgAAVAAEGggAAAAICAgCAA==
+</span><span class='line'>'/*!*/;
+</span><span class='line'># at 107 
+</span><span class='line'>#140524 15:10:44 server id 1  end_log_pos 218   Query   thread_id=38    exec_time=0     error_code=0
+</span><span class='line'>use `test`/*!*/;
+</span><span class='line'>SET TIMESTAMP=1400915444/*!*/;
+</span><span class='line'>SET @@session.pseudo_thread_id=38/*!*/;
+</span><span class='line'>SET @@session.foreign_key_checks=1, @@session.sql_auto_is_null=0, @@session.unique_checks=1, @@session.autocommit=1/*!*/;
+</span><span class='line'>SET @@session.sql_mode=0/*!*/;
+</span><span class='line'>SET @@session.auto_increment_increment=1, @@session.auto_increment_offset=1/*!*/;
+</span><span class='line'>/*!\C utf8 *//*!*/;
+</span><span class='line'>SET @@session.character_set_client=33,@@session.collation_connection=33,@@session.collation_server=8/*!*/;
+</span><span class='line'>SET @@session.lc_time_names=0/*!*/;
+</span><span class='line'>SET @@session.collation_database=DEFAULT/*!*/;
+</span><span class='line'>DROP TABLE `order_log` /* generated by server */
+</span><span class='line'>/*!*/;
+</span><span class='line'>...
+</span><span class='line'># at 461
+</span><span class='line'>#140524 15:11:07 server id 1  end_log_pos 576   Query   thread_id=38    exec_time=0     error_code=0
+</span><span class='line'>SET TIMESTAMP=1400915467/*!*/;
+</span><span class='line'>DROP TABLE `qbooking_role` /* generated by server */
+</span><span class='line'>/*!*/;
+</span><span class='line'># at 576
+</span><span class='line'>#140524 15:11:17 server id 1  end_log_pos 700   Query   thread_id=38    exec_time=0     error_code=0
+</span><span class='line'>SET TIMESTAMP=1400915477/*!*/;
+</span><span class='line'>DROP TABLE `qbooking_role_resource` /* generated by server */
+</span><span class='line'>/*!*/;
+</span><span class='line'># at 700
+</span><span class='line'>#140524 15:11:22 server id 1  end_log_pos 815   Query   thread_id=38    exec_time=0     error_code=0
+</span><span class='line'>SET TIMESTAMP=1400915482/*!*/;
+</span><span class='line'>DROP TABLE `qbooking_user` /* generated by server */
+</span><span class='line'>/*!*/;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们以其中的一个片段来解析：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># at 576
+</span><span class='line'>#140524 15:11:17 server id 1  end_log_pos 700   Query   thread_id=38    exec_time=0     error_code=0
+</span><span class='line'>SET TIMESTAMP=1400915477/*!*/;
+</span><span class='line'>DROP TABLE `qbooking_role_resource` /* generated by server */
+</span><span class='line'>/*!*/;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>简单解析如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># at 576 ： 说明这个事件的起点，从576个字节开始的;
+</span><span class='line'>#140524 15:11:17 ： 表明事件发生的时间戳为2014-05-24 15:11:17;
+</span><span class='line'>server id 1 ： 事件发生的服务器的标识id;
+</span><span class='line'>end_log_pos 700 : 事件的终点，下一个事件从第700个字节开始;
+</span><span class='line'>Query ： 事件类型，mysql中的insert、update、delete都是属于query;
+</span><span class='line'>thread_id=38 ： 执行事件的线程
+</span><span class='line'>exec_time=0 ： 执行命令花费的时间
+</span><span class='line'>error_code=0 ： 执行命令的错误码
+</span><span class='line'>SET TIMESTAMP=1400915477/*!*/; ： 命令的时间戳
+</span><span class='line'>DROP TABLE `qbooking_role_resource` /* generated by server */ ： 命令
+</span><span class='line'>/*!*/; ： 结束</span></code></pre></td></tr></table></div></figure>
+
+
+<p>mysqlbinlog工具的输出，能够被mysql重新执行那些事件的sql语句（可以作为mysql的输入），这在服务器crash之后做数据的修复是非常有用的。
+比如我们重新执行mysql-bin.000298这个binlog文件的操作：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:/var/log/mysql$ mysqlbinlog mysql-bin.000298 | mysql -u root -p</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>6.binlog格式</h3>
+
+<p>binlog的格式有三种：STATEMENT，ROW，MIXED，分别对应了mysql的三种复制技术：基于SQL语句的复制(statement-based replication, SBR);基于行的复制(row-based replication, RBR);混合模式复制(mixed-based replication, MBR);这三种格式的区别如下：</p>
+
+<ol>
+<li><p>STATEMENT是基于sql语句级别的binlog,每一条修改数据的sql都会被保存到binlog里；</p></li>
+<li><p>ROW是基于行级别的,会记录每一行记录的变化,就是将每一行的修改都记录到binlog里面,记录的非常详细，但sql语句并没有在binlog里,但是有个致命的缺点就是日志量比较大（比如当执行update语句后面不加where条件的时候或alter table的时候）;</p></li>
+<li><p>MIXED:MySQL会根据执行的每一条具体的sql语句来区分对待记录的日志形式，也就是在STATEMENT和ROW之间选择一种。新版本中的STATEMENT Level还是和以前一样，仅仅记录执行的语句。而新版本的MySQL中对ROW level模式也被做了优化，并不是所有的修改都会以ROW level来记录，像遇到表结构变更的时候就会以STATEMENT模式来记录，如果sql语句确实就是update或者delete等修改数据的语句，那么还是会记录所有行的变更。</p></li>
+</ol>
+
+
+<p>默认情况写是STATEMENT格式，我们可以查看当前的binlog文件格式：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show variables like 'binlog_format'; 
+</span><span class='line'>+---------------+-----------+
+</span><span class='line'>| Variable_name | Value     |
+</span><span class='line'>+---------------+-----------+
+</span><span class='line'>| binlog_format | STATEMENT |
+</span><span class='line'>+---------------+-----------+
+</span><span class='line'>1 row in set (0.00 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>7.登录到mysql查看binlog</h3>
+
+<p>(1).只查看第一个binlog文件的内容：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show binlog events;
+</span><span class='line'>+------------------+-----+-------------+-----------+-------------+--------------------------------------------------------+
+</span><span class='line'>| Log_name         | Pos | Event_type  | Server_id | End_log_pos | Info                                                   |
+</span><span class='line'>+------------------+-----+-------------+-----------+-------------+--------------------------------------------------------+
+</span><span class='line'>| mysql-bin.000282 |   4 | Format_desc |         1 |         107 | Server ver: 5.5.34-0ubuntu0.13.04.1-log, Binlog ver: 4 |
+</span><span class='line'>| mysql-bin.000282 | 107 | Rotate      |         1 |         150 | mysql-bin.000283;pos=4                                 |
+</span><span class='line'>+------------------+-----+-------------+-----------+-------------+--------------------------------------------------------+
+</span><span class='line'>2 rows in set (0.01 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>(2).查看当前正在写入的binlog文件：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show master status;
+</span><span class='line'>+------------------+----------+--------------+------------------+
+</span><span class='line'>| File             | Position | Binlog_Do_DB | Binlog_Ignore_DB |
+</span><span class='line'>+------------------+----------+--------------+------------------+
+</span><span class='line'>| mysql-bin.000302 |      316 |              |                  |
+</span><span class='line'>+------------------+----------+--------------+------------------+
+</span><span class='line'>1 row in set (0.00 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>(3).查看指定binlog文件的内容：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show binlog events in 'mysql-bin.000302';
+</span><span class='line'>+------------------+-----+-------------+-----------+-------------+-----------------------------------------------------------------+
+</span><span class='line'>| Log_name         | Pos | Event_type  | Server_id | End_log_pos | Info                                                            |
+</span><span class='line'>+------------------+-----+-------------+-----------+-------------+-----------------------------------------------------------------+
+</span><span class='line'>| mysql-bin.000302 |   4 | Format_desc |         1 |         107 | Server ver: 5.5.34-0ubuntu0.13.04.1-log, Binlog ver: 4          |
+</span><span class='line'>| mysql-bin.000302 | 107 | Query       |         1 |         175 | BEGIN                                                           |
+</span><span class='line'>| mysql-bin.000302 | 175 | Query       |         1 |         289 | use `test`; insert into test_table(`name`) values('xiaobaoqiu') |
+</span><span class='line'>| mysql-bin.000302 | 289 | Xid         |         1 |         316 | COMMIT /* xid=122 */                                            |
+</span><span class='line'>+------------------+-----+-------------+-----------+-------------+-----------------------------------------------------------------+
+</span><span class='line'>4 rows in set (0.00 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>7.mysqlbinlog工具</h3>
+
+<p>查看binlog文件的另外一种方式是mysqlbinlog工具，最基本的使用：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:/var/log/mysql$ mysqlbinlog mysql-bin.000302</span></code></pre></td></tr></table></div></figure>
+
+
+<p>官方文档比较权威：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://dev.mysql.com/doc/refman/5.1/zh/client-side-scripts.html#mysqlbinlog</span></code></pre></td></tr></table></div></figure>
+
+
+<p>通常情况，可以使用mysqlbinlog直接读取二进制日志文件并将它们用于本地MySQL服务器。也可以使用&ndash;read-from-remote-server选项从远程服务器读取二进制日志。当读取远程二进制日志时，可以通过连接参数选项来指示如何连接服务器，但它们通常被忽略掉，除非你还指定了&ndash;read-from-remote-server选项。这些选项是&ndash;host、&ndash;password、&ndash;port、&ndash;protocol、&ndash;socket和&ndash;user。</p>
+
+<p>mysqlbinlog参数（mysqlbinlog &ndash;help得到）：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Usage: mysqlbinlog [options] log-files
+</span><span class='line'>  -?, --help          显示帮助文档
+</span><span class='line'>  --base64-output[=name]  
+</span><span class='line'>                      Determine when the output statements should be
+</span><span class='line'>                      base64-encoded BINLOG statements: 'never' disables it and
+</span><span class='line'>                      works only for binlogs without row-based events;
+</span><span class='line'>                      'decode-rows' decodes row events into commented SQL
+</span><span class='line'>                      statements if the --verbose option is also given; 'auto'
+</span><span class='line'>                      prints base64 only when necessary (i.e., for row-based
+</span><span class='line'>                      events and format description events); 'always' prints
+</span><span class='line'>                      base64 whenever possible. 'always' is deprecated, will be
+</span><span class='line'>                      removed in a future version, and should not be used in a
+</span><span class='line'>                      production system.  --base64-output with no 'name'
+</span><span class='line'>                      argument is equivalent to --base64-output=always and is
+</span><span class='line'>                      also deprecated.  If no --base64-output[=name] option is
+</span><span class='line'>                      given at all, the default is 'auto'.
+</span><span class='line'>  --character-sets-dir=name 
+</span><span class='line'>                      Directory for character set files.
+</span><span class='line'>  -d, --database=name 指定数据库，只显示这个数据库的数据(只用于本地).
+</span><span class='line'>  --debug-check       退出时候检查内存和已打开文件的使用.
+</span><span class='line'>  --debug-info        退出的时候打印debug信息
+</span><span class='line'>  --default-auth=name Default authentication client-side plugin to use.
+</span><span class='line'>  -D, --disable-log-bin 
+</span><span class='line'>                      Disable binary log. This is useful, if you enabled
+</span><span class='line'>                      --to-last-log and are sending the output to the same
+</span><span class='line'>                      MySQL server. This way you could avoid an endless loop.
+</span><span class='line'>                      You would also like to use it when restoring after a
+</span><span class='line'>                      crash to avoid duplication of the statements you already
+</span><span class='line'>                      have. NOTE: you will need a SUPER privilege to use this
+</span><span class='line'>                      option.
+</span><span class='line'>  -F, --force-if-open 即使出现SQL错误也继续
+</span><span class='line'>                      Force if binlog was not closed properly.
+</span><span class='line'>                      (Defaults to on; use --skip-force-if-open to disable.)
+</span><span class='line'>  -f, --force-read    Force reading unknown binlog events.
+</span><span class='line'>                      使用该选项，如果mysqlbinlog读它不能识别的二进制日志事件，它会打印警告，忽略该事件并继续。没有该选项，如果mysqlbinlog读到此类事件则停止。
+</span><span class='line'>  -H, --hexdump       Augment output with hexadecimal and ASCII event dump.
+</span><span class='line'>                      在注释中显示日志的十六进制转储。该输出可以帮助复制过程中的调试。
+</span><span class='line'>  -h, --host=name     Get the binlog from server.主机名
+</span><span class='line'>  -l, --local-load=name
+</span><span class='line'>                      为指定目录中的LOAD DATA INFILE预处理本地临时文件 
+</span><span class='line'>                      Prepare local temporary files for LOAD DATA INFILE in the
+</span><span class='line'>                      specified directory.
+</span><span class='line'>  -o, --offset=#      跳过前N个条目，Skip the first N entries.
+</span><span class='line'>  -p, --password[=name] 
+</span><span class='line'>                      连接远程服务器的密码，Password to connect to remote server.
+</span><span class='line'>  --plugin-dir=name   Directory for client-side plugins.
+</span><span class='line'>  -P, --port=#        用于连接远程服务器的TCP/IP端口号
+</span><span class='line'>                      Port number to use for connection or 0 for default to, in
+</span><span class='line'>                      order of preference, my.cnf, $MYSQL_TCP_PORT,
+</span><span class='line'>                      /etc/services, built-in default (3306).
+</span><span class='line'>  --protocol=name     使用的连接协议，如TCP | SOCKET | PIPE | 
+</span><span class='line'>                      The protocol to use for connection (tcp, socket, pipe,
+</span><span class='line'>                      memory).
+</span><span class='line'>  -R, --read-from-remote-server 
+</span><span class='line'>                      从MySQL服务器读二进制日志。如果未给出该选项，任何连接参数选项将被忽略：--host、--password、--port、--protocol、--socket和--user。
+</span><span class='line'>                      Read binary logs from a MySQL server.
+</span><span class='line'>  -r, --result-file=name 
+</span><span class='line'>                      将输出指向给定的文件
+</span><span class='line'>                      Direct output to a given file.
+</span><span class='line'>  --server-id=#       Extract only binlog entries created by the server having
+</span><span class='line'>                      the given id.
+</span><span class='line'>  --set-charset=name  输出的时候设置SET NAMES character_set，Add 'SET NAMES character_set' to the output.
+</span><span class='line'>  -s, --short-form    只显示日志中包含的语句，不显示其它信息，
+</span><span class='line'>                      Just show regular queries: no extra info and no row-based
+</span><span class='line'>                      events. This is for testing only, and should not be used
+</span><span class='line'>                      in production systems. If you want to suppress
+</span><span class='line'>                      base64-output, consider using --base64-output=never
+</span><span class='line'>                      instead.
+</span><span class='line'>  -S, --socket=name   The socket file to use for connection.
+</span><span class='line'>  --start-datetime=name 
+</span><span class='line'>                      从二进制日志中第1个日期时间等于或晚于datetime参量的事件开始读取。datetime值相对于运行mysqlbinlog的机器上的本地时区。该值格式应符合DATETIME或TIMESTAMP数据类型。如“2004-12-25 11:25:56”
+</span><span class='line'>                      Start reading the binlog at first event having a datetime
+</span><span class='line'>                      equal or posterior to the argument; the argument must be
+</span><span class='line'>                      a date and time in the local time zone, in any format
+</span><span class='line'>                      accepted by the MySQL server for DATETIME and TIMESTAMP
+</span><span class='line'>                      types, for example: 2004-12-25 11:25:56 (you should
+</span><span class='line'>                      probably use quotes for your shell to set it properly).
+</span><span class='line'>  -j, --start-position=# 
+</span><span class='line'>                      从二进制日志中第1个位置等于N参量时的事件开始读。
+</span><span class='line'>                      Start reading the binlog at position N. Applies to the
+</span><span class='line'>                      first binlog passed on the command line.
+</span><span class='line'>  --stop-datetime=name
+</span><span class='line'>                      从二进制日志中第1个日期时间等于或晚于datetime参量的事件起停止读。 
+</span><span class='line'>                      Stop reading the binlog at first event having a datetime
+</span><span class='line'>                      equal or posterior to the argument; the argument must be
+</span><span class='line'>                      a date and time in the local time zone, in any format
+</span><span class='line'>                      accepted by the MySQL server for DATETIME and TIMESTAMP
+</span><span class='line'>                      types, for example: 2004-12-25 11:25:56 (you should
+</span><span class='line'>                      probably use quotes for your shell to set it properly).
+</span><span class='line'>  --stop-position=#   从二进制日志中第1个位置等于和大于N参量时的事件起停止读
+</span><span class='line'>                      Stop reading the binlog at position N. Applies to the
+</span><span class='line'>                      last binlog passed on the command line.
+</span><span class='line'>  -t, --to-last-log   在MySQL服务器中请求的二进制日志的结尾处不停止，而是继续打印直到最后一个二进制日志的结尾。如果将输出发送给同一台MySQL服务器，会导致无限循环。该选项要求--read-from-remote-server。
+</span><span class='line'>                      Requires -R. Will not stop at the end of the requested
+</span><span class='line'>                      binlog but rather continue printing until the end of the
+</span><span class='line'>                      last binlog of the MySQL server. If you send the output
+</span><span class='line'>                      to the same MySQL server, that may lead to an endless
+</span><span class='line'>                      loop.
+</span><span class='line'>  -u, --user=name     连接远程服务器的用户名，Connect to the remote server as username.
+</span><span class='line'>  -v, --verbose       对于ROW event重新构造SQL语句。
+</span><span class='line'>                      Reconstruct SQL statements out of row events. -v -v adds
+</span><span class='line'>                      comments on column data types.
+</span><span class='line'>  -V, --version       版本信息，Print version and exit.
+</span><span class='line'>  --open-files-limit=# 
+</span><span class='line'>                      Used to reserve file descriptors for use by this program.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>通常使用开始时间结束时间读取，或者开始位置结束未知读取：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:/var/log/mysql$ mysqlbinlog --start-datetime='2014-05-26 15:08:00' --stop-datetime='2014-05-26 15:10:00' mysql-bin.000302</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:/var/log/mysql$ mysqlbinlog --start-position=107 --stop-position=175 mysql-bin.000302</span></code></pre></td></tr></table></div></figure>
+
+
+<p>远程查看binlog示例：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysqlbinlog -u username -p password -h127.0.0.1 -P3306 \
+</span><span class='line'>--read-from-remote-server --start-datetime='2014-05-25 00:00:00' --stop-datetime='2014-05-26 00:00:00' mysql-bin.000001 &gt; mysql-bin.000001.txt</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>8.binlog用处</h3>
+
+<h5>1. 数据恢复</h5>
+
+<p>为了演示，我们先清空表test_table.sql，目前表的数据为空：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; truncate table test_table;
+</span><span class='line'>Query OK, 0 rows affected (0.07 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; select * from test_table;
+</span><span class='line'>Empty set (0.00 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们保存数据库的这个状态，即备份当前的数据：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:/var/log/mysql$ mysqldump -uroot -p123456 test test_table  &gt;  ~/test_table.sql</span></code></pre></td></tr></table></div></figure>
+
+
+<p>为例便于演示，我们重新开一个binlog文件（可以不新开binlog，利用&ndash;start-datetime参数）：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; flush logs;
+</span><span class='line'>Query OK, 0 rows affected (0.14 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个时候，会产生新的binlog文件：mysql-bin.000304。现在时候我们网数据库中插入数据了：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; insert into test_table(`id`,`name`) values(1,'xiaobaoqiu1');
+</span><span class='line'>Query OK, 1 row affected (0.07 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; insert into test_table(`id`,`name`) values(2,'xiaobaoqiu2');
+</span><span class='line'>Query OK, 1 row affected (0.07 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; insert into test_table(`id`,`name`) values(3,'xiaobaoqiu3');
+</span><span class='line'>Query OK, 1 row affected (0.08 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>假设这个时候数据crash了（我这里又开一个binlog文件，再做drop table）：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; flush logs;
+</span><span class='line'>Query OK, 0 rows affected (0.14 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; drop table test_table;
+</span><span class='line'>Query OK, 0 rows affected (0.09 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>数据丢失了，我们就可以使用mysql-bin.000304来恢复数据，首先导入之前备份的数据，再执行我们的binlog文件来恢复数据：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:/var/log/mysql$ mysql -uroot -p123456 test &lt; ~/test_table.sql</span></code></pre></td></tr></table></div></figure>
+
+
+<p>回到了备份时候的状态：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from test_table;
+</span><span class='line'>Empty set (0.00 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>再使用我们的binlog来恢复数据：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:/var/log/mysql$ mysqlbinlog mysql-bin.000304 | mysql -uroot -p123456</span></code></pre></td></tr></table></div></figure>
+
+
+<p>见证奇迹的时候，数据都回来了：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from test_table;
+</span><span class='line'>+----+-------------+
+</span><span class='line'>| id | name        |
+</span><span class='line'>+----+-------------+
+</span><span class='line'>|  1 | xiaobaoqiu1 |
+</span><span class='line'>|  2 | xiaobaoqiu2 |
+</span><span class='line'>|  3 | xiaobaoqiu3 |
+</span><span class='line'>+----+-------------+
+</span><span class='line'>3 rows in set (0.00 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这里是一个简单的模拟，真是环境比这个肯定复杂得多，但是原理是一样的。</p>
+
+<h5>2. 数据复制（Replication）</h5>
+
+<p>比如我们熟悉的Master-Slave，复制过程示意图如下（要求Master开启binlog）：
+<img src="/images/master-salve.jpg">
+1. master记录二进制日志。在每个事务更新数据完成之前，master在二日志记录这些改变。MySQL将事务串行的写入二进制日志，即使事务中的语句都是交叉执行的。在事件写入二进制日志完成后，master通知存储引擎提交事务；</p>
+
+<ol>
+<li><p>slave将master的binary log拷贝到自己的中继日志（Relay log）。首先，slave开始一个工作线程（I/O线程）。I/O线程在master上打开一个普通的连接，然后开始binlog dump process。Binlog dump process从master的二进制日志中读取事件，如果已经跟上master，它会睡眠并等待master产生新的事件。I/O线程将这些事件写入中继日志；</p></li>
+<li><p>SQL slave thread（SQL从线程）处理该过程的最后一步。SQL线程从中继日志读取事件，并重放其中的事件而更新slave的数据，使其与master中的数据一致。只要该线程与I/O线程保持一致，中继日志通常会位于OS的缓存中，所以中继日志的开销很小。</p></li>
+</ol>
+
+
+<p>mysql英文文档：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://dev.mysql.com/doc/refman/5.0/en/replication.html
+</span><span class='line'>http://dev.mysql.com/doc/refman/5.0/en/faqs-replication.html</span></code></pre></td></tr></table></div></figure>
+
+
+<p>mysql中文文档：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://dev.mysql.com/doc/refman/5.1/zh/replication.html</span></code></pre></td></tr></table></div></figure>
+
+
+<p>复制的使用场景：</p>
+
+<ol>
+<li><p>向外扩展的解决方案（Scale-out solutions）：所有的写操作在master上实施，而读操作分摊到多个salve机器上。这个模型能够提高写效率（因为master专门用于写），同时读操作效率也会岁着slave的数目增加而增长;</p></li>
+<li><p>数据安全（Data security）：因为数据已经复制到slave，因此可以在slave端做备份（backup）;</p></li>
+<li><p>分析（Analytics）：master上产生实时数据，在slave端做数据分析，避免影响master性能;</p></li>
+<li><p>远程数据分布（Long-distance data distribution）：比如分公司需要在数据库数据基础上工作，使用slave复制一份数据，避免他们对master的永久连接的需求（requiring permanent access）;</p></li>
+</ol>
+
+
+<p>更详细的使用场景：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://dev.mysql.com/doc/refman/5.0/en/replication-solutions.html</span></code></pre></td></tr></table></div></figure>
+
+
+<p>如何搭建复制环境：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://dev.mysql.com/doc/refman/5.0/en/replication-howto.html</span></code></pre></td></tr></table></div></figure>
+
+
+<p>一些细节：</p>
+
+<ol>
+<li><p>从服务器设置为复制主服务器的数据后，它连接主服务器并等待更新过程。如果主服务器失败，或者从服务器失去与主服务器之间的连接，从服务器保持定期尝试连接，直到它能够继续帧听更新。由&ndash;master-connect-retry选项控制重试间隔。 默认为60秒。</p></li>
+<li><p>MySQL使用3个线程来执行复制功能(其中1个在主服务器上，另两个在从服务器上。当发出START SLAVE时，从服务器创建一个I/O线程，以连接主服务器并让它发送记录在其二进制日志中的语句。主服务器创建一个线程将二进制日志中的内容发送到从服务器。该线程可以识别为主服务器上SHOW PROCESSLIST的输出中的Binlog Dump线程。从服务器I/O线程读取主服务器Binlog Dump线程发送的内容并将该数据拷贝到从服务器数据目录中的本地文件中，即中继日志。第3个线程是SQL线程，是从服务器创建用于读取中继日志并执行日志中包含的更新。</p></li>
+<li><p>查看slave与master的时延：SHOW SLAVE STATUS命令中的Seconds_Behind_Master字段;原理是binlog中每个事件都有一个时间戳，当slave复制binlog事件时候，会保存最后读取的事件的时间戳;SHOW PROCESSLIST命令的Time列展示的是salve最后复制的事件的时间戳和salve机器时间之间的差值，单位为秒。</p></li>
+<li><p>如何使用复制提高系统性能：配置一个master服务器只用于写，配置尽可能多的slave服务器，将读操作分到各个master和slave之间。同时，我们可以使用&ndash;skip-innodb（不使用InnoDB storage engine）, &ndash;low-priority-updates（将INSERT, REPLACE, DELETE, UPDATE这些修改操作的优先级设置得比SELECT低）和&ndash;delay-key-write=ALL（Delayed key writing causes key buffers not to be flushed between writes for MyISAM tables）选项来启动salve达到加速slave的目的，这样就可以使用非事务的MyISAM表代替InnoDB表，排除了事物的代价从而更快速。</p></li>
+<li><p>slave段自动知道使用何种模式复制（ROW，STATEMENT，MIXED）;</p></li>
+<li><p>如何是slave不复制授权（GRANT）和撤销权限操作（REVOKE）的语句：使用&ndash;replicate-wild-ignore-table=mysql.%选项启动服务器。因为&ndash;replicate-wild-ignore-table=foo%.bar%表示slave不复制数据库名为foo表名为bar的操作，而权限的操作正式在Mysql数据库上的操作;</p></li>
+<li><p>复制支持不同操作系统间（如master在Linux下而slave在Windows下）、支持不同的硬件架构（如master在64位机器上而slave在32位机器上）;</p></li>
+</ol>
+
+
+<h3>9.canal</h3>
+
+<p>canal是阿里巴巴开发的一个增量订阅&amp;消费的业务的组件，其工作原理就是把自己伪装成slave机器：
+<img src="/images/canal.jpg">
+项目的wiki：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>https://github.com/alibaba/canal/wiki</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面实验怎么使用canal:</p>
+
+<h5>1.开启binlog</h5>
+
+<p>canal的原理是基于mysql binlog技术，所以这里一定需要开启mysql的binlog写入功能，并且配置binlog模式为ROW,比如my.cf设置如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>log_bin                 = /var/log/mysql/mysql-bin.log
+</span><span class='line'>expire_logs_days        = 10
+</span><span class='line'>max_binlog_size         = 100M
+</span><span class='line'>server_id               = 1
+</span><span class='line'>binlog_format           = ROW</span></code></pre></td></tr></table></div></figure>
+
+
+<p>重启mysql:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ sudo service mysql restart
+</span><span class='line'>mysql stop/waiting
+</span><span class='line'>mysql start/running, process 11918</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>2.分配权限</h5>
+
+<p>canal的原理是模拟自己为mysql的slave，所以这里一定需要做为mysql的slave的相关权限,下面包括创建用户,赋予权限(真是环境权限需要限制得严谨一下):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; insert into mysql.user(Host,User,Password) values("localhost","canal",password("123456"));
+</span><span class='line'>Query OK, 1 row affected, 3 warnings (0.01 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; grant all on *.* to canal@"localhost" identified by "123456";
+</span><span class='line'>Query OK, 0 rows affected (0.00 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; flush privileges;
+</span><span class='line'>Query OK, 0 rows affected (0.00 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>3.下载canal</h5>
+
+<p>下载安装包,解压</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>wget http://canal4mysql.googlecode.com/files/canal.deployer-1.0.0.tar.gz
+</span><span class='line'>
+</span><span class='line'>mkdir canal
+</span><span class='line'>
+</span><span class='line'>tar zxvf canal.deployer-1.0.0.tar.gz  -C /canal</span></code></pre></td></tr></table></div></figure>
+
+
+<p>解压完成后，进入canal目录，结构如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>drwxrwxr-x 2 xiaobaoqiu xiaobaoqiu 4096  5月 28 13:40 bin/
+</span><span class='line'>drwxrwxr-x 4 xiaobaoqiu xiaobaoqiu 4096  5月 28 13:37 conf/
+</span><span class='line'>drwxrwxr-x 2 xiaobaoqiu xiaobaoqiu 4096  5月 28 13:33 lib/
+</span><span class='line'>drwxrwxr-x 3 xiaobaoqiu xiaobaoqiu 4096  5月 28 13:40 logs/</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中bin目录包含启动和停止cannal的脚本:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-rwxr-xr-x 1 xiaobaoqiu xiaobaoqiu 2804  1月 24  2013 startup.sh*
+</span><span class='line'>-rwxr-xr-x 1 xiaobaoqiu xiaobaoqiu  902  1月 24  2013 stop.sh*</span></code></pre></td></tr></table></div></figure>
+
+
+<p>lib目录是一些cannal的依赖包.conf目录是canal的配置参数,下一小结会讲到.logs记录canal的日志.</p>
+
+<h5>4.配置参数</h5>
+
+<p>canal.properties文件:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#################################################
+</span><span class='line'>#########         common argument     ############# 
+</span><span class='line'>#################################################
+</span><span class='line'>#master的server id
+</span><span class='line'>canal.id= 1
+</span><span class='line'>canal.ip=
+</span><span class='line'>canal.port= 11111
+</span><span class='line'>canal.zkServers=l-zk1.plat.dev.cn6.qunar.com:2181
+</span><span class='line'>
+</span><span class='line'># flush data to zk
+</span><span class='line'>canal.zookeeper.flush.period = 1000
+</span><span class='line'>
+</span><span class='line'># flush meta cursor/parse position to file
+</span><span class='line'>canal.file.data.dir = ${canal.conf.dir}
+</span><span class='line'>canal.file.flush.period = 1000
+</span><span class='line'>## memory store RingBuffer size, should be Math.pow(2,n)
+</span><span class='line'>canal.instance.memory.buffer.size = 16384
+</span><span class='line'>## memory store RingBuffer used memory unit size , default 1kb
+</span><span class='line'>canal.instance.memory.buffer.memunit = 1024 
+</span><span class='line'>## meory store gets mode used MEMSIZE or ITEMSIZE
+</span><span class='line'>canal.instance.memory.batch.mode = MEMSIZE
+</span><span class='line'>
+</span><span class='line'>## detecing config
+</span><span class='line'>canal.instance.detecting.enable = false
+</span><span class='line'>canal.instance.detecting.sql = insert into retl.xdual values(1,now()) on duplicate key update x=now()
+</span><span class='line'>canal.instance.detecting.interval.time = 3
+</span><span class='line'>canal.instance.detecting.retry.threshold = 3
+</span><span class='line'>canal.instance.detecting.heartbeatHaEnable = false
+</span><span class='line'>
+</span><span class='line'># support maximum transaction size, more than the size of the transaction will be cut into multiple transactions delivery
+</span><span class='line'>canal.instance.transaction.size =  1024
+</span><span class='line'># mysql fallback connected to new master should fallback times
+</span><span class='line'>canal.instance.fallbackIntervalInSeconds = 60
+</span><span class='line'>
+</span><span class='line'># network config
+</span><span class='line'>canal.instance.network.receiveBufferSize = 16384
+</span><span class='line'>canal.instance.network.sendBufferSize = 16384
+</span><span class='line'>canal.instance.network.soTimeout = 30
+</span><span class='line'>
+</span><span class='line'># binlog filter config
+</span><span class='line'>canal.instance.filter.query.dcl = false
+</span><span class='line'>canal.instance.filter.query.dml = false
+</span><span class='line'>canal.instance.filter.query.ddl = false
+</span><span class='line'>
+</span><span class='line'># binlog ddl isolation
+</span><span class='line'>canal.instance.get.ddl.isolation = false
+</span><span class='line'>
+</span><span class='line'>#################################################
+</span><span class='line'>#########         destinations        ############# 
+</span><span class='line'>#################################################
+</span><span class='line'>#destinations
+</span><span class='line'>canal.destinations= flag
+</span><span class='line'># conf root dir
+</span><span class='line'>canal.conf.dir = ../conf
+</span><span class='line'># auto scan instance dir add/remove and start/stop instance
+</span><span class='line'>canal.auto.scan = true
+</span><span class='line'>canal.auto.scan.interval = 5
+</span><span class='line'>
+</span><span class='line'>canal.instance.global.mode = spring 
+</span><span class='line'>canal.instance.global.lazy = false
+</span><span class='line'>canal.instance.global.manager.address = 127.0.0.1:1099
+</span><span class='line'>#canal.instance.global.spring.xml = classpath:spring/memory-instance.xml
+</span><span class='line'>canal.instance.global.spring.xml = classpath:spring/file-instance.xml
+</span><span class='line'>#canal.instance.global.spring.xml = classpath:spring/default-instance.xml</span></code></pre></td></tr></table></div></figure>
+
+
+<p>./flag/instance.properties配置文件</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#################################################
+</span><span class='line'>## mysql serverId
+</span><span class='line'>canal.instance.mysql.slaveId = 5711
+</span><span class='line'>
+</span><span class='line'># position info
+</span><span class='line'>canal.instance.master.address = 127.0.0.1:3306
+</span><span class='line'>canal.instance.master.journal.name = 
+</span><span class='line'>canal.instance.master.position = 
+</span><span class='line'>canal.instance.master.timestamp = 
+</span><span class='line'>
+</span><span class='line'>#canal.instance.standby.address = 
+</span><span class='line'>#canal.instance.standby.journal.name =
+</span><span class='line'>#canal.instance.standby.position = 
+</span><span class='line'>#canal.instance.standby.timestamp = 
+</span><span class='line'>
+</span><span class='line'># username/password
+</span><span class='line'>canal.instance.dbUsername = root
+</span><span class='line'>canal.instance.dbPassword = 123456
+</span><span class='line'>canal.instance.defaultDatabaseName =
+</span><span class='line'>canal.instance.connectionCharset = UTF-8
+</span><span class='line'>
+</span><span class='line'># table regex
+</span><span class='line'>canal.instance.filter.regex = .*\\..*
+</span><span class='line'>
+</span><span class='line'>#################################################</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>5.启动canal</h5>
+
+<p>启动:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/canal$ sh ./bin/startup.sh
+</span><span class='line'>
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/canal$ ps aux | grep canal
+</span><span class='line'>1000      2857  4.2  0.7 4814248 57364 pts/1   Sl   20:15   0:00 /usr/local/jdk1.6.0_45/bin/java -server -Xms2048m -Xmx3072m -Xmn1024m -XX:SurvivorRatio=2 -XX:PermSize=96m -XX:MaxPermSize=256m -Xss256k -XX:-UseAdaptiveSizePolicy -XX:MaxTenuringThreshold=15 -XX:+DisableExplicitGC -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -XX:+UseCMSCompactAtFullCollection -XX:+UseFastAccessorMethods -XX:+UseCMSInitiatingOccupancyOnly -XX:+HeapDumpOnOutOfMemoryError -Djava.awt.headless=true -Djava.net.preferIPv4Stack=true -Dfile.encoding=UTF-8 -DappName=otter-canal -Dlogback.configurationFile=/home/xiaobaoqiu/canal/bin/../conf/logback.xml -Dcanal.conf=/home/xiaobaoqiu/canal/bin/../conf/canal.properties -classpath .:/home/xiaobaoqiu/canal/bin/../conf:/home/xiaobaoqiu/canal/bin/../lib/zookeeper-3.4.5.jar:/home/xiaobaoqiu/canal/bin/../lib/zkclient-0.1.jar:/home/xiaobaoqiu/canal/bin/../lib/spring-2.5.6.jar:/home/xiaobaoqiu/canal/bin/../lib/slf4j-api-1.6.0.jar:/home/xiaobaoqiu/canal/bin/../lib/protobuf-java-2.4.1.jar:/home/xiaobaoqiu/canal/bin/../lib/oro-2.0.8.jar:/home/xiaobaoqiu/canal/bin/../lib/netty-3.2.5.Final.jar:/home/xiaobaoqiu/canal/bin/../lib/logback-core-1.0.6.jar:/home/xiaobaoqiu/canal/bin/../lib/logback-classic-1.0.6.jar:/home/xiaobaoqiu/canal/bin/../lib/log4j-1.2.14.jar:/home/xiaobaoqiu/canal/bin/../lib/jcl-over-slf4j-1.6.0.jar:/home/xiaobaoqiu/canal/bin/../lib/guava-r09.jar:/home/xiaobaoqiu/canal/bin/../lib/fastjson-1.1.26.jar:/home/xiaobaoqiu/canal/bin/../lib/commons-logging-1.1.1.jar:/home/xiaobaoqiu/canal/bin/../lib/commons-lang-2.6.jar:/home/xiaobaoqiu/canal/bin/../lib/commons-io-2.4.jar:/home/xiaobaoqiu/canal/bin/../lib/commons-beanutils-1.8.2.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.store-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.sink-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.server-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.protocol-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.parse.driver-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.parse.dbsync-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.parse-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.meta-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.instance.spring-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.instance.manager-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.instance.core-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.filter-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.deployer-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/canal.common-1.0.14.jar:/home/xiaobaoqiu/canal/bin/../lib/aviator-2.2.1.jar:.:/usr/local/jdk1.6.0_45/lib:/usr/local/jdk1.6.0_45/jre/lib: com.alibaba.otter.canal.deployer.CanalLauncher</span></code></pre></td></tr></table></div></figure>
+
+
+<p>注意启动成功之后,会在bin目录下生成一个canal.pid的文件,里面保存了当前运行的canal实例的pid:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-rw-rw-r-- 1 xiaobaoqiu xiaobaoqiu    5  5月 28 20:15 canal.pid
+</span><span class='line'>
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/canal/bin$ cat canal.pid 
+</span><span class='line'>2857</span></code></pre></td></tr></table></div></figure>
+
+
+<p>之后的stop.sh根据这个canal.pid文件来停止canal实例.</p>
+
+<h5>6.使用canal</h5>
+
+<p>canal拿到了master的binlog之后,我们可以解析,一段简单的代码如下(注意其中的11111参数和canal.properties中canal.port= 11111对应,flag和canal.properties中canal.destinations= flag对应,帐号密码是我没刚才分配的):</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">App</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">main</span><span class="o">(</span><span class="n">String</span> <span class="n">args</span><span class="o">[])</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">// 创建链接</span>
+</span><span class='line'>        <span class="n">CanalConnector</span> <span class="n">connector</span> <span class="o">=</span> <span class="n">CanalConnectors</span><span class="o">.</span><span class="na">newSingleConnector</span><span class="o">(</span><span class="k">new</span> <span class="nf">InetSocketAddress</span><span class="o">(</span><span class="n">AddressUtils</span><span class="o">.</span><span class="na">getHostIp</span><span class="o">(),</span>
+</span><span class='line'>                <span class="mi">11111</span><span class="o">),</span> <span class="s">&quot;flag&quot;</span><span class="o">,</span> <span class="s">&quot;canal&quot;</span><span class="o">,</span> <span class="s">&quot;123456&quot;</span><span class="o">);</span>
+</span><span class='line'>        <span class="kd">final</span> <span class="kt">int</span> <span class="n">batchSize</span> <span class="o">=</span> <span class="mi">1000</span><span class="o">;</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">emptyCount</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">connector</span><span class="o">.</span><span class="na">connect</span><span class="o">();</span>
+</span><span class='line'>            <span class="n">connector</span><span class="o">.</span><span class="na">subscribe</span><span class="o">(</span><span class="s">&quot;.*\\..*&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">connector</span><span class="o">.</span><span class="na">rollback</span><span class="o">();</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;Connect success...&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="kd">final</span> <span class="kt">int</span> <span class="n">totalEmtryCount</span> <span class="o">=</span> <span class="mi">1000</span><span class="o">;</span>
+</span><span class='line'>            <span class="k">while</span> <span class="o">(</span><span class="n">emptyCount</span> <span class="o">&lt;</span> <span class="n">totalEmtryCount</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">Message</span> <span class="n">message</span> <span class="o">=</span> <span class="n">connector</span><span class="o">.</span><span class="na">getWithoutAck</span><span class="o">(</span><span class="n">batchSize</span><span class="o">);</span> <span class="c1">// 获取指定数量的数据</span>
+</span><span class='line'>                <span class="kt">long</span> <span class="n">batchId</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="na">getId</span><span class="o">();</span>
+</span><span class='line'>                <span class="kt">int</span> <span class="n">size</span> <span class="o">=</span> <span class="n">message</span><span class="o">.</span><span class="na">getEntries</span><span class="o">().</span><span class="na">size</span><span class="o">();</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">batchId</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span> <span class="o">||</span> <span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">emptyCount</span><span class="o">++;</span>
+</span><span class='line'>                    <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;No data... : &quot;</span> <span class="o">+</span> <span class="n">emptyCount</span><span class="o">);</span>
+</span><span class='line'>                    <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>                        <span class="n">Thread</span><span class="o">.</span><span class="na">sleep</span><span class="o">(</span><span class="mi">1000</span><span class="o">);</span>
+</span><span class='line'>                    <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="o">}</span>
+</span><span class='line'>                <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">emptyCount</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>                    <span class="n">printEntry</span><span class="o">(</span><span class="n">message</span><span class="o">.</span><span class="na">getEntries</span><span class="o">());</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="n">connector</span><span class="o">.</span><span class="na">ack</span><span class="o">(</span><span class="n">batchId</span><span class="o">);</span> <span class="c1">// 提交确认</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;No data too many times, exit...&quot;</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">connector</span><span class="o">.</span><span class="na">disconnect</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">printEntry</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">CanalEntry</span><span class="o">.</span><span class="na">Entry</span><span class="o">&gt;</span> <span class="n">entrys</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="n">CanalEntry</span><span class="o">.</span><span class="na">Entry</span> <span class="n">entry</span> <span class="o">:</span> <span class="n">entrys</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">entry</span><span class="o">.</span><span class="na">getEntryType</span><span class="o">()</span> <span class="o">==</span> <span class="n">CanalEntry</span><span class="o">.</span><span class="na">EntryType</span><span class="o">.</span><span class="na">TRANSACTIONBEGIN</span>
+</span><span class='line'>                    <span class="o">||</span> <span class="n">entry</span><span class="o">.</span><span class="na">getEntryType</span><span class="o">()</span> <span class="o">==</span> <span class="n">CanalEntry</span><span class="o">.</span><span class="na">EntryType</span><span class="o">.</span><span class="na">TRANSACTIONEND</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="k">continue</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="n">CanalEntry</span><span class="o">.</span><span class="na">RowChange</span> <span class="n">rowChage</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>            <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">rowChage</span> <span class="o">=</span> <span class="n">CanalEntry</span><span class="o">.</span><span class="na">RowChange</span><span class="o">.</span><span class="na">parseFrom</span><span class="o">(</span><span class="n">entry</span><span class="o">.</span><span class="na">getStoreValue</span><span class="o">());</span>
+</span><span class='line'>            <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">Exception</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="k">throw</span> <span class="k">new</span> <span class="nf">RuntimeException</span><span class="o">(</span><span class="s">&quot;ERROR ## parser of eromanga-event has an error , data:&quot;</span> <span class="o">+</span> <span class="n">entry</span><span class="o">.</span><span class="na">toString</span><span class="o">(),</span>
+</span><span class='line'>                        <span class="n">e</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="n">CanalEntry</span><span class="o">.</span><span class="na">EventType</span> <span class="n">eventType</span> <span class="o">=</span> <span class="n">rowChage</span><span class="o">.</span><span class="na">getEventType</span><span class="o">();</span> <span class="c1">// 事件类型</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="n">String</span><span class="o">.</span><span class="na">format</span><span class="o">(</span><span class="s">&quot;================&gt; binlog[LogfileName=%s:LogfileOffset=%s] , &quot;</span> <span class="o">+</span>
+</span><span class='line'>                    <span class="s">&quot;name[DBName=%s,TableName=%s] , EventType : %s&quot;</span><span class="o">,</span> <span class="n">entry</span>
+</span><span class='line'>                    <span class="o">.</span><span class="na">getHeader</span><span class="o">().</span><span class="na">getLogfileName</span><span class="o">(),</span> <span class="n">entry</span><span class="o">.</span><span class="na">getHeader</span><span class="o">().</span><span class="na">getLogfileOffset</span><span class="o">(),</span> <span class="n">entry</span><span class="o">.</span><span class="na">getHeader</span><span class="o">()</span>
+</span><span class='line'>                    <span class="o">.</span><span class="na">getSchemaName</span><span class="o">(),</span> <span class="n">entry</span><span class="o">.</span><span class="na">getHeader</span><span class="o">().</span><span class="na">getTableName</span><span class="o">(),</span> <span class="n">eventType</span><span class="o">));</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="k">for</span> <span class="o">(</span><span class="n">CanalEntry</span><span class="o">.</span><span class="na">RowData</span> <span class="n">rowData</span> <span class="o">:</span> <span class="n">rowChage</span><span class="o">.</span><span class="na">getRowDatasList</span><span class="o">())</span> <span class="o">{</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">eventType</span> <span class="o">==</span> <span class="n">CanalEntry</span><span class="o">.</span><span class="na">EventType</span><span class="o">.</span><span class="na">DELETE</span><span class="o">)</span> <span class="o">{</span> <span class="c1">//delete事件,被delete的数据</span>
+</span><span class='line'>                    <span class="n">printColumn</span><span class="o">(</span><span class="n">rowData</span><span class="o">.</span><span class="na">getBeforeColumnsList</span><span class="o">());</span>
+</span><span class='line'>                <span class="o">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">eventType</span> <span class="o">==</span> <span class="n">CanalEntry</span><span class="o">.</span><span class="na">EventType</span><span class="o">.</span><span class="na">INSERT</span><span class="o">)</span> <span class="o">{</span>  <span class="c1">//insert事件,insert的数据</span>
+</span><span class='line'>                    <span class="n">printColumn</span><span class="o">(</span><span class="n">rowData</span><span class="o">.</span><span class="na">getAfterColumnsList</span><span class="o">());</span>
+</span><span class='line'>                <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;-------&gt; before&quot;</span><span class="o">);</span>
+</span><span class='line'>                    <span class="n">printColumn</span><span class="o">(</span><span class="n">rowData</span><span class="o">.</span><span class="na">getBeforeColumnsList</span><span class="o">());</span>
+</span><span class='line'>                    <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;-------&gt; after&quot;</span><span class="o">);</span>
+</span><span class='line'>                    <span class="n">printColumn</span><span class="o">(</span><span class="n">rowData</span><span class="o">.</span><span class="na">getAfterColumnsList</span><span class="o">());</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">printColumn</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">CanalEntry</span><span class="o">.</span><span class="na">Column</span><span class="o">&gt;</span> <span class="n">columns</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="n">CanalEntry</span><span class="o">.</span><span class="na">Column</span> <span class="n">column</span> <span class="o">:</span> <span class="n">columns</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="n">column</span><span class="o">.</span><span class="na">getName</span><span class="o">()</span> <span class="o">+</span> <span class="s">&quot; : &quot;</span> <span class="o">+</span> <span class="n">column</span><span class="o">.</span><span class="na">getValue</span><span class="o">()</span> <span class="o">+</span> <span class="s">&quot;    update=&quot;</span> <span class="o">+</span> <span class="n">column</span><span class="o">.</span><span class="na">getUpdated</span><span class="o">());</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在数据库中做插入:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">mysql</span><span class="o">&gt;</span> <span class="n">insert</span> <span class="n">into</span> <span class="nf">test_table</span><span class="o">(</span><span class="n">id</span><span class="o">,</span> <span class="n">name</span><span class="o">)</span> <span class="n">values</span><span class="o">(</span><span class="mi">8</span><span class="o">,</span> <span class="err">&#39;</span><span class="n">xiaobaoqiu8</span><span class="err">&#39;</span><span class="o">);</span>
+</span><span class='line'><span class="n">Query</span> <span class="n">OK</span><span class="o">,</span> <span class="mi">1</span> <span class="n">row</span> <span class="nf">affected</span> <span class="o">(</span><span class="mf">0.10</span> <span class="n">sec</span><span class="o">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>可以看见代码的响应:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">No</span> <span class="n">data</span><span class="o">...</span> <span class="o">:</span> <span class="mi">13</span>
+</span><span class='line'><span class="o">================&gt;</span> <span class="n">binlog</span><span class="o">[</span><span class="n">LogfileName</span><span class="o">=</span><span class="n">mysql</span><span class="o">-</span><span class="n">bin</span><span class="o">.</span><span class="mi">000316</span><span class="o">:</span><span class="n">LogfileOffset</span><span class="o">=</span><span class="mi">420</span><span class="o">]</span> <span class="o">,</span> <span class="n">name</span><span class="o">[</span><span class="n">DBName</span><span class="o">=</span><span class="n">test</span><span class="o">,</span><span class="n">TableName</span><span class="o">=</span><span class="n">test_table</span><span class="o">]</span> <span class="o">,</span> <span class="n">EventType</span> <span class="o">:</span> <span class="n">INSERT</span>
+</span><span class='line'><span class="n">id</span> <span class="o">:</span> <span class="mi">8</span>    <span class="n">update</span><span class="o">=</span><span class="kc">false</span>
+</span><span class='line'><span class="n">name</span> <span class="o">:</span> <span class="n">xiaobaoqiu8</span>    <span class="n">update</span><span class="o">=</span><span class="kc">false</span>
+</span><span class='line'><span class="n">No</span> <span class="n">data</span><span class="o">...</span> <span class="o">:</span> <span class="mi">1</span>
+</span><span class='line'><span class="n">No</span> <span class="n">data</span><span class="o">...</span> <span class="o">:</span> <span class="mi">2</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>10.参考</h3>
+
+<p><a href="http://dev.mysql.com/doc/internals/en/binary-log.html">http://dev.mysql.com/doc/internals/en/binary-log.html</a></p>
+
+<p><a href="http://dev.mysql.com/doc/refman/5.7/en/mysqlbinlog.html">http://dev.mysql.com/doc/refman/5.7/en/mysqlbinlog.html</a></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/05/18/java-concurrency-in-practice-1/">Java Concurrency in Practice 1 : 简介</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-05-18T15:52:06+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>18</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>3:52 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>书名：Java Concurrency in Practice，译Java并发编程实战</p>
+
+<p><strong>第一章：简介</strong>：</p>
+
+<p>多线程优势：</p>
+
+<ol>
+<li>发挥多核处理器的能力;</li>
+</ol>
+
+
+<p>问题：</p>
+
+<ol>
+<li>如何保证线程安全;</li>
+<li>多线程带来的代价，如线程切换，线程间通信等;</li>
+</ol>
+
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/05/18/cheng-xu-yuan-de-shu-xue/">读 程序员的数学</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-05-18T14:43:50+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>18</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>2:43 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>书名:程序员的数学<br>
+作者:结城浩（hiroshi yuki），生于1963年，日本资深技术作家和程序员。在编程语言、设计模式、数学、加密技术等领域，编写了很多深受欢迎的入门书。代表作有《数学女孩》系列、《程序员的数学》等。<br>
+网站：<a href="http://www.hyuki.com/">http://www.hyuki.com/</a><br></p>
+
+<p>数学可以说是计算机的基础，更确切的说应该是算法或者算法分析的基础。这本书不是什么深奥的数论分析，只是将数学和我们熟知的一些计算机问题联系起来，目的应该是建立一种编程中的“数学思维”。<br>
+第一章讲0在计算机领域的作用，包括进制作用、占位作用等;启发：一般性问题往往更好解决，多尝试将遇到的实际复杂问题转化为一般性问题，专想到一个业名称：归约;<br>
+第二章讲逻辑，即true与false，包括一系列的逻辑运算，德·摩根定律等;<br>
+第三章讲余数的作用，包括周期性和hash分组，包括七桥问题的求解;启发：对于一个很大很难的问题求解，先尝试求解近似的简单问题，找到规律;<br>
+第四章讲解数学归纳法，引出了一个算法分析中的循环不变式;<br>
+第五章将排列组合，加法法则乘法法则，排列计算组合计算;<br>
+第六章将递归，经典的汉诺塔、阶乘、斐波那契、帕斯卡三角（即杨辉三角）;<br>
+第七章将指数爆炸，指数爆炸引出二分查找，对数及加密的原理;<br>
+第八章将不可解问题，主要是反证法，后面的不可数没看明白;<br>
+<br>
+总结：解决问题的办法<br>
+（1）.找到一致性的简单规则，便于更多问题的统计处理;计算机的术语就是抽象化;<br>
+（2）.求解问题由易到难，分解问题，哪些是自己能做的，尝试将问题解耦;<br>
+（3）.对复杂问题，先观察内部是否含有相同结构的子问题，尝试找到递归结构;<br>
+（4）.任何问题都有利用价值，多尝试逆向思维，想想如何把不好的事情转化为好的事情;<br></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/05/18/octopressda-jian-githubbo-ke/">Octopress搭建Github博客</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-05-18T14:29:30+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>18</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>2:29 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>
+Octopress是利用Jekyll博客引擎开发的一个博客系统，生成的静态页面能够很好的在github page上展现。号称是hacker专属的一个博客系统(A blogging framework for hackers).</p>
+
+
+<p>
+搭建github博客：http://beyondvincent.com/blog/2013/08/03/108-creating-a-github-blog-using-octopress/</p>
+
+
+<p>
+主題及第三方插件：http://baham.co/01_10_octopressbo-ke-chang-yong-zi-yuan-hui-zong-bao-gua-cha-jian-,-zhu-ti-,-wen-dang-deng.html</p>
+
+</div>
+  
+  
+
+
+    </article>
+  
+  <div class="pagination">
+    
+    <a href="/blog/archives">Blog Archives</a>
+    
+    <a class="next" href="/posts/8">Newer &rarr;</a>
+    
+  </div>
+</div>
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2015/07/17/fen-ci/">分词</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2015 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

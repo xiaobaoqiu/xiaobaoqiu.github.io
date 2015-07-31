@@ -1,0 +1,922 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Java | xiaobaoqiu Blog]]></title>
+  <link href="http://xiaobaoqiu.github.io/blog/categories/java/atom.xml" rel="self"/>
+  <link href="http://xiaobaoqiu.github.io/"/>
+  <updated>2015-07-31T13:33:53+08:00</updated>
+  <id>http://xiaobaoqiu.github.io/</id>
+  <author>
+    <name><![CDATA[xiaobaoqiu]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Enum反序列化问题]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/04/01/enumfan-xu-lie-hua-wen-ti/"/>
+    <updated>2015-04-01T23:01:25+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/04/01/enumfan-xu-lie-hua-wen-ti</id>
+    <content type="html"><![CDATA[<h1>1.Enum原理</h1>
+
+<p>定义一个Enum，通过编译之后的字节码，我们可以发现其实现原理：
+<code>
+public enum FruitEnum {  
+    APPLE, ORAGE  
+}
+</code>
+编译器是在为我们创建一个类，这个类继承自 java.lang.Enum，有两个公共的、静态的、被声明成final的属性，它们的类型就是我们定义的FruitEnum。</p>
+
+<p>编译器还生成了一个静态初始话器，就是字节码中static{};这一行下面的代码，其中的字节码创建了两个FruitEnum对象，同时分别赋值给APPLE和ORANGE这两个属性，调用的构造函数是定义在java.lang.Enum中的protected Enum(String name, int ordinal)方法。</p>
+
+<p>在创建完成两个FruitEnum对象并且分别赋值给APPLE和ORIGIN之后，还创建了一个名叫ENUM$VALUES的数组，然后把APPLE和ORIGIN按照定义的顺序放如这个数组中。</p>
+
+<p>除了这个静态初始化器之外，编译器还为我们生成了两个静态方法，values()和 valueOf(java.lang.String)方法。其中values()方法将ENUM$VALUES数组拷贝一份然后返回，而valueOf(java.lang.String)方法则会调用java.lang.Enum类中的valueOf方法，其作用是根据参数名找到对应的具体的枚举对象，如果找不到的话会抛出一个IllegalArgumentException异常。</p>
+
+<h1>2.Enum序列化反序列化原理及问题</h1>
+
+<h3>2.1原理</h3>
+
+<p>序列化的时候Java仅仅是将枚举对象的name属性输出到结果中，反序列化的时候则是通过java.lang.Enum的valueOf方法来根据名字查找枚举对象。</p>
+
+<p>同时，编译器是不允许任何对这种序列化机制的定制的，因此禁用了writeObject、readObject、readObjectNoData、writeReplace和readResolve等方法。</p>
+
+<h3>2.2问题</h3>
+
+<p>在系统或者类库升级时，对其中定义的枚举类型多加注意，为了保持代码上的兼容性，如果我们定义的枚举类型有可能会被序列化保存(放到文件中、保存到数据库中，进入分布式内存缓存中)，那么我们是不能够删除原来枚举类型中定义的任何枚举对象的，否则程序在运行过程中，JVM就会抱怨找不到与某个名字对应的枚举对象了。</p>
+
+<p>另外，在远程方法调用过程中，如果我们发布的客户端接口返回值中使用了枚举类型，那么服务端在升级过程中就需要特别注意。如果在接口的返回结果的枚举类型中添加了新的枚举值，那就会导致仍然在使用老的客户端的那些应用出现调用失败的情况。</p>
+
+<h1>3.Enum序列化反序列化问题解决</h1>
+
+<p>使用class代替Enum,原来的枚举使用static对象替换，valueOf()方法使用一个Map实现，示例代码如下：
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public final class FruitEnum implements Serializable {&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;pre&gt;&lt;code&gt;private static final long serialVersionUID = -7230925342774763449L;
+</span><span class='line'>
+</span><span class='line'>private static final Map&lt;Integer, FruitEnum&gt; MAP = new HashMap&lt;Integer, FruitEnum&gt;();
+</span><span class='line'>
+</span><span class='line'>public static final FruitEnum APPLE = new FruitEnum("Apple", 0);
+</span><span class='line'>public static final FruitEnum ORAGE = new FruitEnum("Orige", 1);
+</span><span class='line'>
+</span><span class='line'>private String text;
+</span><span class='line'>private int code;
+</span><span class='line'>
+</span><span class='line'>private FruitEnum(String text, int code) {
+</span><span class='line'>    this.text = text;
+</span><span class='line'>    this.code = code;
+</span><span class='line'>
+</span><span class='line'>    MAP.put(code, this);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public String getText() {
+</span><span class='line'>    return text;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public void setText(String text) {
+</span><span class='line'>    this.text = text;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>@Override
+</span><span class='line'>public int getCode() {
+</span><span class='line'>    return code;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 根据code获取FruitEnum
+</span><span class='line'> *
+</span><span class='line'> * @param code
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public static FruitEnum valueOf(int code) {
+</span><span class='line'>    return MAP.get(code);
+</span><span class='line'>}
+</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
+
+<p>参考：<a href="http://mysun.iteye.com/blog/1581119">http://mysun.iteye.com/blog/1581119</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Java中MessageDigest计算MD5]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/02/05/java-md5/"/>
+    <updated>2015-02-05T21:40:13+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/02/05/java-md5</id>
+    <content type="html"><![CDATA[<p>最近项目的图片处理的系统出问题比较多，典型的一个问题就是因为计算md5出现的问题。</p>
+
+<h1>1.问题</h1>
+
+<p>问题的现象很简单，使用这套代码批量切图，会出现一张灵异图片，灵异之处在于，很多人批量切图都会出现这张图片，且这张图片不在他们的原始图片中。</p>
+
+<h1>2.原因</h1>
+
+<p>最后分析的原因是计算图片md5的代码，使用的是Java自带的MessageDigest，大致使用如下
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>//声明
+</span><span class='line'>private static MessageDigest md = null;&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;//初始化
+</span><span class='line'>static {
+</span><span class='line'>    md = MessageDigest.getInstance(&ldquo;MD5&rdquo;);
+</span><span class='line'>}&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;//使用
+</span><span class='line'>public static byte[] getMD5(byte[] bytes) {
+</span><span class='line'>    md.update(bytes);   //&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;A
+</span><span class='line'>    return md.digest(); //&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&ndash;B
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+问题的原因就是多线程计算md5的时候getMD5这个函数有问题。</p>
+
+<h3>2.1 问题md5</h3>
+
+<p>最后定位发现重复出现的md5是</p>
+
+<pre><code>d41d8cd98f00b204e9800998ecf8427e
+</code></pre>
+
+<p>这是一个特殊的md5，即其是空字符串的md5：
+<code>
+MD5("") = d41d8cd98f00b204e9800998ecf8427e
+</code>
+参考： <a href="http://zh.wikipedia.org/wiki/MD5">http://zh.wikipedia.org/wiki/MD5</a></p>
+
+<h3>2.1 代码问题</h3>
+
+<p>在MessageDigest类的源代码注释有这样一段话：
+<code>
+ * &lt;p&gt;A MessageDigest object starts out initialized. The data is
+ * processed through it using the {@link #update(byte) update}
+ * methods. At any point {@link #reset() reset} can be called
+ * to reset the digest. Once all the data to be updated has been
+ * updated, one of the {@link #digest() digest} methods should
+ * be called to complete the hash computation.
+ *
+ * &lt;p&gt;The &lt;code&gt;digest&lt;/code&gt; method can be called once for a given number
+ * of updates. After &lt;code&gt;digest&lt;/code&gt; has been called, the MessageDigest
+ * object is reset to its initialized state.
+</code>
+上面这段话第二部分的意思是说，digest()这个方法只能被调用一次，一旦调用MessageDigest对象会被重置到初始状态。</p>
+
+<p>根据这个逻辑，getMD5这个函数的代码，多个线程进入这段代码的时候（这里假设两个线程），线程A执行完步骤1，在执行步骤2之前，线程B也执行完步骤1，之后线程B调用了步骤2得到正确的md5,之后线程A再调用步骤2的时候得到的md5就是d41d8cd98f00b204e9800998ecf8427e。</p>
+
+<p>本地验证：
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static void main(String[] args) {
+</span><span class='line'>    String src = &ldquo;HelloWorld&rdquo;;&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;pre&gt;&lt;code&gt;    messageDigest.update(src.getBytes());
+</span><span class='line'>
+</span><span class='line'>String md5 = bytesToHex(messageDigest.digest());
+</span><span class='line'>System.out.println("md5 = " + md5.toLowerCase());
+</span><span class='line'>
+</span><span class='line'>String md5Again = bytesToHex(messageDigest.digest());
+</span><span class='line'>System.out.println("md5Again = " + md5Again.toLowerCase());
+</span><span class='line'>}
+</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;pre&gt;&lt;code&gt;
+</span><span class='line'>得到的结果：
+</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;md5 = 68e109f0f40ca72a15e05cc22786f8e6
+</span><span class='line'>md5Again = d41d8cd98f00b204e9800998ecf8427e</span></code></pre></td></tr></table></div></figure></p>
+
+<h1>3.解决</h1>
+
+<h3>3.1 MessageDigest正确用法</h3>
+
+<p>MessageDigest类的注释里面其实给出了正确的用法，注意其md.clone()的调用：
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> MessageDigest md = MessageDigest.getInstance(&ldquo;MD5&rdquo;);&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt; try {
+</span><span class='line'>     md.update(toChapter1);
+</span><span class='line'>     MessageDigest tc1 = md.clone();
+</span><span class='line'>     byte[] toChapter1Digest = tc1.digest();
+</span><span class='line'>     md.update(toChapter2);
+</span><span class='line'>     &hellip;etc.
+</span><span class='line'> } catch (CloneNotSupportedException cnse) {
+</span><span class='line'>     throw new DigestException(&ldquo;couldn&rsquo;t make digest of partial content&rdquo;);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure></p>
+
+<h3>3.1 Apache的DigestUtils</h3>
+
+<p>Apache的DigestUtils是一个线程安全的类，是对MessageDigest的封装，使用很简单，首先加入依赖：
+<code>
+&lt;dependency&gt;
+    &lt;groupId&gt;commons-codec&lt;/groupId&gt;
+    &lt;artifactId&gt;commons-codec&lt;/artifactId&gt;
+    &lt;version&gt;1.9&lt;/version&gt;
+&lt;/dependency&gt;
+</code>
+然后就可以使用DigestUtils计算md5：
+<code>
+DigestUtils.md5(bytes)
+</code></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[JVM内存DUMP参数配置]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/01/23/jvmnei-cun-dumpcan-shu-pei-zhi/"/>
+    <updated>2015-01-23T23:04:31+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/01/23/jvmnei-cun-dumpcan-shu-pei-zhi</id>
+    <content type="html"><![CDATA[<p>在JVM出现内存溢出或泄露时，为便于排查和定位，需要JVM的启动上增加相应的参数。主要是GC日志和内存DUMP参数.</p>
+
+<h1>1.GC日志</h1>
+
+<pre><code>-Xloggc:$CATALINA_BASE/logs/gc.log
+</code></pre>
+
+<h1>2.内存DUMP</h1>
+
+<pre><code>-XX:+HeapDumpOnOutOfMemoryError
+-XX:HeapDumpPath=$CATALINA_BASE/logs/heapDump.log
+</code></pre>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[How to Read Files Quickly]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/01/16/how-to-read-files-quickly/"/>
+    <updated>2015-01-16T01:00:42+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/01/16/how-to-read-files-quickly</id>
+    <content type="html"><![CDATA[<p>Java中有很多读写文件或者网络流的方法，特别是Java7中加入了AIO之后，可选择的方法更多，本文的目的是想比较一下各种方式的优劣。</p>
+
+<p>本文基本是参考这篇英文：<a href="http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quikcly">http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quikcly</a></p>
+
+<h1>1.方法List</h1>
+
+<p>这里涉及的读文件的方法包括：</p>
+
+<h3>1.1 FileInputStreamOneByte</h3>
+
+<pre><code>    @Override
+    public long doRead() throws IOException {
+        long checkSum = 0L;
+        FileInputStream fis = new FileInputStream(filePath);
+        int b;
+        while ((b = fis.read()) != -1)
+            checkSum += b;
+        Closeables.close(fis, false);
+        return checkSum;
+    }
+</code></pre>
+
+<h3>1.2 FileInputStreamBytes</h3>
+
+<pre><code>@Override
+    public long doRead() throws IOException {
+        long checkSum = 0L;
+        FileInputStream fis = new FileInputStream(filePath);
+        byte[] array = new byte[BUF_SIZE];
+        int nRead;
+        while ((nRead = fis.read(array, 0, BUF_SIZE)) != -1) {
+            for (int i = 0; i &lt; nRead; i++)
+                checkSum += array[i];
+        }
+        Closeables.close(fis, false);
+        return checkSum;
+    }
+</code></pre>
+
+<h3>1.3 BufferedInputStreamOneByte</h3>
+
+<pre><code>@Override
+    public long doRead() throws IOException {
+        long checkSum = 0L;
+        BufferedInputStream bis = new BufferedInputStream(new FileInputStream(filePath), BUF_SIZE);
+        int b;
+        while ((b = bis.read()) != -1)
+            checkSum += b;
+        Closeables.close(bis, false);
+        return checkSum;
+    }
+</code></pre>
+
+<h3>1.4 BufferedInputStreamBytes</h3>
+
+<pre><code>@Override
+    public long doRead() throws IOException {
+        long checkSum = 0L;
+        BufferedInputStream bis = new BufferedInputStream(new FileInputStream(filePath), BUF_SIZE);
+        byte[] array = new byte[BUF_SIZE];
+        int nRead;
+        while ((nRead = bis.read(array, 0, BUF_SIZE)) != -1) {
+            for (int i = 0; i &lt; nRead; i++)
+                checkSum += array[i];
+        }
+        Closeables.close(bis, false);
+        return checkSum;
+    }
+</code></pre>
+
+<h3>1.5 RandomAccessOneByte</h3>
+
+<pre><code>public long doRead() throws IOException {
+        long checkSum = 0L;
+        RandomAccessFile raf = new RandomAccessFile(filePath, READ_MODE);
+        int b;
+        while ((b = raf.read()) != -1) {
+            checkSum += b;
+        }
+        Closeables.close(raf, false);
+        return checkSum;
+    }
+</code></pre>
+
+<h3>1.6 RandomAccessBytes</h3>
+
+<pre><code>public long doRead() throws IOException {
+        long checkSum = 0L;
+        RandomAccessFile raf = new RandomAccessFile(filePath, READ_MODE);
+        byte[] array = new byte[BUF_SIZE];
+        int nRead;
+        while ((nRead = raf.read(array, 0, BUF_SIZE)) != -1) {
+            for (int i = 0; i &lt; nRead; i++)
+                checkSum += array[i];
+        }
+        Closeables.close(raf, false);
+        return checkSum;
+    }
+</code></pre>
+
+<h3>1.7 FileChannelByteBufferOneByte</h3>
+
+<pre><code>public long doRead() throws IOException {
+        long checkSum = 0L;
+        FileInputStream fis = new FileInputStream(filePath);
+        FileChannel ch = fis.getChannel();
+        ByteBuffer bb = ByteBuffer.allocate(BUF_SIZE);
+        int nRead;
+        while ((nRead = ch.read(bb)) != -1) {
+            if (nRead == 0)
+                continue;
+            bb.position(0);
+            bb.limit(nRead);
+            while (bb.hasRemaining())
+                checkSum += bb.get(); // 从ByteBuffer读一个字节
+            bb.clear();
+        }
+        Closeables.close(fis, false);
+        return checkSum;
+    }
+</code></pre>
+
+<h3>1.8 FileChannelByteBufferBytes</h3>
+
+<pre><code>public long doRead() throws IOException {
+        long checkSum = 0L;
+        FileInputStream fis = new FileInputStream(filePath);
+        FileChannel ch = fis.getChannel();
+        ByteBuffer bb = ByteBuffer.allocate(BIG_BUF_SIZE);
+        byte[] array = new byte[BUF_SIZE];
+        int nRead, nGet;
+        while ((nRead = ch.read(bb)) != -1) {
+            if (nRead == 0)
+                continue;
+            bb.position(0);
+            bb.limit(nRead);
+            while (bb.hasRemaining()) {
+                nGet = Math.min(bb.remaining(), BUF_SIZE);
+                bb.get(array, 0, nGet);
+                for (int i = 0; i &lt; nGet; i++)
+                    checkSum += array[i];
+            }
+            bb.clear();
+        }
+        Closeables.close(fis, false);
+        return checkSum;
+    }
+</code></pre>
+
+<h3>1.9 FileChannelByteBufferWrap</h3>
+
+<pre><code>public long doRead() throws IOException {
+        long checkSum = 0L;
+        FileInputStream fis = new FileInputStream(filePath);
+        FileChannel ch = fis.getChannel();
+        byte[] barray = new byte[BUF_SIZE];
+        ByteBuffer bb = ByteBuffer.wrap(barray); // ByteBuffer包装本地array
+        int nRead;
+        while ((nRead = ch.read(bb)) != -1) {
+            for (int i = 0; i &lt; nRead; i++)
+                checkSum += barray[i];
+            bb.clear();
+        }
+        Closeables.close(fis, false);
+        return checkSum;
+    }
+</code></pre>
+
+<h3>1.10 FileChannelMappedByteBufferOneByte</h3>
+
+<pre><code>public long doRead() throws IOException {
+        long checkSum = 0L;
+        FileInputStream fis = new FileInputStream(filePath);
+        FileChannel ch = fis.getChannel();
+        MappedByteBuffer mb = ch.map(FileChannel.MapMode.READ_ONLY, 0L, ch.size());
+        while (mb.hasRemaining())
+            checkSum += mb.get();
+        Closeables.close(fis, false);
+        return checkSum;
+    }
+</code></pre>
+
+<h3>1.11 FileChannelMappedByteBufferBytes</h3>
+
+<pre><code>public long doRead() throws IOException {
+        long checkSum = 0L;
+        FileInputStream fis = new FileInputStream(filePath);
+        FileChannel ch = fis.getChannel();
+        MappedByteBuffer mb = ch.map(FileChannel.MapMode.READ_ONLY, 0L, ch.size());
+        byte[] barray = new byte[BUF_SIZE];
+        int nGet;
+        while (mb.hasRemaining()) {
+            nGet = Math.min(mb.remaining(), BUF_SIZE);
+            mb.get(barray, 0, nGet);
+            for (int i = 0; i &lt; nGet; i++)
+                checkSum += barray[i];
+        }
+        Closeables.close(fis, false);
+        return checkSum;
+    }
+</code></pre>
+
+<h3>1.12 FileChannelDirectByteBufferOneByte</h3>
+
+<pre><code>public long doRead() throws IOException {
+        long checkSum = 0L;
+        FileInputStream fis = new FileInputStream(filePath);
+        FileChannel ch = fis.getChannel();
+        ByteBuffer bb = ByteBuffer.allocateDirect(BUF_SIZE);
+        int nRead;
+        while ((nRead = ch.read(bb)) != -1) {
+            bb.position(0);
+            bb.limit(nRead);
+            while (bb.hasRemaining())
+                checkSum += bb.get();
+            bb.clear();
+        }
+        Closeables.close(fis, false);
+        return checkSum;
+    }
+</code></pre>
+
+<h3>1.13 FileChannelDirectByteBufferBytes</h3>
+
+<pre><code>public long doRead() throws IOException {
+        long checkSum = 0L;
+        FileInputStream fis = new FileInputStream(filePath);
+        FileChannel ch = fis.getChannel();
+        ByteBuffer bb = ByteBuffer.allocateDirect(BIG_BUF_SIZE);
+        byte[] barray = new byte[BUF_SIZE];
+        int nRead, nGet;
+        while ((nRead = ch.read(bb)) != -1) {
+            if (nRead == 0)
+                continue;
+            bb.position(0);
+            bb.limit(nRead);
+            while (bb.hasRemaining()) {
+                nGet = Math.min(bb.remaining(), BUF_SIZE);
+                bb.get(barray, 0, nGet);
+                for (int i = 0; i &lt; nGet; i++)
+                    checkSum += barray[i];
+            }
+            bb.clear();
+        }
+        Closeables.close(fis, false);
+        return checkSum;
+    }
+</code></pre>
+
+<h1>2.测试</h1>
+
+<p>测试文件的大小为83M：
+<code>
+xiaobaoqiu@xiaobaoqiu:~/Documents/TestData$ ll -h BXBooks.sql
+-rw------- 1 xiaobaoqiu xiaobaoqiu 83M 10月  8  2004 BXBooks.sql
+</code></p>
+
+<h1>3.结论</h1>
+
+<p>得到测试数据之后，为了直观展示代码的速度，用ECharts展示，对应的js代码如下(可以在<a href="http://echarts.baidu.com/doc/example/line1.html#helianthus%E4%B8%AD%E4%BD%BF%E7%94%A8">http://echarts.baidu.com/doc/example/line1.html#helianthus%E4%B8%AD%E4%BD%BF%E7%94%A8</a>)：
+<code>
+option = {
+    title : {
+        text: 'how_to_read_file_quickly',
+        subtext: 'baoqiu.xiao'
+    },
+    tooltip : {
+        trigger: 'axis'
+    },
+    legend: {
+        data:['FileInputStreamOneByte','FileInputStreamBytes','BufferedInputStreamOneByte','BufferedInputStreamBytes','RandomAccessOneByte','RandomAccessBytes','FileChannelByteBufferOneByte','FileChannelByteBufferBytes','FileChannelByteBufferWrap','FileChannelMappedByteBufferOneByte','FileChannelMappedByteBufferBytes','FileChannelDirectByteBufferOneByte','FileChannelDirectByteBufferBytes']
+    },
+    dataZoom : {
+        show : true,
+        realtime: true,
+        start : 0,
+        end : 30
+    },
+    toolbox: {
+        show : true,
+        feature : {
+            saveAsImage : {show: true}
+        }
+    },
+    calculable : true,
+    xAxis : [
+        {
+            type : 'category',
+            boundaryGap : false,
+            data : ['1','2','4','8','16','32','64','128','256','512','1K','2K','4K','8K','16K','32K','64K','128K']
+        }
+    ],
+    yAxis : [
+        {
+            type : 'value',
+            axisLabel : {
+                formatter: '{value} 毫秒'
+            }
+        }
+    ],
+    series : [
+        {
+            name:'FileInputStreamOneByte',
+            type:'line',
+            data:[29119,28353,27872,27950,32035,40377,34904,36804,36835,33177,32252,37362,32359,31892,32621,32312,32943,33369]
+        },
+        {
+            name:'FileInputStreamBytes',
+            type:'line',
+            data:[38182,20208,10194,4768,2616,1551,645,471,262,183,150,100,118,125,96,83,124,110]
+        },
+        {
+            name:'BufferedInputStreamOneByte',
+            type:'line',
+            data:[33404,16966,8613,4718,2525,1491,980,728,677,681,558,608,557,615,505,606,656,693]
+        },
+        {
+            name:'BufferedInputStreamBytes',
+            type:'line',
+            data:[33880,17333,8487,4851,2293,1632,627,358,242,147,129,113,89,92,107,88,100,95]
+        },
+        {
+            name:'RandomAccessOneByte',
+            type:'line',
+            data:[28430,27445,26794,27053,28929,28633,29509,28870,28195,27376,28236,27444,28061,28889,27423,28064,28481,28084]
+        },
+        {
+            name:'RandomAccessBytes',
+            type:'line',
+            data:[31497,16162,8135,4365,2131,1117,561,321,193,146,110,101,109,87,89,91,102,96]
+        },
+        {
+            name:'FileChannelByteBufferOneByte',
+            type:'line',
+            data:[38778,18325,9447,5344,2430,1413,779,507,380,310,298,259,267,263,249,264,260,258]
+        },
+        {
+            name:'FileChannelByteBufferBytes',
+            type:'line',
+            data:[19279,9823,5090,2605,1407,854,577,380,333,272,272,239,237,241,237,234,249,270]
+        },
+        {
+            name:'FileChannelByteBufferWrap',
+            type:'line',
+            data:[38382,17636,9094,4608,2327,1198,646,355,249,151,108,100,92,90,88,103,85,92]
+        },
+        {
+            name:'FileChannelMappedByteBufferOneByte',
+            type:'line',
+            data:[913,240,92,83,82,87,85,88,83,94,87,90,81,124,81,84,83,120]
+        },
+        {
+            name:'FileChannelMappedByteBufferBytes',
+            type:'line',
+            data:[731,447,305,332,225,164,139,110,98,88,87,140,97,86,93,92,92,92]
+        },
+        {
+            name:'FileChannelDirectByteBufferOneByte',
+            type:'line',
+            data:[31287,14473,7296,3815,1919,1001,547,319,200,135,109,98,84,77,80,82,77,86]
+        },
+        {
+            name:'FileChannelDirectByteBufferBytes',
+            type:'line',
+            data:[14945,8060,4107,2174,1120,580,334,206,149,110,96,95,79,89,81,81,86,84]
+        }       
+    ]
+};
+</code></p>
+
+<p>整体展示图如下：
+<img src="/images/iospeed/read_file_speed.png"></p>
+
+<h3>3.1 最快的三种方法</h3>
+
+<p>为了展示更细节的地方，设置了y区间范围，在yAxis上设置min和max属性：
+<code>
+yAxis : [
+        {
+            type : 'value',
+            min:0,
+            max:200,
+            axisLabel : {
+                formatter: '{value} 毫秒'
+            }
+        }
+    ],
+</code>
+得到如下展示图：
+<img src="/images/iospeed/read_file_speed_small.png"></p>
+
+<p>从上面这个图可以大致看出，最快的三种方法（PS，这里只做了一次实验，不是多次实验的平均值，所有数据可能不一定准确）：</p>
+
+<pre><code>1.FileChannelMappedByteBufferBytes
+2.FileChannelMappedByteBufferOneByte
+3.FileChannelDirectByteBufferBytes
+</code></pre>
+
+<h1>4.解析</h1>
+
+<p>下面解析一下代码中之前接触较少的东东。</p>
+
+<h3>4.1 RandomAccessFile</h3>
+
+<p>支持对文件的随机读取和写入。随机存取文件的行为类似存储在文件系统中的一个大型字节数组。存在指向该隐含数组的光标或索引，称为文件指针。</p>
+
+<p>读取操作从文件指针开始读取字节，并随着对字节的读取而前移此文件指针。如果随机存取文件以读取/写入模式创建，则写入操作也可用；写入操作从文件指针开始写入字节，并随着对字节的写入而前移此文件指针。该文件指针可以通过 getFilePointer 方法读取，并通过 seek 方法设置。</p>
+
+<p>提供了boolean，byte，char, short, int, long, float, double这些基本类型的read和write方法。</p>
+
+<h3>4.2 FileChannel</h3>
+
+<p>FileChannel是一个连接到文件的通道。可以通过文件通道读写文件。FileChannel无法设置为非阻塞模式，它总是运行在阻塞模式下。</p>
+
+<p>在使用FileChannel之前，必须先打开它。但是，我们无法直接打开一个FileChannel，需要通过使用一个InputStream、OutputStream或RandomAccessFile来获取一个FileChannel实例。
+<code>
+FileInputStream fis = new FileInputStream(filePath);
+FileChannel ch = fis.getChannel();
+</code></p>
+
+<p>有时可能需要在FileChannel的某个特定位置进行数据的读/写操作。可以通过调用position()方法获取FileChannel的当前位置。也可以通过调用position(long pos)方法设置FileChannel的当前位置。</p>
+
+<p>FileChannel实例的size()方法将返回该实例所关联文件的大小。</p>
+
+<p>FileChannel.force()方法将通道里尚未写入磁盘的数据强制写到磁盘上。出于性能方面的考虑，操作系统会将数据缓存在内存中，所以无法保证写入到FileChannel里的数据一定会即时写到磁盘上。要保证这一点，需要调用force()方法。</p>
+
+<h3>4.3 ByteBuffer</h3>
+
+<p>ByteBuffer知识下一次单独讲。</p>
+
+<h1>5.BufferedInputStream的defaultBufferSize</h1>
+
+<p>BufferedInputStream默认buffer大小为8K：
+<code>
+public class BufferedInputStream extends FilterInputStream {
+    private static int defaultBufferSize = 8192;
+}
+</code></p>
+
+<p>这个从图上也可以比较直观的看到，在缓存为8K左右的时候，性能最好：
+<img src="/images/iospeed/BufferedInputStream_buffer.png"></p>
+
+<h1>5.参考：</h1>
+
+<p><a href="http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quickly">http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quickly</a></p>
+
+<p><a href="http://colobu.com/2014/10/20/java-buffer-basic/">http://colobu.com/2014/10/20/java-buffer-basic/</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[IO模型]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/01/04/io-mo-xing/"/>
+    <updated>2015-01-04T19:38:04+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/01/04/io-mo-xing</id>
+    <content type="html"><![CDATA[<p>本文主要想理清同步，异步，阻塞，非阻塞这几个概念;之后理解unix上的五种IO模型。</p>
+
+<h1>1.同步VS异步，阻塞VS非阻塞</h1>
+
+<h3>1.1 同步VS异步</h3>
+
+<p>访问数据的方式，同步需要主动读写数据，在读写数据的过程中还是会阻塞；异步只需要I/O操作完成的通知，并不主动读写数据，由操作系统内核完成数据的读写。</p>
+
+<p>同步(synchronous)和异步(asynchronous)是针对应用程序和内核的交互而言的:</p>
+
+<pre><code>(1).同步指的是用户进程触发I/O操作并等待或者轮询的去查看I/O操作是否就绪;
+(2).异步是指用户进程触发I/O操作以后便开始做自己的事情，而当I/O操作已经完成的时候会得到I/O完成的通知;
+</code></pre>
+
+<h3>1.2 阻塞VS非阻塞</h3>
+
+<p>阻塞(blocking)和非阻塞(non-blocking)是针对于进程在访问数据的时候，根据I/O操作的就绪状态来采取的不同方式，说白了是一种读取或者写入操作函数的实现方式:</p>
+
+<pre><code>(1).阻塞方式下读取或者写入函数将一直等待;
+(2).非阻塞方式下，读取或者写入函数会立即返回一个状态值;
+</code></pre>
+
+<h1>2.IO模型</h1>
+
+<p>《Unix网络编程卷》将unix上的IO模型分为5类：</p>
+
+<pre><code>(1).Blocking I/O
+(2).Nonblocking I/O
+(3).I/O Multiplexing (select and poll)
+(4).Signal Driven I/O (SIGIO)
+(5).Asynchronous I/O (the POSIX aio_functions).
+</code></pre>
+
+<p>一个读操作通常包括两个不同阶段：</p>
+
+<pre><code>(1).等待数据准备好;
+(2).从内核向进程复制数据;
+</code></pre>
+
+<p>我们以一个从网络读数据为例，当网络数据包到达的时候，首先内核通过网卡读输入数据，数据被复制到内核的缓冲区;然后应用程序从内核中将数据拷贝到应用程序缓冲区。</p>
+
+<p>以从网络读数据为例解释上面提到的5个IO模型, 即应用程序通过socket的recvfrom方法读取网络数据，关于recvfrom方法参考：<a href="http://baike.baidu.com/view/1744189.htm.">http://baike.baidu.com/view/1744189.htm.</a></p>
+
+<h3>2.1 Blocking I/O</h3>
+
+<p>阻塞IO：应用程序调用recvfrom试图读取数据，其实是通过系统调用从网卡读取网络数据，当网络无数据可读的时候，应用程序会一直等待;当内核从网卡读取完数据，会将数据从内核缓冲区拷贝到应用程序缓冲区，当拷贝完成，应用程序调用recvfrom才算完成。示意图如下：</p>
+
+<p><img src="/images/io/block.jpg"></p>
+
+<p>优势在于非常简单，等待的过程中占用的系统资源微乎其微，程序调用返回时，必定可以拿到数据；
+但简单也带来一些缺点，程序在数据到来并准备好以前，不能进行其他操作;</p>
+
+<h3>2.2 Nonblocking I/O</h3>
+
+<p>非阻塞IO：应用程序调用recvfrom试图读取数据，当网络无数据可读的时候，应用程序不是一直等待，而是直接返回错误，过一段时间再去查看数据是否可读，即有一个操作时轮询（polling）。 示意图如下：</p>
+
+<p><img src="/images/io/noblock.jpg"></p>
+
+<p>这种模式在没有数据可以接收时，可以进行其他的一些操作；实际应用中，这种I/O模型的直接使用并不常见，因为它需要不停的查询，而这些查询大部分会是无必要的调用，白白浪费了系统资源；非阻塞I/O应该算是一个铺垫，为I/O复用和信号驱动奠定了非阻塞使用的基础。</p>
+
+<h3>2.3 I/O Multiplexing</h3>
+
+<p>首先I/O多路复用的函数也是阻塞的，但是其与以上两种还是有不同的，I/O多路复用是阻塞在select，epoll这样的系统调用之上，而没有阻塞在真正的I/O系统调用如recvfrom之上。</p>
+
+<p>IO复用的目的：将等待数据准备和将数据拷贝给应用这两个阶段分开处理，让一个线程（而且是内核级别的线程）来处理所有的等待，一旦有相应的IO事件发生就通知继续完成IO操作，虽然仍然有阻塞和等待，但是等待总是发生在一个线程，这时使用多线程可以保证其他线程一旦唤醒就是处理数据。</p>
+
+<p><img src="/images/io/select_poll.jpg"></p>
+
+<p>至于select、poll和epoll的区别，推荐这篇文章： <a href="http://www.cnblogs.com/Anker/p/3265058.html">http://www.cnblogs.com/Anker/p/3265058.html</a> 。简单来说：select,poll无脑的轮询，忽略了高并发下，轮询本身成了瓶颈，而epoll使用回调实现了轮询真正需要处理的连接。</p>
+
+<h3>2.4 Signal Driven I/O</h3>
+
+<p>应用线程调用recvfrom试图读取数据，并且直接返回，不管是否有数据可读，内核线程读完数据，给发信号通知应用线程，应用线程收到信息，等待内核线程将数据拷贝给应用线程。</p>
+
+<p><img src="/images/io/sign.jpg"></p>
+
+<h3>2.5 Asynchronous I/O</h3>
+
+<p>这类函数的工作机制是告知内核启动某个操作，并让内核在整个操作（包括将数据从内核拷贝到用户空间）完成后通知我们。</p>
+
+<p><img src="/images/io/aio.jpg"></p>
+
+<p>注意，之前的几个模型的recvfrom都是在数据拷贝完成（即第二阶段完成）才返回，而异步IO是在第一阶段直接返回并继续往下执行，数据拷贝完成后系统内核再通知应用进程。</p>
+
+<h3>2.6 总结</h3>
+
+<p>前4种都是同步IO，只有最后一种是异步IO。他们第二阶段（拷贝数据阶段）是相同的，区别在于第一阶段，同步IO第二阶段是阻塞的，即一定会阻塞于等待数据拷贝完成，而异步IO是不阻塞于数据拷贝，数据拷贝完成，内核进程会通知应用进程。</p>
+
+<p>这就是同步和异步的区别：异步在整个过程都没有阻塞，而同步至少有一个步骤被阻塞（等待内核IO或者等待内核将数据拷贝给应用）。</p>
+
+<p>5种IO的比较：</p>
+
+<p><img src="/images/io/compare.png"></p>
+
+<h1>3.举例子</h1>
+
+<p>为了理解上面的理论，举例子如下：</p>
+
+<p>陪女朋友逛街，逛累了，向找个地方吃饭，于是取了一个山西面馆，但是发现面馆生意比较好人比较多，而且面条都是先做的。但是这段时间又想干点别的事，比如去附近的书店看看书。于是引发了一些列的思考：</p>
+
+<h3>3.1 Blocking I/O</h3>
+
+<p>我不指定做面条需要多久，不敢出去，只能在那里坐在等。等做完，等服务员上面并且我吃调再走。</p>
+
+<p>这里我们是应用线程，面条相当于等待读的数据，厨师相当于内核线程，我们需要等待初始做面条，还需要等待等服务员上面，我才能吃到我的面。</p>
+
+<h3>3.2 Nonblocking I/O</h3>
+
+<p>我不甘心在这里无聊的等待，我想在这段时间逛逛书店，但是又怕面条做好了，所有我决定取书店看一会书就回面馆看一下我的面是不是好了。如果没好继续取书店看会书再回面馆看看。结果就是来回跑了很多次。</p>
+
+<h3>3.3 I/O Multiplexing</h3>
+
+<p>我饭量比较大，同时在几个餐馆都点了饭菜，我这样来回来回看的话累死了，善良的管理员（管理所有餐馆）在前台装了一个大屏幕，上面写着每个人每个菜的状态。因此我虽然点了很多份饭菜，但只需要看屏幕就可以了。屏幕高速我某一个菜号了，我就可以去吃。</p>
+
+<h3>3.4 Signal Driven I/O</h3>
+
+<p>管理员看老是很多人来前台看状态，烦死了，于是弄来个喊号的系统，即每次有饭菜做好了，就会喊点菜的人来吃。但是，这个喊号的系统只会喊一次，并且如果同时多个菜好了，需要一个一个喊，因此部分饭菜有延时。</p>
+
+<h3>3.5 Asynchronous I/O</h3>
+
+<p>随着行业竞争加大，管理员为了提高用户体验，每次饭菜好了，让各个餐馆的服务员亲自将饭菜送到顾客的手上。</p>
+
+<h1>4.参考</h1>
+
+<p><a href="http://www.yeolar.com/note/2012/12/15/high-performance-io-design-patterns/">http://www.yeolar.com/note/2012/12/15/high-performance-io-design-patterns/</a></p>
+
+<p><a href="http://www.cnblogs.com/zhuYears/archive/2012/09/28/2690194.html">http://www.cnblogs.com/zhuYears/archive/2012/09/28/2690194.html</a></p>
+
+<p><a href="http://yaocoder.blog.51cto.com/2668309/1308899">http://yaocoder.blog.51cto.com/2668309/1308899</a></p>
+
+<p><a href="http://www.open-open.com/doc/view/cbb2c3363c3b49ceb5812220a9c42e42">http://www.open-open.com/doc/view/cbb2c3363c3b49ceb5812220a9c42e42</a></p>
+
+<p><a href="http://www.ibm.com/developerworks/cn/linux/l-async/">http://www.ibm.com/developerworks/cn/linux/l-async/</a></p>
+]]></content>
+  </entry>
+  
+</feed>

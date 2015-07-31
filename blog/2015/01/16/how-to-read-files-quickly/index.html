@@ -1,0 +1,965 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>How to Read Files Quickly - xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="Java中有很多读写文件或者网络流的方法，特别是Java7中加入了AIO之后，可选择的方法更多，本文的目的是想比较一下各种方式的优劣。 本文基本是参考这篇英文：http://nadeausoftware.com/articles/2008/02/ &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/01/16/how-to-read-files-quickly/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Keep Runnnnnnnnnning...</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">How to Read Files Quickly</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-01-16T01:00:42+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>1:00 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>Java中有很多读写文件或者网络流的方法，特别是Java7中加入了AIO之后，可选择的方法更多，本文的目的是想比较一下各种方式的优劣。</p>
+
+<p>本文基本是参考这篇英文：<a href="http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quikcly">http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quikcly</a></p>
+
+<h1>1.方法List</h1>
+
+<p>这里涉及的读文件的方法包括：</p>
+
+<h3>1.1 FileInputStreamOneByte</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>    long checkSum = 0L;
+</span><span class='line'>    FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>    int b;
+</span><span class='line'>    while ((b = fis.read()) != -1)
+</span><span class='line'>        checkSum += b;
+</span><span class='line'>    Closeables.close(fis, false);
+</span><span class='line'>    return checkSum;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.2 FileInputStreamBytes</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>    public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        byte[] array = new byte[BUF_SIZE];
+</span><span class='line'>        int nRead;
+</span><span class='line'>        while ((nRead = fis.read(array, 0, BUF_SIZE)) != -1) {
+</span><span class='line'>            for (int i = 0; i &lt; nRead; i++)
+</span><span class='line'>                checkSum += array[i];
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.3 BufferedInputStreamOneByte</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>    public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        BufferedInputStream bis = new BufferedInputStream(new FileInputStream(filePath), BUF_SIZE);
+</span><span class='line'>        int b;
+</span><span class='line'>        while ((b = bis.read()) != -1)
+</span><span class='line'>            checkSum += b;
+</span><span class='line'>        Closeables.close(bis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.4 BufferedInputStreamBytes</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>    public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        BufferedInputStream bis = new BufferedInputStream(new FileInputStream(filePath), BUF_SIZE);
+</span><span class='line'>        byte[] array = new byte[BUF_SIZE];
+</span><span class='line'>        int nRead;
+</span><span class='line'>        while ((nRead = bis.read(array, 0, BUF_SIZE)) != -1) {
+</span><span class='line'>            for (int i = 0; i &lt; nRead; i++)
+</span><span class='line'>                checkSum += array[i];
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(bis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.5 RandomAccessOneByte</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        RandomAccessFile raf = new RandomAccessFile(filePath, READ_MODE);
+</span><span class='line'>        int b;
+</span><span class='line'>        while ((b = raf.read()) != -1) {
+</span><span class='line'>            checkSum += b;
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(raf, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.6 RandomAccessBytes</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        RandomAccessFile raf = new RandomAccessFile(filePath, READ_MODE);
+</span><span class='line'>        byte[] array = new byte[BUF_SIZE];
+</span><span class='line'>        int nRead;
+</span><span class='line'>        while ((nRead = raf.read(array, 0, BUF_SIZE)) != -1) {
+</span><span class='line'>            for (int i = 0; i &lt; nRead; i++)
+</span><span class='line'>                checkSum += array[i];
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(raf, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.7 FileChannelByteBufferOneByte</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        ByteBuffer bb = ByteBuffer.allocate(BUF_SIZE);
+</span><span class='line'>        int nRead;
+</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
+</span><span class='line'>            if (nRead == 0)
+</span><span class='line'>                continue;
+</span><span class='line'>            bb.position(0);
+</span><span class='line'>            bb.limit(nRead);
+</span><span class='line'>            while (bb.hasRemaining())
+</span><span class='line'>                checkSum += bb.get(); // 从ByteBuffer读一个字节
+</span><span class='line'>            bb.clear();
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.8 FileChannelByteBufferBytes</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        ByteBuffer bb = ByteBuffer.allocate(BIG_BUF_SIZE);
+</span><span class='line'>        byte[] array = new byte[BUF_SIZE];
+</span><span class='line'>        int nRead, nGet;
+</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
+</span><span class='line'>            if (nRead == 0)
+</span><span class='line'>                continue;
+</span><span class='line'>            bb.position(0);
+</span><span class='line'>            bb.limit(nRead);
+</span><span class='line'>            while (bb.hasRemaining()) {
+</span><span class='line'>                nGet = Math.min(bb.remaining(), BUF_SIZE);
+</span><span class='line'>                bb.get(array, 0, nGet);
+</span><span class='line'>                for (int i = 0; i &lt; nGet; i++)
+</span><span class='line'>                    checkSum += array[i];
+</span><span class='line'>            }
+</span><span class='line'>            bb.clear();
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.9 FileChannelByteBufferWrap</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        byte[] barray = new byte[BUF_SIZE];
+</span><span class='line'>        ByteBuffer bb = ByteBuffer.wrap(barray); // ByteBuffer包装本地array
+</span><span class='line'>        int nRead;
+</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
+</span><span class='line'>            for (int i = 0; i &lt; nRead; i++)
+</span><span class='line'>                checkSum += barray[i];
+</span><span class='line'>            bb.clear();
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.10 FileChannelMappedByteBufferOneByte</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        MappedByteBuffer mb = ch.map(FileChannel.MapMode.READ_ONLY, 0L, ch.size());
+</span><span class='line'>        while (mb.hasRemaining())
+</span><span class='line'>            checkSum += mb.get();
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.11 FileChannelMappedByteBufferBytes</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        MappedByteBuffer mb = ch.map(FileChannel.MapMode.READ_ONLY, 0L, ch.size());
+</span><span class='line'>        byte[] barray = new byte[BUF_SIZE];
+</span><span class='line'>        int nGet;
+</span><span class='line'>        while (mb.hasRemaining()) {
+</span><span class='line'>            nGet = Math.min(mb.remaining(), BUF_SIZE);
+</span><span class='line'>            mb.get(barray, 0, nGet);
+</span><span class='line'>            for (int i = 0; i &lt; nGet; i++)
+</span><span class='line'>                checkSum += barray[i];
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.12 FileChannelDirectByteBufferOneByte</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        ByteBuffer bb = ByteBuffer.allocateDirect(BUF_SIZE);
+</span><span class='line'>        int nRead;
+</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
+</span><span class='line'>            bb.position(0);
+</span><span class='line'>            bb.limit(nRead);
+</span><span class='line'>            while (bb.hasRemaining())
+</span><span class='line'>                checkSum += bb.get();
+</span><span class='line'>            bb.clear();
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.13 FileChannelDirectByteBufferBytes</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        ByteBuffer bb = ByteBuffer.allocateDirect(BIG_BUF_SIZE);
+</span><span class='line'>        byte[] barray = new byte[BUF_SIZE];
+</span><span class='line'>        int nRead, nGet;
+</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
+</span><span class='line'>            if (nRead == 0)
+</span><span class='line'>                continue;
+</span><span class='line'>            bb.position(0);
+</span><span class='line'>            bb.limit(nRead);
+</span><span class='line'>            while (bb.hasRemaining()) {
+</span><span class='line'>                nGet = Math.min(bb.remaining(), BUF_SIZE);
+</span><span class='line'>                bb.get(barray, 0, nGet);
+</span><span class='line'>                for (int i = 0; i &lt; nGet; i++)
+</span><span class='line'>                    checkSum += barray[i];
+</span><span class='line'>            }
+</span><span class='line'>            bb.clear();
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.测试</h1>
+
+<p>测试文件的大小为83M：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Documents/TestData$ ll -h BXBooks.sql
+</span><span class='line'>-rw------- 1 xiaobaoqiu xiaobaoqiu 83M 10月  8  2004 BXBooks.sql</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.结论</h1>
+
+<p>得到测试数据之后，为了直观展示代码的速度，用ECharts展示，对应的js代码如下(可以在<a href="http://echarts.baidu.com/doc/example/line1.html#helianthus%E4%B8%AD%E4%BD%BF%E7%94%A8">http://echarts.baidu.com/doc/example/line1.html#helianthus%E4%B8%AD%E4%BD%BF%E7%94%A8</a>)：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>option = {
+</span><span class='line'>    title : {
+</span><span class='line'>        text: 'how_to_read_file_quickly',
+</span><span class='line'>        subtext: 'baoqiu.xiao'
+</span><span class='line'>    },
+</span><span class='line'>    tooltip : {
+</span><span class='line'>        trigger: 'axis'
+</span><span class='line'>    },
+</span><span class='line'>    legend: {
+</span><span class='line'>        data:['FileInputStreamOneByte','FileInputStreamBytes','BufferedInputStreamOneByte','BufferedInputStreamBytes','RandomAccessOneByte','RandomAccessBytes','FileChannelByteBufferOneByte','FileChannelByteBufferBytes','FileChannelByteBufferWrap','FileChannelMappedByteBufferOneByte','FileChannelMappedByteBufferBytes','FileChannelDirectByteBufferOneByte','FileChannelDirectByteBufferBytes']
+</span><span class='line'>    },
+</span><span class='line'>    dataZoom : {
+</span><span class='line'>        show : true,
+</span><span class='line'>        realtime: true,
+</span><span class='line'>        start : 0,
+</span><span class='line'>        end : 30
+</span><span class='line'>    },
+</span><span class='line'>    toolbox: {
+</span><span class='line'>        show : true,
+</span><span class='line'>        feature : {
+</span><span class='line'>            saveAsImage : {show: true}
+</span><span class='line'>        }
+</span><span class='line'>    },
+</span><span class='line'>    calculable : true,
+</span><span class='line'>    xAxis : [
+</span><span class='line'>        {
+</span><span class='line'>            type : 'category',
+</span><span class='line'>            boundaryGap : false,
+</span><span class='line'>            data : ['1','2','4','8','16','32','64','128','256','512','1K','2K','4K','8K','16K','32K','64K','128K']
+</span><span class='line'>        }
+</span><span class='line'>    ],
+</span><span class='line'>    yAxis : [
+</span><span class='line'>        {
+</span><span class='line'>            type : 'value',
+</span><span class='line'>            axisLabel : {
+</span><span class='line'>                formatter: '{value} 毫秒'
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    ],
+</span><span class='line'>    series : [
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileInputStreamOneByte',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[29119,28353,27872,27950,32035,40377,34904,36804,36835,33177,32252,37362,32359,31892,32621,32312,32943,33369]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileInputStreamBytes',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[38182,20208,10194,4768,2616,1551,645,471,262,183,150,100,118,125,96,83,124,110]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'BufferedInputStreamOneByte',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[33404,16966,8613,4718,2525,1491,980,728,677,681,558,608,557,615,505,606,656,693]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'BufferedInputStreamBytes',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[33880,17333,8487,4851,2293,1632,627,358,242,147,129,113,89,92,107,88,100,95]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'RandomAccessOneByte',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[28430,27445,26794,27053,28929,28633,29509,28870,28195,27376,28236,27444,28061,28889,27423,28064,28481,28084]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'RandomAccessBytes',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[31497,16162,8135,4365,2131,1117,561,321,193,146,110,101,109,87,89,91,102,96]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelByteBufferOneByte',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[38778,18325,9447,5344,2430,1413,779,507,380,310,298,259,267,263,249,264,260,258]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelByteBufferBytes',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[19279,9823,5090,2605,1407,854,577,380,333,272,272,239,237,241,237,234,249,270]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelByteBufferWrap',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[38382,17636,9094,4608,2327,1198,646,355,249,151,108,100,92,90,88,103,85,92]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelMappedByteBufferOneByte',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[913,240,92,83,82,87,85,88,83,94,87,90,81,124,81,84,83,120]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelMappedByteBufferBytes',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[731,447,305,332,225,164,139,110,98,88,87,140,97,86,93,92,92,92]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelDirectByteBufferOneByte',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[31287,14473,7296,3815,1919,1001,547,319,200,135,109,98,84,77,80,82,77,86]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelDirectByteBufferBytes',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[14945,8060,4107,2174,1120,580,334,206,149,110,96,95,79,89,81,81,86,84]
+</span><span class='line'>        }       
+</span><span class='line'>    ]
+</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+
+
+<p>整体展示图如下：
+<img src="/images/iospeed/read_file_speed.png"></p>
+
+<h3>3.1 最快的三种方法</h3>
+
+<p>为了展示更细节的地方，设置了y区间范围，在yAxis上设置min和max属性：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>yAxis : [
+</span><span class='line'>        {
+</span><span class='line'>            type : 'value',
+</span><span class='line'>            min:0,
+</span><span class='line'>            max:200,
+</span><span class='line'>            axisLabel : {
+</span><span class='line'>                formatter: '{value} 毫秒'
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    ],</span></code></pre></td></tr></table></div></figure>
+
+
+<p>得到如下展示图：
+<img src="/images/iospeed/read_file_speed_small.png"></p>
+
+<p>从上面这个图可以大致看出，最快的三种方法（PS，这里只做了一次实验，不是多次实验的平均值，所有数据可能不一定准确）：</p>
+
+<pre><code>1.FileChannelMappedByteBufferBytes
+2.FileChannelMappedByteBufferOneByte
+3.FileChannelDirectByteBufferBytes
+</code></pre>
+
+<h1>4.解析</h1>
+
+<p>下面解析一下代码中之前接触较少的东东。</p>
+
+<h3>4.1 RandomAccessFile</h3>
+
+<p>支持对文件的随机读取和写入。随机存取文件的行为类似存储在文件系统中的一个大型字节数组。存在指向该隐含数组的光标或索引，称为文件指针。</p>
+
+<p>读取操作从文件指针开始读取字节，并随着对字节的读取而前移此文件指针。如果随机存取文件以读取/写入模式创建，则写入操作也可用；写入操作从文件指针开始写入字节，并随着对字节的写入而前移此文件指针。该文件指针可以通过 getFilePointer 方法读取，并通过 seek 方法设置。</p>
+
+<p>提供了boolean，byte，char, short, int, long, float, double这些基本类型的read和write方法。</p>
+
+<h3>4.2 FileChannel</h3>
+
+<p>FileChannel是一个连接到文件的通道。可以通过文件通道读写文件。FileChannel无法设置为非阻塞模式，它总是运行在阻塞模式下。</p>
+
+<p>在使用FileChannel之前，必须先打开它。但是，我们无法直接打开一个FileChannel，需要通过使用一个InputStream、OutputStream或RandomAccessFile来获取一个FileChannel实例。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>FileChannel ch = fis.getChannel();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>有时可能需要在FileChannel的某个特定位置进行数据的读/写操作。可以通过调用position()方法获取FileChannel的当前位置。也可以通过调用position(long pos)方法设置FileChannel的当前位置。</p>
+
+<p>FileChannel实例的size()方法将返回该实例所关联文件的大小。</p>
+
+<p>FileChannel.force()方法将通道里尚未写入磁盘的数据强制写到磁盘上。出于性能方面的考虑，操作系统会将数据缓存在内存中，所以无法保证写入到FileChannel里的数据一定会即时写到磁盘上。要保证这一点，需要调用force()方法。</p>
+
+<h3>4.3 ByteBuffer</h3>
+
+<p>ByteBuffer知识下一次单独讲。</p>
+
+<h1>5.BufferedInputStream的defaultBufferSize</h1>
+
+<p>BufferedInputStream默认buffer大小为8K：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class BufferedInputStream extends FilterInputStream {
+</span><span class='line'>    private static int defaultBufferSize = 8192;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个从图上也可以比较直观的看到，在缓存为8K左右的时候，性能最好：
+<img src="/images/iospeed/BufferedInputStream_buffer.png"></p>
+
+<h1>5.参考：</h1>
+
+<p><a href="http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quickly">http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quickly</a></p>
+
+<p><a href="http://colobu.com/2014/10/20/java-buffer-basic/">http://colobu.com/2014/10/20/java-buffer-basic/</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">xiaobaoqiu</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2015-01-16T01:00:42+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>1:00 am</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/java/'>java</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/01/16/how-to-read-files-quickly/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/01/16/how-to-read-files-quickly/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2015/01/15/abjian-dan-shi-yong/" title="Previous Post: AB简单使用">&laquo; AB简单使用</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2015/01/16/linuxwang-qia-su-du/" title="Next Post: Linux网卡速度">Linux网卡速度 &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2015/07/17/fen-ci/">分词</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2015 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

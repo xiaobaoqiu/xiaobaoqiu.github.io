@@ -1,1 +1,3141 @@
-My Octopress Page is coming soon &hellip;
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="最近有需求需要使用crate搜索时候的分词功能,正好研究一下搜索中分词相关的基础知识
+. 1.什么是分词 2.为什么要分词 3.怎么做分词
+">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Keep Runnnnnnnnnning...</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div class="blog-index">
+  
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/07/17/fen-ci/">分词</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-07-17T01:24:30+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>17</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>1:24 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近有需求需要使用crate搜索时候的分词功能,正好研究一下搜索中分词相关的基础知识
+.</p>
+
+<h1>1.什么是分词</h1>
+
+<h1>2.为什么要分词</h1>
+
+<h1>3.怎么做分词</h1>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-07-16T05:02:20+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:02 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>前段时间搜索处理个P3的故障,原因是用户输入超级长的搜索字段,导致crate服务器load飙高,进而对外服务失败.</p>
+
+<p>持续时间约10分钟.但是对我而言,最大的问题是这10分钟内,对crate服务器我什么都做不了.经过这次问题,准备好好看看crate以及背后ES的源码.</p>
+
+<p>虽然解决方案是限制用户输入(这一点和google以及百度做法是一样的,百度的查询限制在38个汉字以内).</p>
+
+<h1>1.like查询</h1>
+
+<p>有问题的字段是name字段,使用crate的简单的like查询.根据官方文档,crate的like查询支持两种通配符:</p>
+
+<pre><code>% : 0个或者多个字符
+_ : 单个字符
+</code></pre>
+
+<p>需要注意的注意,使用like查询可能导致慢查询.特别是当使用前置通配符开头的like查询.因为这种情况下crate需要去迭代所有行,而不能使用索引.
+如果向获取更好的性能,可以考虑使用全文索引.</p>
+
+<p>like参考:<a href="https://crate.io/docs/en/latest/sql/queries.html#like">https://crate.io/docs/en/latest/sql/queries.html#like</a></p>
+
+<p>全文索引参考: <a href="https://crate.io/docs/en/latest/sql/fulltext.html">https://crate.io/docs/en/latest/sql/fulltext.html</a> <a href="https://crate.io/docs/en/latest/sql/ddl.html#fulltext-indices">https://crate.io/docs/en/latest/sql/ddl.html#fulltext-indices</a></p>
+
+<h1>2.crate符取异常日志</h1>
+
+<p>这里贴一下当时crate服务器的异常:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>org.elasticsearch.index.query.QueryParsingException: [merchant_sea] Failed to parse
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parseQuery(IndexQueryParserService.java:370)
+</span><span class='line'>        at org.elasticsearch.action.count.TransportCountAction.shardOperation(TransportCountAction.java:187)
+</span><span class='line'>        at org.elasticsearch.action.count.CrateTransportCountAction.shardOperation(CrateTransportCountAction.java:119)
+</span><span class='line'>        at org.elasticsearch.action.count.CrateTransportCountAction.shardOperation(CrateTransportCountAction.java:49)
+</span><span class='line'>        at org.elasticsearch.action.support.broadcast.TransportBroadcastOperationAction$AsyncBroadcastAction$1.run(TransportBroadcastOperationAction.java:171)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)
+</span><span class='line'>Caused by: org.apache.lucene.util.automaton.TooComplexToDeterminizeException: Determinizing automaton would result in more than 10000 states.
+</span><span class='line'>        at org.apache.lucene.util.automaton.Operations.determinize(Operations.java:743)
+</span><span class='line'>        at org.apache.lucene.util.automaton.RunAutomaton.&lt;init&gt;(RunAutomaton.java:138)
+</span><span class='line'>        at org.apache.lucene.util.automaton.ByteRunAutomaton.&lt;init&gt;(ByteRunAutomaton.java:32)
+</span><span class='line'>        at org.apache.lucene.util.automaton.CompiledAutomaton.&lt;init&gt;(CompiledAutomaton.java:203)
+</span><span class='line'>        at org.apache.lucene.search.AutomatonQuery.&lt;init&gt;(AutomatonQuery.java:84)
+</span><span class='line'>        at org.apache.lucene.search.AutomatonQuery.&lt;init&gt;(AutomatonQuery.java:65)
+</span><span class='line'>        at org.apache.lucene.search.WildcardQuery.&lt;init&gt;(WildcardQuery.java:57)
+</span><span class='line'>        at org.elasticsearch.index.query.WildcardQueryParser.parse(WildcardQueryParser.java:106)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.innerParse(IndexQueryParserService.java:382)
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parse(IndexQueryParserService.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parse(IndexQueryParserService.java:276)
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parseQuery(IndexQueryParserService.java:354)
+</span><span class='line'>        ... 7 more</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.背后的原理</h1>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-07-16T04:25:57+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:25 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>经常需要查看当前服务器哪些用户在登录,以及他们都在干什么.</p>
+
+<p>下面总结一些命令,其中last应该是最常用的命令.</p>
+
+<h1>1.w</h1>
+
+<p>w - Show who is logged on and what they are doing.</p>
+
+<p>主要字段:</p>
+
+<pre><code>LOGIN@: 什么时间登录的
+PCPU: 当前进程所用时间
+WHAT: 用户当前正在使用的命令
+</code></pre>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ w
+</span><span class='line'> 20:32:42 up  9:59, 15 users,  load average: 1.80, 1.26, 1.17
+</span><span class='line'>USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+</span><span class='line'>xiaobaoq tty7     :0               10:34    9:58m 22:26   0.48s init --user
+</span><span class='line'>xiaobaoq pts/1    :0               10:35    2:22m  0.12s  0.12s /bin/bash
+</span><span class='line'>xiaobaoq pts/2    :0               11:12   44:10   0.26s  0.19s ssh cn6
+</span><span class='line'>xiaobaoq pts/7    :0               11:12    9:02m  0.15s  0.09s ssh cn6
+</span><span class='line'>xiaobaoq pts/8    :0               11:28    5:56m  0.09s  0.03s ssh cn5
+</span><span class='line'>xiaobaoq pts/12   :0               13:09    3:03m  0.30s  0.24s ssh cn0
+</span><span class='line'>xiaobaoq pts/13   :0               13:09    3:14m  0.13s  0.07s mysql -h...
+</span><span class='line'>xiaobaoq pts/14   :0               13:09    3:00m  1.23s  1.17s ssh cn0
+</span><span class='line'>xiaobaoq pts/18   :0               13:09    3:03m  3.42s  3.35s ssh cn0
+</span><span class='line'>xiaobaoq pts/20   :0               13:14    3:01m  0.45s  0.39s mysql -h...
+</span><span class='line'>xiaobaoq pts/22   :0               13:26    7:01m  0.13s  0.07s ssh cn0
+</span><span class='line'>xiaobaoq pts/23   :0               14:02   40:34   0.17s  0.17s /bin/bash
+</span><span class='line'>xiaobaoq pts/24   :0               14:03    2.00s  0.23s  0.00s w
+</span><span class='line'>xiaobaoq pts/25   :0               14:36    2:02   0.24s  0.18s ssh cn5
+</span><span class='line'>xiaobaoq pts/26   :0               17:41    2:47m  0.09s  0.09s /bin/bash</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.who</h1>
+
+<p>who - show who is logged on</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who
+</span><span class='line'>xiaobaoqiu tty7         2015-07-15 10:34 (:0)
+</span><span class='line'>xiaobaoqiu pts/1        2015-07-15 10:35 (:0)
+</span><span class='line'>xiaobaoqiu pts/2        2015-07-15 11:12 (:0)
+</span><span class='line'>xiaobaoqiu pts/7        2015-07-15 11:12 (:0)
+</span><span class='line'>xiaobaoqiu pts/8        2015-07-15 11:28 (:0)
+</span><span class='line'>xiaobaoqiu pts/12       2015-07-15 13:09 (:0)
+</span><span class='line'>xiaobaoqiu pts/13       2015-07-15 13:09 (:0)
+</span><span class='line'>xiaobaoqiu pts/14       2015-07-15 13:09 (:0)
+</span><span class='line'>xiaobaoqiu pts/18       2015-07-15 13:09 (:0)
+</span><span class='line'>xiaobaoqiu pts/20       2015-07-15 13:14 (:0)
+</span><span class='line'>xiaobaoqiu pts/22       2015-07-15 13:26 (:0)
+</span><span class='line'>xiaobaoqiu pts/23       2015-07-15 14:02 (:0)
+</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)
+</span><span class='line'>xiaobaoqiu pts/25       2015-07-15 14:36 (:0)
+</span><span class='line'>xiaobaoqiu pts/26       2015-07-15 17:41 (:0)</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.users</h1>
+
+<p>users - print the user names of users currently logged in to the current host</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ users
+</span><span class='line'>xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.whoami</h1>
+
+<p>whoami - print effective userid</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ whoami
+</span><span class='line'>xiaobaoqiu
+</span><span class='line'>
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who am i
+</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)
+</span><span class='line'>
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who mom likes
+</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>5.id</h1>
+
+<p>id - print real and effective user and group IDs</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ id
+</span><span class='line'>uid=1000(xiaobaoqiu) gid=1000(xiaobaoqiu) 组=1000(xiaobaoqiu),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),108(lpadmin),124(sambashare)</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>6.last</h1>
+
+<p>last, lastb - show listing of last logged in users</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ last
+</span><span class='line'>xiaobaoq pts/26       :0               Wed Jul 15 17:41   still logged in   
+</span><span class='line'>xiaobaoq pts/25       :0               Wed Jul 15 14:36   still logged in   
+</span><span class='line'>xiaobaoq pts/24       :0               Wed Jul 15 14:03   still logged in   
+</span><span class='line'>xiaobaoq pts/23       :0               Wed Jul 15 14:02   still logged in   
+</span><span class='line'>xiaobaoq pts/22       :0               Wed Jul 15 13:26   still logged in   
+</span><span class='line'>xiaobaoq pts/20       :0               Wed Jul 15 13:14   still logged in   
+</span><span class='line'>xiaobaoq pts/20       :0               Wed Jul 15 13:14 - 13:14  (00:00)    
+</span><span class='line'>xiaobaoq pts/18       :0               Wed Jul 15 13:09   still logged in   
+</span><span class='line'>xiaobaoq pts/14       :0               Wed Jul 15 13:09   still logged in   
+</span><span class='line'>xiaobaoq pts/13       :0               Wed Jul 15 13:09   still logged in   
+</span><span class='line'>xiaobaoq pts/12       :0               Wed Jul 15 13:09   still logged in   
+</span><span class='line'>xiaobaoq pts/8        :0               Wed Jul 15 11:28   still logged in   
+</span><span class='line'>xiaobaoq pts/7        :0               Wed Jul 15 11:12   still logged in   
+</span><span class='line'>xiaobaoq pts/2        :0               Wed Jul 15 11:12   still logged in   
+</span><span class='line'>xiaobaoq pts/1        :0               Wed Jul 15 10:35   still logged in</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-07-07T03:27:54+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>7</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>3:27 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>经常涉及到进制的转换,比如线上处理问题时候经常需要转换线程id到16进制.</p>
+
+<h1>1.进制转换</h1>
+
+<h3>2.1.shell运算</h3>
+
+<p> Shell 运算把一个数字从给定的进制转换位十进制.如果数字以运算展开式的形式提供,那么假定它带有十进制符号,除非 它前面带有 0（这种情况假定是八进制）或 0x（这种情况假定是十六进制）</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((010))
+</span><span class='line'>8
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((0x10))
+</span><span class='line'>16</span></code></pre></td></tr></table></div></figure>
+
+
+<p>也可以指定 2 到 64 之间的任意进制,超过64进制则不支持.格式如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$((BASE#NUMBER))</span></code></pre></td></tr></table></div></figure>
+
+
+<p>使用举例如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((2#10))
+</span><span class='line'>2
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((5#10))
+</span><span class='line'>5
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((8#10))
+</span><span class='line'>8
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((10#10))
+</span><span class='line'>10
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((16#10))
+</span><span class='line'>16
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((64#10))
+</span><span class='line'>64
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((100#10))
+</span><span class='line'>bash: 100#10: 无效的算数进制 （错误符号是 "100#10"）</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2.2.bc</h3>
+
+<p>bc是一种任意精度运算语言,大多数 UNIX/Linux 安装程序都提供.因为它允许您指定输出进制,所以当您需要以十进制以外的进制输出时,这是一种很好的技术.</p>
+
+<p>bc 的特殊变量 ibase 和 obase 分别包含用于输入和输出的进制的值.缺省情况下,都被设置为 10.要执行进制转换,需要改变其中的一个或两个值,然后提供一个数字.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo 'obase=16; 10' | bc
+</span><span class='line'>A
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo 'obase=16; ibase=10; 10' | bc
+</span><span class='line'>A
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo 'obase=10; ibase=16; 10' | bc
+</span><span class='line'>16</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2.3.printf</h3>
+
+<p>格式化参数和C语言的格式一致:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ printf "%X\n" 100
+</span><span class='line'>64
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ printf "%d\n" 0x10
+</span><span class='line'>16</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.自定义shell</h1>
+
+<p>自己写一个shell,处理多个输入,任意进制到任意进制的转换.通过这个脚本,学习了一下shell处理option的方式.</p>
+
+<p>原理很简单,就是利用上面说道的bc命令.shell脚本如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
+</span><span class='line'>while getopts :i:o: opt 
+</span><span class='line'>do
+</span><span class='line'>        case "$opt" in
+</span><span class='line'>        i) #输入的参数的进制
+</span><span class='line'>           #echo "Found the -i option,with vale $OPTARG"
+</span><span class='line'>           ibase=$OPTARG
+</span><span class='line'>           ;;
+</span><span class='line'>        o) #输出参数进制
+</span><span class='line'>           #echo "Found the -o option,with vale $OPTARG"
+</span><span class='line'>           obase=$OPTARG
+</span><span class='line'>           ;;
+</span><span class='line'>        *) #当有不认识的选项的时候arg为?
+</span><span class='line'>           echo "unkonw argument, Usage : "
+</span><span class='line'>           echo "$1 -i 10 -o 16 1 2 3 4 5 6 ..."
+</span><span class='line'>           exit 1
+</span><span class='line'>        esac
+</span><span class='line'>done
+</span><span class='line'>
+</span><span class='line'>#跳过opt参数
+</span><span class='line'>shift $[$OPTIND - 1]
+</span><span class='line'>
+</span><span class='line'>#参数检验
+</span><span class='line'>if [ ! $ibase ]; then
+</span><span class='line'>    echo "Usage : $0 -i 10 -o 16 1 2 3 4 5 6 ..."
+</span><span class='line'>    exit 1
+</span><span class='line'>fi
+</span><span class='line'>
+</span><span class='line'>if [ ! $obase ]; then
+</span><span class='line'>    echo "Usage : $0 -i 10 -o 16 1 2 3 4 5 6 ..."
+</span><span class='line'>    exit 1
+</span><span class='line'>fi
+</span><span class='line'>
+</span><span class='line'>echo "输入进制:$ibase"
+</span><span class='line'>echo "输出进制:$obase"
+</span><span class='line'>
+</span><span class='line'>#执行进制转换
+</span><span class='line'>for i in $@
+</span><span class='line'>do
+</span><span class='line'>    echo "obase=$obase; ibase=$ibase; $i" |bc
+</span><span class='line'>done</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.bc</h3>
+
+<h3>2.bc</h3>
+
+<p>简单使用如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ ./trans -i 10 -o 16 100
+</span><span class='line'>输入进制:10
+</span><span class='line'>输出进制:16
+</span><span class='line'>64</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-07-02T17:24:16+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>2</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>5:24 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>昨天CodeReview的时候看到同时使用RateLimiter这个类用作QPS访问限制.学习一下这个类.</p>
+
+<p>RateLimiter是Guava的concurrent包下的一个用于限制访问频率的类.</p>
+
+<h1>1.限流</h1>
+
+<p>每个API接口都是有访问上限的,当访问频率或者并发量超过其承受范围时候,我们就必须考虑限流来保证接口的可用性或者降级可用性.即接口也需要安装上保险丝,以防止非预期的请求对系统压力过大而引起的系统瘫痪.</p>
+
+<p>通常的策略就是拒绝多余的访问,或者让多余的访问排队等待服务,或者引流.</p>
+
+<p>如果要准确的控制QPS,简单的做法是维护一个单位时间内的Counter,如判断单位时间已经过去,则将Counter重置零.此做法被认为没有很好的处理单位时间的边界,比如在前一秒的最后一毫秒里和下一秒的第一毫秒都触发了最大的请求数,将目光移动一下,就看到在两毫秒内发生了两倍的QPS.</p>
+
+<p><img src="/images/guava/simple_RateLimiter.png"></p>
+
+<h1>2.限流算法</h1>
+
+<p>常用的更平滑的限流算法有两种:漏桶算法和令牌桶算法.</p>
+
+<p>很多传统的服务提供商如华为中兴都有类似的专利,参考:
+<a href="http://www.google.com/patents/CN1536815A?cl=zh">http://www.google.com/patents/CN1536815A?cl=zh</a></p>
+
+<h3>2.1 漏桶算法</h3>
+
+<p>漏桶(Leaky Bucket)算法思路很简单,水(请求)先进入到漏桶里,漏桶以一定的速度出水(接口有响应速率),当水流入速度过大会直接溢出(访问频率超过接口响应速率),然后就拒绝请求,可以看出漏桶算法能强行限制数据的传输速率.示意图如下:</p>
+
+<p><img src="/images/guava/rate-limit1.png"></p>
+
+<p>可见这里有两个变量,一个是桶的大小,支持流量突发增多时可以存多少的水(burst),另一个是水桶漏洞的大小(rate),可以简单的让burst等于rate,也可以让burst更大接收更多突发请求,伪代码如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>double rate;               // leak rate in calls/s
+</span><span class='line'>double burst;              // bucket size in calls
+</span><span class='line'>
+</span><span class='line'>long refreshTime;          // time for last water refresh
+</span><span class='line'>double water;              // water count at refreshTime
+</span><span class='line'>
+</span><span class='line'>refreshWater() {
+</span><span class='line'>    long  now = getTimeOfDay();
+</span><span class='line'>    
+</span><span class='line'>    //水随着时间流逝,不断流走,最多就流干到0.
+</span><span class='line'>    water = max(0, water- (now - refreshTime)*rate); 
+</span><span class='line'>    refreshTime = now;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>bool permissionGranted() {
+</span><span class='line'>    refreshWater();
+</span><span class='line'>    if (water &lt; burst) { // 水桶还没满,继续加1
+</span><span class='line'>        water ++;
+</span><span class='line'>        return true;
+</span><span class='line'>    } else {
+</span><span class='line'>        return false;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在某些情况下,漏桶算法不能够有效地使用网络资源.因为漏桶的漏出速率是固定的参数,所以,即使网络中不存在资源冲突（没有发生拥塞）,漏桶算法也不能使某一个单独的流突发到端口速率.因此,漏桶算法对于存在突发特性的流量来说缺乏效率.</p>
+
+<h3>2.2 令牌桶算法</h3>
+
+<p>令牌桶算法(Token Bucket)和 Leaky Bucket 效果一样但方向相反的算法,更加容易理解.随着时间流逝,系统会按恒定1/QPS时间间隔(如果QPS=100,则间隔是10ms)往桶里加入Token(想象和漏洞漏水相反,有个水龙头在不断的加水),如果桶已经满了就不再加了.新请求来临时,会各自拿走一个Token,如果没有Token可拿了就阻塞或者拒绝服务.</p>
+
+<p><img src="/images/guava/token_bucket.JPG"></p>
+
+<p>令牌桶的另外一个好处是可以方便的改变速度. 一旦需要提高速率,则按需提高放入桶中的令牌的速率.
+一般会定时(比如100毫秒)往桶中增加一定数量的令牌, 有些变种算法则实时的计算应该增加的令牌的数量.</p>
+
+<h1>3.RateLimiter简介</h1>
+
+<p>Google开源工具包Guava提供了限流工具类RateLimiter,该类基于令牌桶算法(Token Bucket)来完成限流,非常易于使用.RateLimiter经常用于限制对一些物理资源或者逻辑资源的访问速率.它支持两种获取permits接口,一种是如果拿不到立刻返回false,一种会阻塞等待一段时间看能不能拿到.</p>
+
+<p>RateLimiter和Java中的信号量(java.util.concurrent.Semaphore)类似,Semaphore通常用于限制并发量.</p>
+
+<p>源码注释中的一个例子,比如我们有很多任务需要执行,但是我们不希望每秒超过两个任务执行,那么我们就可以使用RateLimiter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>final RateLimiter rateLimiter = RateLimiter.create(2.0);
+</span><span class='line'>void submitTasks(List&lt;Runnable&gt; tasks, Executor executor) {
+</span><span class='line'>    for (Runnable task : tasks) {
+</span><span class='line'>        rateLimiter.acquire(); // may wait
+</span><span class='line'>        executor.execute(task);
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外一个例子,假如我们会产生一个数据流,然后我们想以每秒5kb的速度发送出去.我们可以每获取一个令牌(permit)就发送一个byte的数据,这样我们就可以通过一个每秒5000个令牌的RateLimiter来实现:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>final RateLimiter rateLimiter = RateLimiter.create(5000.0);
+</span><span class='line'>void submitPacket(byte[] packet) {
+</span><span class='line'>    rateLimiter.acquire(packet.length);
+</span><span class='line'>    networkService.send(packet);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外,我们也可以使用非阻塞的形式达到降级运行的目的,即使用非阻塞的tryAcquire()方法:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if(limiter.tryAcquire()) { //未请求到limiter则立即返回false
+</span><span class='line'>    doSomething();
+</span><span class='line'>}else{
+</span><span class='line'>    doSomethingElse();
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.RateLimiter主要接口</h1>
+
+<p>RateLimiter其实是一个abstract类,但是它提供了几个static方法用于创建RateLimiter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static RateLimiter create(double permitsPerSecond);
+</span><span class='line'>
+</span><span class='line'>public static RateLimiter create(double permitsPerSecond, long warmupPeriod, TimeUnit unit);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>提供了两个获取令牌的方法,不带参数表示获取一个令牌.如果没有令牌则一直等待,返回等待的时间(单位为秒),没有被限流则直接返回0.0:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public double acquire();
+</span><span class='line'>
+</span><span class='line'>public double acquire(int permits);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>尝试获取令牌,分为待超时时间和不带超时时间两种:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public boolean tryAcquire();
+</span><span class='line'>//尝试获取一个令牌,立即返回
+</span><span class='line'>public boolean tryAcquire(int permits);
+</span><span class='line'>public boolean tryAcquire(long timeout, TimeUnit unit);
+</span><span class='line'>//尝试获取permits个令牌,带超时时间
+</span><span class='line'>public boolean tryAcquire(int permits, long timeout, TimeUnit unit);</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>5.RateLimiter设计</h1>
+
+<p>考虑一下RateLimiter是如何设计的,并且为什么要这样设计.</p>
+
+<p>RateLimiter的主要功能就是提供一个稳定的速率,实现方式就是通过限制请求流入的速度,比如计算请求等待合适的时间阈值.</p>
+
+<p>实现QPS速率的最简单的方式就是记住上一次请求的最后授权时间,然后保证1/QPS秒内不允许请求进入.比如QPS=5,如果我们保证最后一个被授权请求之后的200ms的时间内没有请求被授权,那么我们就达到了预期的速率.如果一个请求现在过来但是最后一个被授权请求是在100ms之前,那么我们就要求当前这个请求等待100ms.按照这个思路,请求15个新令牌(许可证)就需要3秒.</p>
+
+<p>有一点很重要:上面这个设计思路的RateLimiter记忆非常的浅,它的脑容量非常的小,只记得上一次被授权的请求的时间.如果RateLimiter的一个被授权请求q之前很长一段时间没有被使用会怎么样?这个RateLimiter会立马忘记过去这一段时间的利用不足,而只记得刚刚的请求q.</p>
+
+<p>过去一段时间的利用不足意味着有过剩的资源是可以利用的.这种情况下,RateLimiter应该加把劲(speed up for a while)将这些过剩的资源利用起来.比如在向网络中发生数据的场景(限流),过去一段时间的利用不足可能意味着网卡缓冲区是空的,这种场景下,我们是可以加速发送来将这些过程的资源利用起来.</p>
+
+<p>另一方面,过去一段时间的利用不足可能意味着处理请求的服务器对即将到来的请求是准备不足的(less ready for future requests),比如因为很长一段时间没有请求当前服务器的cache是陈旧的,进而导致即将到来的请求会触发一个昂贵的操作(比如重新刷新全量的缓存).</p>
+
+<p>为了处理这种情况,RateLimiter中增加了一个维度的信息,就是过去一段时间的利用不足(past underutilization),代码中使用storedPermits变量表示.当没有利用不足这个变量为0,最大能达到maxStoredPermits(maxStoredPermits表示完全没有利用).因此,请求的令牌可能从两个地方来:</p>
+
+<pre><code>1.过去剩余的令牌(stored permits, 可能没有)
+2.现有的令牌(fresh permits,当前这段时间还没用完的令牌)
+</code></pre>
+
+<p>我们将通过一个例子来解释它是如何工作的:</p>
+
+<p>对一个每秒产生一个令牌的RateLimiter,每有一个没有使用令牌的一秒,我们就将storedPermits加1,如果RateLimiter在10秒都没有使用,则storedPermits变成10.0.这个时候,一个请求到来并请求三个令牌(acquire(3)),我们将从storedPermits中的令牌为其服务,storedPermits变为7.0.这个请求之后立马又有一个请求到来并请求10个令牌,我们将从storedPermits剩余的7个令牌给这个请求,剩下还需要三个令牌,我们将从RateLimiter新产生的令牌中获取.我们已经知道,RateLimiter每秒新产生1个令牌,就是说上面这个请求还需要的3个请求就要求其等待3秒.</p>
+
+<p>想象一个RateLimiter每秒产生一个令牌,现在完全没有使用(处于初始状态),限制一个昂贵的请求acquire(100)过来.如果我们选择让这个请求等待100秒再允许其执行,这显然很荒谬.我们为什么什么也不做而只是傻傻的等待100秒,一个更好的做法是允许这个请求立即执行(和acquire(1)没有区别),然后将随后到来的请求推迟到正确的时间点.这种策略,我们允许这个昂贵的任务立即执行,并将随后到来的请求推迟100秒.这种策略就是让任务的执行和等待同时进行.</p>
+
+<p>一个重要的结论:RateLimiter不会记最后一个请求,而是即下一个请求允许执行的时间.这也可以很直白的告诉我们到达下一个调度时间点的时间间隔.然后定一个一段时间未使用的Ratelimiter也很简单:下一个调度时间点已经过去,这个时间点和现在时间的差就是Ratelimiter多久没有被使用,我们会将这一段时间翻译成storedPermits.所有,如果每秒钟产生一个令牌(rate==1),并且正好每秒来一个请求,那么storedPermits就不会增长.</p>
+
+<h1>6.RateLimiter主要源码</h1>
+
+<p>RateLimiter定义了两个create函数用于构建不同形式的RateLimiter:</p>
+
+<pre><code>1.public static RateLimiter create(double permitsPerSecond)
+用于创建SmoothBursty类型的RateLimiter
+2.public static RateLimiter create(double permitsPerSecond, long warmupPeriod, TimeUnit unit)
+用于创建
+</code></pre>
+
+<p>源码下面以acquire为例子,分析一下RateLimiter如何实现限流:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public double acquire() {
+</span><span class='line'>    return acquire(1);
+</span><span class='line'>}
+</span><span class='line'>public double acquire(int permits) {
+</span><span class='line'>    long microsToWait = reserve(permits);
+</span><span class='line'>    stopwatch.sleepMicrosUninterruptibly(microsToWait);
+</span><span class='line'>    return 1.0 * microsToWait / SECONDS.toMicros(1L);
+</span><span class='line'>}
+</span><span class='line'>final long reserve(int permits) {
+</span><span class='line'>    checkPermits(permits);
+</span><span class='line'>    synchronized (mutex()) {    //应对并发情况需要同步
+</span><span class='line'>      return reserveAndGetWaitLength(permits, stopwatch.readMicros());
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>final long reserveAndGetWaitLength(int permits, long nowMicros) {
+</span><span class='line'>    long momentAvailable = reserveEarliestAvailable(permits, nowMicros);
+</span><span class='line'>    return max(momentAvailable - nowMicros, 0);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面方法来自RateLimiter的具体实现类SmoothRateLimiter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>final long reserveEarliestAvailable(int requiredPermits, long nowMicros) {
+</span><span class='line'>    resync(nowMicros);  //补充令牌
+</span><span class='line'>    long returnValue = nextFreeTicketMicros;
+</span><span class='line'>    //这次请求消耗的令牌数目
+</span><span class='line'>    double storedPermitsToSpend = min(requiredPermits, this.storedPermits);
+</span><span class='line'>    double freshPermits = requiredPermits - storedPermitsToSpend;
+</span><span class='line'>
+</span><span class='line'>    long waitMicros = storedPermitsToWaitTime(this.storedPermits, storedPermitsToSpend)
+</span><span class='line'>        + (long) (freshPermits * stableIntervalMicros);
+</span><span class='line'>
+</span><span class='line'>    this.nextFreeTicketMicros = nextFreeTicketMicros + waitMicros;
+</span><span class='line'>    this.storedPermits -= storedPermitsToSpend;
+</span><span class='line'>    return returnValue;
+</span><span class='line'>}
+</span><span class='line'>private void resync(long nowMicros) {
+</span><span class='line'>    // if nextFreeTicket is in the past, resync to now
+</span><span class='line'>    if (nowMicros &gt; nextFreeTicketMicros) {
+</span><span class='line'>        storedPermits = min(maxPermits,
+</span><span class='line'>        storedPermits + (nowMicros - nextFreeTicketMicros) / stableIntervalMicros);
+</span><span class='line'>        nextFreeTicketMicros = nowMicros;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>6.1 SmoothBursty</h3>
+
+<h3>6.2 SmoothWarmingUp</h3>
+
+<p>参考:
+<a href="https://github.com/springside/springside4/wiki/Rate-Limiter">https://github.com/springside/springside4/wiki/Rate-Limiter</a></p>
+
+<p><a href="https://en.wikipedia.org/wiki/Token_bucket">https://en.wikipedia.org/wiki/Token_bucket</a></p>
+
+<p><a href="https://en.wikipedia.org/wiki/Leaky_bucket">https://en.wikipedia.org/wiki/Leaky_bucket</a></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/06/30/linuxwen-jian-ge-shi/">Linux文件编码</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-06-30T03:07:46+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>30</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>3:07 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>在多系统直接传输文件经常碰到文件编码的问题.</p>
+
+<h1>1.查看编码</h1>
+
+<p>查看文件的编码有很多种方式</p>
+
+<h3>1.1 file</h3>
+
+<p>file命令输出了文件的格式和编码.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ file _config.yml
+</span><span class='line'>_config.yml: UTF-8 Unicode text</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.2 vi</h3>
+
+<p>vi打开文件之后,输入:set fileencoding就可以获得文件编码:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>fileencoding=utf-8</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.转换编码</h1>
+
+<h3>2.1 vi</h3>
+
+<p>使用vi也可以变更文件编码</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>:set fileencoding=utf8</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2.2 iconv</h3>
+
+<p>使用iconv命令,iconv几个主要参数(man):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>输入/输出格式规范：
+</span><span class='line'>-f, --from-code=名称 原始文本编码
+</span><span class='line'>-t, --to-code=名称 输出编码
+</span><span class='line'>
+</span><span class='line'>信息：
+</span><span class='line'>-l, --list 列举所有已知的字符集
+</span><span class='line'>
+</span><span class='line'>输出控制：
+</span><span class='line'>-c 从输出中忽略无效的字符
+</span><span class='line'>-o, --output=FILE 输出到文件
+</span><span class='line'>-s, --silent 关闭警告
+</span><span class='line'>--verbose 打印进度信息</span></code></pre></td></tr></table></div></figure>
+
+
+<p>使用例子,文件infile从GB18030编码转换至UTF-8编码并写入到文件outfile中:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ cat infile 
+</span><span class='line'>���
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ iconv -f GB18030 -t utf-8 infile -o outfile
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ cat outfile 
+</span><span class='line'>测试</span></code></pre></td></tr></table></div></figure>
+
+
+<p>也可以从管道输入,比如直接访问www.google.com.hk,不出意外会是乱码(使用的big5中文编码),可以转换成utf8</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ curl -l 'www.google.com.hk' | iconv -f big5 -t gbk</span></code></pre></td></tr></table></div></figure>
+
+
+<p>iconv基于GPL公开源代码,是GNU项目的一部分.目前，libiconv已经包含在C运行时刻库libc.so中。因此，Linux平台上使用iconv库函数的程序，需要包含&lt;iconv.h>文件.</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/06/23/linux-swap/">Linux Swap</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-06-23T19:35:55+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>7:35 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近一台机器出现swap报警,从监控图上也看到swap的使用一直存在.</p>
+
+<p>服务器上只有一个Tomcat应用和一些定时任务.</p>
+
+<h1>1.什么是swap</h1>
+
+<p>inux操作系统将物理内存分为多个小的内存块，称之为页(pages). 当应用请求的物理内存不够分配时，操作系统会将一段时间之内不用的内存页交换至swap分区，从而为应用释放内存空间。</p>
+
+<p>Swap对于系统过来说非常重要：</p>
+
+<pre><code>1.首先，当主内存不够用时，操作系统可以swap out一部分内存页，迅速为当前急需内存的应用或者进程分配内存；
+2.其次，某些内存页只在应用初始化阶段用到，之后可能就不再使用了，操作系统可以将这些内存页swap out，从而为应用或者磁盘cache腾出更多的内存空间;
+</code></pre>
+
+<h1>2.swap会带来哪些问题</h1>
+
+<p>我们知道，计算机磁盘I/O通常是系统的瓶颈所在。主内存的读写速度是纳秒级别，而磁盘读写速度是毫秒级别，两者相差3、4个数量级。然而，即使是当前广泛使用的SSD，读写速度相比主内存或者CPU cache也相差2、3个数量级。系统发生swap交换越多，那么系统自然也越慢。</p>
+
+<p>特别对于web服务器来说，都是面对用户的交互式应用，因此响应速度尤其重要。如果系统经常因为swap交换而变得响应迟钝，那么用户体验效果可想而知。</p>
+
+<p>总结成一句话：swap分区要有，在关键时刻不至于让你的应用因为内存不够用而被操作系统OOM KILLER干掉；但是不到关键时刻不要进行swap交换，因为这些操作会影响系统的响应速度。</p>
+
+<p>关于swap的swap in和swap out可以从vmstat命令查看(si表示swap in, so表示swap out).参考:
+<a href="http://xiaobaoqiu.github.io/blog/2015/01/26/vmstatgong-ju/">http://xiaobaoqiu.github.io/blog/2015/01/26/vmstatgong-ju/</a></p>
+
+<h1>3.查看swap占用</h1>
+
+<p>free命令, 参考:
+<a href="http://xiaobaoqiu.github.io/blog/2014/09/04/linux-memory-usage/">http://xiaobaoqiu.github.io/blog/2014/09/04/linux-memory-usage/</a></p>
+
+<h1>4.找到swap占用元凶</h1>
+
+<p>Linux系统中有一个文件smaps文件，记录了当前进程所对应的内存映像信息，路径为/proc/$pid/smaps.以本机的一个线程为例子:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo cat /proc/3555/smaps | head -16
+</span><span class='line'>00400000-00401000 r-xp 00000000 08:13 3444936                            /usr/local/jdk1.7.0_72/bin/java
+</span><span class='line'>Size:                  4 kB
+</span><span class='line'>Rss:                   4 kB
+</span><span class='line'>Pss:                   4 kB
+</span><span class='line'>Shared_Clean:          0 kB
+</span><span class='line'>Shared_Dirty:          0 kB
+</span><span class='line'>Private_Clean:         4 kB
+</span><span class='line'>Private_Dirty:         0 kB
+</span><span class='line'>Referenced:            4 kB
+</span><span class='line'>Anonymous:             0 kB
+</span><span class='line'>AnonHugePages:         0 kB
+</span><span class='line'>Swap:                  0 kB
+</span><span class='line'>KernelPageSize:        4 kB
+</span><span class='line'>MMUPageSize:           4 kB
+</span><span class='line'>Locked:                0 kB
+</span><span class='line'>VmFlags: rd ex mr mw me dw</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中Swap表示这个线程占有Swap的情况.</p>
+
+<p>查看swap的占有情况的脚本,按照占用swap的占用多少从高到底排序:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
+</span><span class='line'>
+</span><span class='line'>function getswap {
+</span><span class='line'>SUM=0
+</span><span class='line'>OVERALL=0
+</span><span class='line'>for DIR in `find /proc/ -maxdepth 1 -type d | egrep "^/proc/[0-9]"` ; do
+</span><span class='line'>PID=`echo $DIR | cut -d / -f 3`
+</span><span class='line'>PROGNAME=`ps -p $PID -o comm --no-headers`
+</span><span class='line'>for SWAP in `grep Swap $DIR/smaps 2&gt;/dev/null| awk '{ print $2 }'`
+</span><span class='line'>do
+</span><span class='line'>let SUM=$SUM+$SWAP
+</span><span class='line'>done
+</span><span class='line'>echo "PID=$PID    Swap used(KB): $SUM    ($PROGNAME )"
+</span><span class='line'>let OVERALL=$OVERALL+$SUM
+</span><span class='line'>SUM=0
+</span><span class='line'>
+</span><span class='line'>done
+</span><span class='line'>echo "Overall swap used: $OVERALL"
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>getswap|sort -k4nr</span></code></pre></td></tr></table></div></figure>
+
+
+<p>然后运行:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sudo ~/check_swap.sh</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>5.清除被占用的swap</h1>
+
+<p>在我们明确知道哪些进程吃swap以后，接下来的问题就是我们如何释放这些swap，释放swap的意思就是把交换到swap中的数据swap in到物理内存页中。</p>
+
+<pre><code>1.重启吃swap的服务，比如重启一下我们的java进程;
+2.swapoff + swapon
+这个方法的好处是，不用重启服务，但是需要确保现在有足够的物理内存可以容下从swap中释放出来的数据。下面给出了swapoff和swapon的具体做法，注意看swapoff后和swapon后，free的输出有什么异同;
+
+sudo /sbin/swapoff -a
+sudo /sbin/swapon -a
+
+swapoff后，free的输出里，swap分区的大小变为0，占用变为0,也就是说swap分区中的数据已经释放到物理内存中，同时swap分区被禁用。swapon后，free的输出里，swap分区的容量又恢复了
+，也就是说swap分区重新被启用了。当然我们可以把这两个命令写到一起：
+
+sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
+</code></pre>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/06/03/mysql-innodbsi-suo/">Mysql InnoDB锁和死锁</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-06-03T01:09:23+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>1:09 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>在使用Mysql的业务中,经常会碰到各种Mysql的死锁.一直以来,都对Mysql的死锁不甚了解,这次我们的发布中也出现了一次死锁,趁这次机会,好好学习一下Mysql的死锁.我们的死锁的讨论是在InnoDB引擎基础上的.</p>
+
+<h1>1.MySQL索引</h1>
+
+<h3>1.1 聚簇索引(Clustered Indexes)</h3>
+
+<p>InnoDB存储引擎的数据组织方式,是聚簇索引表：完整的记录,存储在主键索引中,通过主键索引,就可以获取记录所有的列.</p>
+
+<p>每个InnoDB的表有一个特殊的索引称之为聚簇索引,每行的数据就是存储在聚簇索引中.通常,聚簇索引和主键同义.</p>
+
+<p>当你在你的表上面定义一个主键时,InnoDB将其作为聚簇索引.建议为你的表都创建一个主键.如果没有唯一并且非空的一列或者多列(用来做你的主键),那么可以创建一个自动填充的自增列(比如ID)</p>
+
+<p>如果你的表没有定义主键,MySQL会将第一个所有列都非空的UNIQUE索引作为聚簇索引.</p>
+
+<p>如果你的表不存在这样的UNIQUE索引(见上),InnoDB内部会自动隐式生成一个包含行ID的列并在其上面建立聚簇索引.这一列按行ID排序.行ID是一个6-byte的严格单调自增的字段.因此,按照行在物理上是按照插入顺序排序的.</p>
+
+<p>聚簇所有是如何加速查询的呢?通过聚簇所有访问一行非常快,这是因为在聚簇索引上搜索会直接定位到包含你需要的行的数据所在的页上(page).</p>
+
+<p>参考: <a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-index-types.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-index-types.html</a></p>
+
+<h3>1.2 二级索引(Secondary Indexes)</h3>
+
+<p>除了聚簇索引其他索引都是二级索引.在InnoDB中每个二级索引记录都包含了这一行的主键列和当前这个二级索引包含的列.InnoDB使用二级索引中包含的主键取索引这一行对应的聚簇索引,进而找到这一行完整的数据.</p>
+
+<p>如果主键很长,则二级索引会占有更多的空间,因此建议使用短的列做主键.</p>
+
+<h1>2.MySQL锁</h1>
+
+<p>Innodb具备表锁和行锁,其中表锁是MySQL提供的,跟存储引擎无关;行锁是Innodb存储引擎实现.</p>
+
+<h3>2.1 共享锁和排他锁</h3>
+
+<pre><code>1.共享锁(S)
+允许一个事务去读一行,阻止其他事务获得相同数据集的排他锁.
+2.排他锁(X)
+允许获得排他锁的事务更新数据,阻止其他事务取得相同数据集的共享读锁和排他写锁.
+</code></pre>
+
+<p>另外,为了允许行锁和表锁共存,实现多粒度锁机制,InnoDB还有两种内部使用的意向锁(Intention Locks),这两种意向锁都是表锁.</p>
+
+<pre><code>1.意向共享锁(IS)
+事务打算给数据行加行共享锁,事务在给一个数据行加共享锁前必须先取得该表的IS锁.
+2.意向排他锁(IX)
+事务打算给数据行加行排他锁,事务在给一个数据行加排他锁前必须先取得该表的IX锁.
+</code></pre>
+
+<p>上面这四种锁的兼容性Conflict表示冲突不能共存,Compatible表示可以共存:</p>
+
+<pre><code>   |     X     |      IX     |      S     |  IS
+X  | Conflict  |  Conflict   | Conflict   | Conflict
+IX | Conflict  |  Compatible | Conflict   | Compatible
+S  | Conflict  |  Conflict   | Compatible | Compatible
+IS | Conflict  |  Compatible | Compatible | Compatible
+</code></pre>
+
+<h3>2.2 什么时候会加锁</h3>
+
+<pre><code>1.共享锁(S)
+    SELECT * FROM table_name WHERE ... LOCK IN SHARE MODE
+2.排他锁(X)
+    SELECT * FROM table_name WHERE ... FOR UPDATE
+</code></pre>
+
+<p>参考: <a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-lock-modes.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-lock-modes.html</a></p>
+
+<h3>2.3 当前请求锁</h3>
+
+<p>使用show engine innodb status命令查看当前请求锁的信息.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show engine innodb status \G;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>可以从information_schema.INNODB_LOCKS表中查看锁的信息.
+比如事物A:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from t;
+</span><span class='line'>+----+------+
+</span><span class='line'>| id | num  |
+</span><span class='line'>+----+------+
+</span><span class='line'>| 10 |    0 |
+</span><span class='line'>|  1 |    1 |
+</span><span class='line'>|  3 |    4 |
+</span><span class='line'>|  2 |    7 |
+</span><span class='line'>| 11 |    8 |
+</span><span class='line'>|  4 |    9 |
+</span><span class='line'>+----+------+
+</span><span class='line'>6 rows in set (0.00 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; select * from t where num &lt; 4 lock in share mode;
+</span><span class='line'>+----+------+
+</span><span class='line'>| id | num  |
+</span><span class='line'>+----+------+
+</span><span class='line'>| 10 |    0 |
+</span><span class='line'>|  1 |    1 |
+</span><span class='line'>+----+------+
+</span><span class='line'>2 rows in set (0.00 sec)
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>然后事物B去做插入就可能被阻塞:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; insert into t(num) values(4);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这是很可以查询锁信息:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from information_schema.INNODB_LOCKS \G;
+</span><span class='line'>*************************** 1. row ***************************
+</span><span class='line'>    lock_id: 5E05:0:138228:3
+</span><span class='line'>lock_trx_id: 5E05
+</span><span class='line'>  lock_mode: X,GAP
+</span><span class='line'>  lock_type: RECORD
+</span><span class='line'> lock_table: `test`.`t`
+</span><span class='line'> lock_index: `n`
+</span><span class='line'> lock_space: 0
+</span><span class='line'>  lock_page: 138228
+</span><span class='line'>   lock_rec: 3
+</span><span class='line'>  lock_data: 7, 2
+</span><span class='line'>*************************** 2. row ***************************
+</span><span class='line'>    lock_id: 5E02:0:138228:3
+</span><span class='line'>lock_trx_id: 5E02
+</span><span class='line'>  lock_mode: S
+</span><span class='line'>  lock_type: RECORD
+</span><span class='line'> lock_table: `test`.`t`
+</span><span class='line'> lock_index: `n`
+</span><span class='line'> lock_space: 0
+</span><span class='line'>  lock_page: 138228
+</span><span class='line'>   lock_rec: 3
+</span><span class='line'>  lock_data: 7, 2</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2.2 锁的算法(Record Lock,Gap Lock,Next-Key Lock)</h3>
+
+<p>InnoDB有三种类型的行锁:record locks,gap locks和next-key locks:索引锁是在单个索引记录上的锁;区间锁是两个索引记录之间的锁,或者第一个索引之前的锁,或者最后一个索引之后的锁;Next-Key锁是索引锁和该索引之前的gap锁的结合.</p>
+
+<pre><code>1.索引锁(Record Lock)
+索引锁总是锁定索引(可能多条),即使表上面没有索引(这种情况,InnoDB会隐式的用自增id创建一个聚簇索引).一级索引只对一级索引加锁,二级索引对二级索引和对应的一级索引加锁.注意记录锁锁的是索引记录,不是具体的数据记录.
+
+2.区间锁(Gap Lock)
+锁定索引记录间隙的锁,确保索引记录的间隙不变,间隙锁是针对事务隔离等级是可重复读(Repeatable Read)或以上级别而言的.
+
+间隙锁一般是针对非唯一索引而言的
+
+3.Next-Key Lock
+默认情况,InnoDB使用REPEATABLE READ事物隔离级别,并且innodb_locks_unsafe_for_binlog这个系统设置无效.这时InnoDB使用next-key锁来做搜索(searches)和索引扫描(index scans),以此来防止幻读(参考:http://dev.mysql.com/doc/refman/5.6/en/innodb-next-key-locking.html).
+</code></pre>
+
+<h3>2.3 区间锁</h3>
+
+<p>区间锁的一个简单例子:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>CREATE TABLE `t` (
+</span><span class='line'>  `id` int(11) unsigned NOT NULL AUTO_INCREMENT COMMENT '自增主键',
+</span><span class='line'>  `num` int(11) DEFAULT NULL,
+</span><span class='line'>  PRIMARY KEY (`id`),
+</span><span class='line'>  KEY `n` (`num`)
+</span><span class='line'>) ENGINE=InnoDB DEFAULT CHARSET=utf8
+</span><span class='line'>
+</span><span class='line'>insert into t(`num`) values(1, 7, 4, 9);
+</span><span class='line'>
+</span><span class='line'>mysql&gt; select * from t;
+</span><span class='line'>+----+------+
+</span><span class='line'>| id | num  |
+</span><span class='line'>+----+------+
+</span><span class='line'>|  1 |    1 |
+</span><span class='line'>|  3 |    4 |
+</span><span class='line'>|  2 |    7 |
+</span><span class='line'>|  4 |    9 |
+</span><span class='line'>+----+------+
+</span><span class='line'>4 rows in set (0.01 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>表中现在有4条记录,其中普通索引(二级索引n)生成了5个Gap:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>(负无穷, 1), (1, 4), (4, 7), (7, 9), (9, 正无穷)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>现在Session A以共享锁获取num=4的数据,Session B想要插入数据,就有可能造成锁等待导致超时从而重启事务,因为Session A以共享锁获取num=4的数据,会产生gap锁将区间(1, 4)和区间(4, 7)锁住,因此这两个区间的插入会失败:</p>
+
+<p><img src="/images/mysql/gap_lock.png"></p>
+
+<p>间隙锁在InnoDB的作用就是防止其它事务的插入操作，以此来达到防止幻读的发生。另外，在上面的例子中，我们选择的是一个普通（非唯一）索引字段来测试的，这不是随便选的，因为如果InnoDB扫描的是一个主键、或是一个唯一索引的话，那InnoDB只会采用行锁方式来加锁，而不会使用Next-Key Lock的方式，也就是说不会对索引之间的间隙加锁.</p>
+
+<p>要禁止间隙锁的话，可以把隔离级别降为读已提交，或者开启参数innodb_locks_unsafe_for_binlog.</p>
+
+<p>参考:
+<a href="http://www.cnblogs.com/sliverdang/p/3163455.html">http://www.cnblogs.com/sliverdang/p/3163455.html</a></p>
+
+<p><a href="http://ouyanggod.iteye.com/blog/2166215">http://ouyanggod.iteye.com/blog/2166215</a></p>
+
+<p><a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html</a></p>
+
+<h1>3.snapshot read和current read</h1>
+
+<p>MySQL的两种read方式:</p>
+
+<pre><code>1.快照读(snapshot read或者consistent read)
+快照读,读取的是记录的可见版本(有可能是历史版本),不用加锁;
+
+通常,简单的select操作,属于快照读,不加锁,比如:
+```
+select * from table where ?
+```
+2.当前读(current read或者lock read)
+当前读,读取的是记录的最新版本,并且,当前读返回的记录,都会加上锁,保证其他事务不会再并发修改这条记录.
+
+特殊的读操作,插入/更新/删除操作,属于当前读,需要加锁.比如:
+```
+select * from table where ? lock in share mode
+select * from table where ? for update
+insert into table values (…)
+update table set ? where ?
+delete from table where ?
+```
+所有以上的语句,都属于当前读,读取记录的最新版本.并且,读取之后,还需要保证其他并发事务不能修改当前记录,对读取记录加锁.其中,除了第一条语句,对读取记录加S锁 (共享锁)外,其他的操作,都加的是X锁(排它锁).
+</code></pre>
+
+<p>总之一句话:有加锁的查询都认为是当前读.</p>
+
+<p>快照读大大的提高了数据读取的并发.快照读的一个简单示意图,快照数据就是当前数据之前的版本数据,可能有多个版本的快照数据,每个快照数据中包含了版本信息(如时间戳等):</p>
+
+<p><img src="/images/mysql/snapshot_read.png"></p>
+
+<p>为什么将插入/更新/删除操作,都归为当前读?可以看看下面这个更新操作,在数据库中的执行流程：</p>
+
+<p><img src="/images/mysql/update-lock.jpg"></p>
+
+<p>从图中,可以看到,一个Update操作的具体流程.当Update SQL被发给MySQL后,MySQL Server会根据where条件,读取第一条满足条件的记录,然后InnoDB引擎会将第一条记录返回,并加锁(current read).待MySQL Server收到这条加锁的记录之后,会再发起一个Update请求,更新这条记录.一条记录操作完成,再读取下一条记录,直至没有满足条件的记录为止.因此,Update操作内部,就包含了一个当前读.同理,Delete操作也一样.Insert操作会稍微有些不同,简单来说,就是Insert操作可能会触发Unique Key的冲突检查,也会进行一个当前读.</p>
+
+<p>注：根据上图的交互,针对一条当前读的SQL语句,InnoDB与MySQL Server的交互,是一条一条进行的,因此,加锁也是一条一条进行的.先对一条满足条件的记录加锁,返回给MySQL Server,做一些DML操作；然后在读取下一条加锁,直至读取完毕.</p>
+
+<h3>3.1不同隔离界别下的snapshot read</h3>
+
+<p>在Read Committed级别下,快照读总是读取被锁定行的最新的快照数据.而在Repeatable Read和Serializable级别,快照读读取的是事物开始时候的行数据版本.</p>
+
+<p>下面是一个简单的例子,一个很简单的表,插入一条数据:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>CREATE TABLE `parent` (   `id` int(10) NOT NULL,   PRIMARY KEY (`id`) ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+</span><span class='line'>
+</span><span class='line'>insert into parent (id) values(1);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们起两个事务,一个读取(Session A),一个更新(Session B),用来验证不同事务隔离级别下快照读的差异:</p>
+
+<pre><code>1.Session A中首先开始事物,查询id=1的数据,这时候,无论在Read Committed还是Repeatable Read级别,结果都是1;
+2.Session B然后开始事物,并执行update操作,没有commit;
+3.这时候Session A再查询id=1的数据,显然Read Committed还是Repeatable Read级别,结果都是1;(在Read Uncommited灰度到未提交的脏数据).
+4.Session B提交事物;
+5.这时候Session A再查询id=1的数据,就发现差异:Read Committed级别下读取到被修改的数据,而Repeatable Read读取的还是老数据.因为Read Committed只读取最新的快照数据,而Repeatable Read是参考当前事物开始时间来读取快照数据.
+</code></pre>
+
+<p>首先是Repeatable Read的结果:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; SELECT @@session.tx_isolation;
+</span><span class='line'>+------------------------+
+</span><span class='line'>| @@session.tx_isolation |
+</span><span class='line'>+------------------------+
+</span><span class='line'>| REPEATABLE-READ        |
+</span><span class='line'>+------------------------+
+</span><span class='line'>
+</span><span class='line'>mysql&gt; select * from parent where id = 1;
+</span><span class='line'>+----+
+</span><span class='line'>| id |
+</span><span class='line'>+----+
+</span><span class='line'>|  1 |
+</span><span class='line'>+----+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><img src="/images/mysql/snapshot_read_RR.png"></p>
+
+<p>下面是Read Committed的结果(Session B一旦提交,Session A未commit的情况下就能读到Session B提交的数据.):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; SELECT @@session.tx_isolation;
+</span><span class='line'>+------------------------+
+</span><span class='line'>| @@session.tx_isolation |
+</span><span class='line'>+------------------------+
+</span><span class='line'>| READ-COMMITTED         |
+</span><span class='line'>+------------------------+
+</span><span class='line'>
+</span><span class='line'>mysql&gt; select * from parent where id = 1;
+</span><span class='line'>+----+
+</span><span class='line'>| id |
+</span><span class='line'>+----+
+</span><span class='line'>|  1 |
+</span><span class='line'>+----+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><img src="/images/mysql/snapshot_read_RC.png"></p>
+
+<h1>4.InnoDB MVCC</h1>
+
+<p>InnoDB是一种多版本存储引擎,它必须保存各行老版本信息,这个信息存在一个称之为回滚段(rollback segment)的数据结构中.</p>
+
+<p>在Mysql内部,InnoDB为每行数据额外增加三个字段:</p>
+
+<pre><code>1.一个6-byte的名为DB_TRX_ID字段,用来表示最后一个插入(insert)或者更新(update)这行记录的事物的标记.注意,删除(delete)也被当成一种更新,只是标记这一行的一个额外的bit位来表征这个数据被删除.
+2.一个7-byte的名为DB_ROLL_PTR字段,称之为回滚指针(roll pointer).这个指针指向写在rollback segment中的undo log记录.如果这一行被更新了,undo log就包含了能够将这一行完全恢复到修改之前的信息.
+3.一个6-byte的DB_ROW_ID字段,用来存行id(row ID),行id是插入数据的时候自动严格递增生成的.如果InnoDB自动产生了一个聚簇索引(clustered index),这个索引就包含行id.否在行id就不会在任何索引中出现.
+</code></pre>
+
+<p>InnoDB使用存储在rollback segment中的信息(undo log)去实现事物回滚时候的undo操作.另外,InnoDB也是使用这个信息构建快照读(consistent read或者snapshot read)时候的行数据.</p>
+
+<p>rollback segment中的Undo logs分为插入(insert)和更新(update)的undo logs.</p>
+
+<p>经常提交你的事物,包括那些只是consistent reads的事物.否则(长时间不提事物)会导致InnoDB不能及时废弃update undo logs中的数据,进而导致rollback segment中数据太大挤占你的表空间(tablespace).</p>
+
+<p>rollback segment中undo log记录的物理大小(physical size)通常小于对应的插入或者更新的行数.你可以使用这个信息取计算你的rollback segment需要的空间.</p>
+
+<p>在InnoDB多版本方案中,当你删除一行记录,实际上行不会立即被物理删除.只有当这个删除对应的update undo log被废弃的时候这行记录才会真正被物理删除.此删除操作被称为清除(purge)是通过Purge后台进程实现的,这个过程非常的快,通常其顺序和SQL语句执行删除的顺序一致.Purge进程定期扫描InnoDB的undo,按照先读老undo,再读新undo的顺序,读取每条undo record.</p>
+
+<p>参考:
+<a href="http://hedengcheng.com/?p=148">http://hedengcheng.com/?p=148</a>
+<a href="https://dev.mysql.com/doc/refman/5.0/en/innodb-multi-versioning.html">https://dev.mysql.com/doc/refman/5.0/en/innodb-multi-versioning.html</a></p>
+
+<h1>5.隔离级别(Isolation Level)</h1>
+
+<h3>5.1 InnoDB的4种隔离级别</h3>
+
+<p>MySQL InnoDB定义的4种隔离级别：</p>
+
+<pre><code>1.Read Uncommited
+2.Read Committed (RC)
+3.Repeatable Read (RR)
+4.Serializable
+</code></pre>
+
+<p>Read Uncommited安全级别比较低,因此很少使用.Serializable隔离级别读写冲突,因此并发度急剧下降,在MySQL/InnoDB下不建议使用.
+Repeatable Read是InnoDB默认的事物级别.Oracle和MS SQL的默认级别是Read Committed.</p>
+
+<h3>5.2脏读,不可重复读,幻读</h3>
+
+<p>在事务并行下出现的几个问题:</p>
+
+<pre><code>1.脏读
+可能读取到其他会话中未提交事务修改的数据,在Read Uncommited级别下可能出现.
+2.不可重复读
+同一个事物中前后两次读取的内容不一致,在Read Uncommited和Read Committed会出现.
+3.幻读
+如果另一个事务同时提交了新数据(本事务查询时候感知不到这个变更),本事务再更新时,就会惊奇的发现了这些新数据(比如触发违反了uniq key等),就好像之前读到的数据是鬼影一样的幻觉.这种情况就是上述说的,快照读和当前读一起存在的情况,会出现幻读的场景.必须使用当前读,才能避免幻读.比如：select ...lock in share mode和select ...for update.
+</code></pre>
+
+<p>各个事物界别下可能出现的问题:</p>
+
+<table>
+<thead>
+<tr>
+<th>隔离级别</th>
+<th style="text-align:center;">脏读(Dirty Read)</th>
+<th style="text-align:center;">不可重复读(NonRepeatable Read)</th>
+<th style="text-align:center;">幻读(Phantom Read)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read Uncommited</td>
+<td style="text-align:center;">可能</td>
+<td style="text-align:center;">可能</td>
+<td style="text-align:center;">可能</td>
+</tr>
+<tr>
+<td>Read Committed</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">可能</td>
+<td style="text-align:center;">可能</td>
+</tr>
+<tr>
+<td>Repeatable Read</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">可能</td>
+</tr>
+<tr>
+<td>Serializable</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">不可能</td>
+</tr>
+</tbody>
+</table>
+
+
+<p>幻读的一个示例,Session A在insert之前先select查看数据是否存在,结果告知可以插入,这时候Session B变更数据并提交.Session A再插入会因为主键冲突失败:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; SELECT @@session.tx_isolation;
+</span><span class='line'>+------------------------+
+</span><span class='line'>| @@session.tx_isolation |
+</span><span class='line'>+------------------------+
+</span><span class='line'>| READ-COMMITTED         |
+</span><span class='line'>+------------------------+
+</span><span class='line'>
+</span><span class='line'>mysql&gt; select * from parent where id = 1;
+</span><span class='line'>+----+
+</span><span class='line'>| id |
+</span><span class='line'>+----+
+</span><span class='line'>|  1 |
+</span><span class='line'>+----+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><img src="/images/mysql/phantom_read.png"></p>
+
+<p>那么，InnoDB指出的可以避免幻读是怎么回事呢?</p>
+
+<pre><code>http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html
+
+By default, InnoDB operates in REPEATABLE READ transaction isolation level and with the innodb_locks_unsafe_for_binlog system variable disabled. In this case, InnoDB uses next-key locks for searches and index scans, which prevents phantom rows (see Section 13.6.8.5, “Avoiding the Phantom Problem Using Next-Key Locking”).
+</code></pre>
+
+<p>简单翻译就是，当隔离级别是可重复读，且禁用innodb_locks_unsafe_for_binlog的情况下，在搜索和扫描index的时候使用的next-key locks可以避免幻读.</p>
+
+<p>关键点在于，是InnoDB默认对一个普通的查询也会加next-key locks，还是说需要应用自己来加锁呢？如果单看这一句，可能会以为InnoDB对普通的查询也加了锁，如果是，那和序列化（SERIALIZABLE）的区别又在哪里呢?</p>
+
+<p>MySQL manual里还有一段:</p>
+
+<pre><code>http://dev.mysql.com/doc/refman/5.6/en/innodb-next-key-locking.html
+Avoiding the Phantom Problem Using Next-Key Locking
+
+To prevent phantoms, InnoDB uses an algorithm called next-key locking that combines index-row locking with gap locking.
+
+You can use next-key locking to implement a uniqueness check in your application: If you read your data in share mode and do not see a duplicate for a row you are going to insert, then you can safely insert your row and know that the next-key lock set on the successor of your row during the read prevents anyone meanwhile inserting a duplicate for your row. Thus, the next-key locking enables you to “lock” the nonexistence of something in your table.
+</code></pre>
+
+<p>根据这一段,我们可以理解为,InnoDB提供了next-key locks，但需要应用程序自己去加锁,才能防止幻读.manual里提供一个例子:</p>
+
+<pre><code>SELECT * FROM child WHERE id &gt; 100 FOR UPDATE;
+</code></pre>
+
+<p>这样,InnoDB会给id大于100的行(假如child表里有一行id为102),以及100-102,102+的gap都加上锁.可以使用show innodb status来查看是否给表加上了锁.</p>
+
+<p>结论就是:MySQL InnoDB的REPEATABLE READ并不保证避免幻读,需要应用使用加锁读来保证.而这个加锁度使用到的机制就是next-key locks.</p>
+
+<h3>5.3 修改隔离级别</h3>
+
+<p>InnoDB默认是可重复读的(REPEATABLE READ).可以在命令行用&ndash;transaction-isolation选项,或在选项文件里,为所有连接设置默认隔离级别.</p>
+
+<p>在my.inf文件的[mysqld]节里类似如下设置该选项:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>transaction-isolation = {READ-UNCOMMITTED | READ-COMMITTED | REPEATABLE-READ | SERIALIZABLE}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>用户可以用SET TRANSACTION语句改变单个会话或者所有新进连接的隔离级别:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>SET [SESSION | GLOBAL] TRANSACTION ISOLATION LEVEL {READ UNCOMMITTED | READ COMMITTED | REPEATABLE READ | SERIALIZABLE}</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>6.死锁</h1>
+
+<pre><code>1.死锁发生的条件
+互斥条件：一个资源每次只能被一个进程使用；
+请求与保持条件：一个进程因请求资源而阻塞时，对已获得的资源保持不放；
+不剥夺条件:进程已获得的资源，在末使用完之前，不能强行剥夺；
+循环等待条件:若干进程之间形成一种头尾相接的循环等待资源关系。
+</code></pre>
+
+<p>系统检测到死锁后,会自动回滚其中事务较小的一个(记得好像根据undo日志的大小来决定).</p>
+
+<p>对于DB而言，导致死锁意味着发生了循环等待，在InnoDB中由于行锁的引入，比较容易发生死锁，下面总结一些发生死锁的情况（不全）：
+    1. 同一索引上,两个session相反的顺序加锁多行记录;
+    2. Primary key和Secondary index，通过primary key找到记录，更新Secondary index字段与通过Secondary index更新记录;
+    3. UPDATE/DELETE通过不同的二级索引更新多条记录,可能造成在Primary key上不同的加锁顺序,可以参考之前一篇博客:<a href="http://www.gpfeng.com/?p=406">http://www.gpfeng.com/?p=406</a></p>
+
+<h3>6.1死锁实例</h3>
+
+<h3>6.2查看死锁信息</h3>
+
+<h3>6.3解决死锁</h3>
+
+<p>参考:</p>
+
+<p><a href="http://hedengcheng.com/?p=771">http://hedengcheng.com/?p=771</a></p>
+
+<p><a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html</a></p>
+
+<p><a href="http://novoland.github.io/%E6%95%B0%E6%8D%AE%E5%BA%93/2014/07/26/MySQL%E6%80%BB%E7%BB%93.html">http://novoland.github.io/%E6%95%B0%E6%8D%AE%E5%BA%93/2014/07/26/MySQL%E6%80%BB%E7%BB%93.html</a></p>
+
+<p><a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=76820049">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=76820049</a>
+<a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=50520113">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=50520113</a></p>
+
+<p>Mysql锁基础知识 <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=64807317">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=64807317</a></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/06/02/dong-tai-shu-ju-yuan/">动态数据源</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-06-02T02:42:35+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>2</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>2:42 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><h1>1.数据库层面的动态数据源</h1>
+
+<p>比如多个读库(Read),可以配置一个虚拟IP,每次读数据库的请求被均衡的分配到各个读库(使用Keepalived等).</p>
+
+<p>这中方式对应用程序是透明的.</p>
+
+<h1>2.数据库Proxy</h1>
+
+<p>很多现成的数据库Proxy,在Proxy中可以做负载均衡(一般使用LVS,Keepalived等现成应用),权限验证,过滤,业务缓存等控制逻辑.比如:</p>
+
+<pre><code>1.360基于mysql-proxy的Atlas
+Atlas是由 Qihoo 360,Web平台部基础架构团队开发维护的一个基于MySQL协议的数据中间层项目。它是在mysql-proxy 0.8.2版本的基础上，对其进行了优化，增加了一些新的功能特性。360内部使用Atlas运行的mysql业务，每天承载的读写请求数达几十亿条。
+github:https://github.com/Qihoo360/Atlas
+参考:https://github.com/Qihoo360/Atlas/wiki/Atlas%E7%9A%84%E6%9E%B6%E6%9E%84
+
+2.阿里的DRDS
+分布式关系型数据库服务（Distribute Relational Database Service，简称DRDS）是一种水平拆分、可平滑扩缩容、读写分离的在线分布式数据库服务。前身为淘宝开源的TDDL，是近千个应用首选组件，已稳定服务了七年以上。已经商业化.
+参考:http://docs.aliyun.com/?spm=5176.7622920.9.2.qGx2nq#/pub/drds/brief-manual/summary&amp;summary
+
+3.网易的分布式数据库中间件DDB
+DDB（Distributed database）是网易杭研院立项最早，应用最为广泛的后台产品之一，也是国内最早出现的基于现有database之上开发的分布式数据库中间件，目前依然在为网易易信，云音乐，云阅读等大型互联网产品提供稳定的数据库服务。
+参考:http://www.majin163.com/2014/09/24/ddb-introduce/
+
+4.百度DDBS
+</code></pre>
+
+<h1>3.代码层面</h1>
+
+<p>使用Spring实现数据源动态配置,可以在代码层面达到Master-Slave数据库分离的效果.</p>
+
+<p>其实原理很简单,需要做两个工作:</p>
+
+<pre><code>1.实现一个根据不同key使用不同实际DataSource的自定义DataSource;
+2.在请求的ThreadLocal中保存当前请求需要使用的数据库的key;
+</code></pre>
+
+<p>其中第一个工作Spring已经帮我们做了,见类org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource.</p>
+
+<h3>3.1 AbstractRoutingDataSource简介</h3>
+
+<p>下面简单介绍这个类:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+<span class='line-number'>111</span>
+<span class='line-number'>112</span>
+<span class='line-number'>113</span>
+<span class='line-number'>114</span>
+<span class='line-number'>115</span>
+<span class='line-number'>116</span>
+<span class='line-number'>117</span>
+<span class='line-number'>118</span>
+<span class='line-number'>119</span>
+<span class='line-number'>120</span>
+<span class='line-number'>121</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 抽象的javax.sql.DataSource实现，可以完成基于一个查找key来路由 #getConnection()到某些特性目标DataSourcesd的一个。一般通过绑定线程上下文来决定。
+</span><span class='line'> */
+</span><span class='line'>public abstract class AbstractRoutingDataSource extends AbstractDataSource implements InitializingBean {
+</span><span class='line'>private Map&lt;Object, Object&gt; targetDataSources;
+</span><span class='line'>
+</span><span class='line'>    private Object defaultTargetDataSource;
+</span><span class='line'>
+</span><span class='line'>    private boolean lenientFallback = true;
+</span><span class='line'>
+</span><span class='line'>    private DataSourceLookup dataSourceLookup = new JndiDataSourceLookup();
+</span><span class='line'>
+</span><span class='line'>    private Map&lt;Object, DataSource&gt; resolvedDataSources;
+</span><span class='line'>
+</span><span class='line'>    private DataSource resolvedDefaultDataSource;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 设置目标DataSources的map映射，其中查找key作为 map的key。
+</span><span class='line'>     * 这个映射的value可以是对象的DataSource实例，或者是一个数据源name的字符串（可以被DataSourceLookup解析）。
+</span><span class='line'>     *
+</span><span class='line'>     * key可以是任意的类型，只要实现了普通的查找处理。
+</span><span class='line'>     * 具体的key表示形式，将会被resolveSpecifiedLookupKey和determineCurrentLookupKey处理
+</span><span class='line'>     *
+</span><span class='line'>     */
+</span><span class='line'>    public void setTargetDataSources(Map&lt;Object, Object&gt; targetDataSources) {
+</span><span class='line'>        this.targetDataSources = targetDataSources;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 设置默认目标数据源。如果我们在map中找不到对应的key时，则会使用这里设置的默认数据源
+</span><span class='line'>     */
+</span><span class='line'>    public void setDefaultTargetDataSource(Object defaultTargetDataSource) {
+</span><span class='line'>        this.defaultTargetDataSource = defaultTargetDataSource;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 指定默认的DataSource，当通过指定的查找key不能找到对应的DataSource。
+</span><span class='line'>     * 如果为false，则直接返回失败，如果为true，则使用默认的数据源。默认为true
+</span><span class='line'>     */
+</span><span class='line'>    public void setLenientFallback(boolean lenientFallback) {
+</span><span class='line'>        this.lenientFallback = lenientFallback;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 设置DataSourceLookup的实现类，该实现类可以把字符串配置的数据源，解析成我们需要的DataSource类.默认使用JndiDataSourceLookup。
+</span><span class='line'>     *
+</span><span class='line'>     * JndiDataSourceLookup方法使用ref bean方式获取配置文件中配置的dataSource数据源，也就是我们一般使用xml中配置datasource的方式就是jndi。
+</span><span class='line'>     */
+</span><span class='line'>    public void setDataSourceLookup(DataSourceLookup dataSourceLookup) {
+</span><span class='line'>        this.dataSourceLookup = (dataSourceLookup != null ? dataSourceLookup : new JndiDataSourceLookup());
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>    * 初始化,将targetDataSources转换成resolvedDataSources
+</span><span class='line'>    */
+</span><span class='line'>    public void afterPropertiesSet() {
+</span><span class='line'>        if (this.targetDataSources == null) {
+</span><span class='line'>            throw new IllegalArgumentException("Property 'targetDataSources' is required");
+</span><span class='line'>        }
+</span><span class='line'>        this.resolvedDataSources = new HashMap&lt;Object, DataSource&gt;(this.targetDataSources.size());
+</span><span class='line'>        for (Map.Entry entry : this.targetDataSources.entrySet()) {
+</span><span class='line'>            Object lookupKey = resolveSpecifiedLookupKey(entry.getKey());
+</span><span class='line'>            DataSource dataSource = resolveSpecifiedDataSource(entry.getValue());
+</span><span class='line'>            this.resolvedDataSources.put(lookupKey, dataSource);
+</span><span class='line'>        }
+</span><span class='line'>        if (this.defaultTargetDataSource != null) {
+</span><span class='line'>            this.resolvedDefaultDataSource = resolveSpecifiedDataSource(this.defaultTargetDataSource);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 根据lookupKey获取map中存放的key值，默认两者是一样的
+</span><span class='line'>     */
+</span><span class='line'>    protected Object resolveSpecifiedLookupKey(Object lookupKey) {
+</span><span class='line'>        return lookupKey;
+</span><span class='line'>    }
+</span><span class='line'>    /**
+</span><span class='line'>     * 转换从获取map中存放的dataSource
+</span><span class='line'>     */
+</span><span class='line'>    protected DataSource resolveSpecifiedDataSource(Object dataSource) throws IllegalArgumentException {
+</span><span class='line'>        if (dataSource instanceof DataSource) {
+</span><span class='line'>            return (DataSource) dataSource;
+</span><span class='line'>        }
+</span><span class='line'>        else if (dataSource instanceof String) {
+</span><span class='line'>            return this.dataSourceLookup.getDataSource((String) dataSource);
+</span><span class='line'>        }
+</span><span class='line'>        else {
+</span><span class='line'>            throw new IllegalArgumentException(
+</span><span class='line'>                    "Illegal data source value - only [javax.sql.DataSource] and String supported: " + dataSource);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>    * 这里就是抽象类给我们实现的接口方法，根据我们的配置上下文，抽象类决定实现哪个连接
+</span><span class='line'>    */
+</span><span class='line'>    public Connection getConnection() throws SQLException {
+</span><span class='line'>        return determineTargetDataSource().getConnection();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public Connection getConnection(String username, String password) throws SQLException {
+</span><span class='line'>        return determineTargetDataSource().getConnection(username, password);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    protected DataSource determineTargetDataSource() {
+</span><span class='line'>        Assert.notNull(this.resolvedDataSources, "DataSource router not initialized");
+</span><span class='line'>        Object lookupKey = determineCurrentLookupKey();
+</span><span class='line'>        DataSource dataSource = this.resolvedDataSources.get(lookupKey);
+</span><span class='line'>        if (dataSource == null && (this.lenientFallback || lookupKey == null)) {
+</span><span class='line'>            dataSource = this.resolvedDefaultDataSource;
+</span><span class='line'>        }
+</span><span class='line'>        if (dataSource == null) {
+</span><span class='line'>            throw new IllegalStateException("Cannot determine target DataSource for lookup key [" + lookupKey + "]");
+</span><span class='line'>        }
+</span><span class='line'>        return dataSource;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>    * 这里是我们使用这个抽象类需要实现的方法，主要就是告诉该抽象类，当前需要使用的数据源的key是什么，这样抽象类就可以知道使用哪个数据库连接
+</span><span class='line'>    */
+</span><span class='line'>    protected abstract Object determineCurrentLookupKey();
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们可以继承这个类实现自己的RoutingDataSource,只需要实现determineCurrentLookupKey()方法.下面是一个实现示例,其中DataSourceKeyHolder用来在ThreadLocal中保存key,而我们的RoutingDataSource就可以从ThreadLocal中获取key来决定使用那个具体的数据源:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class RoutingDataSource extends AbstractRoutingDataSource {
+</span><span class='line'>    @Override
+</span><span class='line'>    protected Object determineCurrentLookupKey() {
+</span><span class='line'>        return DataSourceKeyHolder.getDataSource();
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class DataSourceKeyHolder {
+</span><span class='line'>    private static final ThreadLocal&lt;String&gt; holder = new ThreadLocal&lt;String&gt;();
+</span><span class='line'>
+</span><span class='line'>    public static String getDataSource() {
+</span><span class='line'>        return holder.get();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public static void putDataSource(String value) {
+</span><span class='line'>        holder.set(value);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public static void clear(){
+</span><span class='line'>        holder.remove();
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>3.2 自己实现RoutingDataSource</h3>
+
+<p>Spring自带的AbstractRoutingDataSource功能强大,但是略先麻烦(最终使用的其实只有resolvedDataSources这个Map).我们完全可以自己实现一个简单的RoutingDataSource,比如我们要实现读写分离的动态数据库,一个简单实现如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+<span class='line-number'>111</span>
+<span class='line-number'>112</span>
+<span class='line-number'>113</span>
+<span class='line-number'>114</span>
+<span class='line-number'>115</span>
+<span class='line-number'>116</span>
+<span class='line-number'>117</span>
+<span class='line-number'>118</span>
+<span class='line-number'>119</span>
+<span class='line-number'>120</span>
+<span class='line-number'>121</span>
+<span class='line-number'>122</span>
+<span class='line-number'>123</span>
+<span class='line-number'>124</span>
+<span class='line-number'>125</span>
+<span class='line-number'>126</span>
+<span class='line-number'>127</span>
+<span class='line-number'>128</span>
+<span class='line-number'>129</span>
+<span class='line-number'>130</span>
+<span class='line-number'>131</span>
+<span class='line-number'>132</span>
+<span class='line-number'>133</span>
+<span class='line-number'>134</span>
+<span class='line-number'>135</span>
+<span class='line-number'>136</span>
+<span class='line-number'>137</span>
+<span class='line-number'>138</span>
+<span class='line-number'>139</span>
+<span class='line-number'>140</span>
+<span class='line-number'>141</span>
+<span class='line-number'>142</span>
+<span class='line-number'>143</span>
+<span class='line-number'>144</span>
+<span class='line-number'>145</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class RoutingDataSource extends AbstractDataSource implements InitializingBean {
+</span><span class='line'>    /**
+</span><span class='line'>     * 写库, key是String
+</span><span class='line'>     */
+</span><span class='line'>    private Map&lt;String, DataSource&gt; writeDataSourceMap;
+</span><span class='line'>    /**
+</span><span class='line'>     * 读库, key是String
+</span><span class='line'>     */
+</span><span class='line'>    private Map&lt;String, DataSource&gt; readDataSourceMap;
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public Connection getConnection() throws SQLException {
+</span><span class='line'>        //从上下文中获取key
+</span><span class='line'>        ConnectionKey connectionKey = ConnectionKeyHolder.get();
+</span><span class='line'>        try {
+</span><span class='line'>            //默认情况,返回随机一个写库
+</span><span class='line'>            if (connectionKey == null) {
+</span><span class='line'>                return fetchConnection(writeDataSourceMap, null);
+</span><span class='line'>            }
+</span><span class='line'>
+</span><span class='line'>            //只读
+</span><span class='line'>            if (connectionKey.getType().equals(ConnectionKey.READ)) {
+</span><span class='line'>                return fetchConnection(readDataSourceMap, connectionKey.getKey());
+</span><span class='line'>            }
+</span><span class='line'>
+</span><span class='line'>            //可读可写
+</span><span class='line'>            if (connectionKey.getType().equals(ConnectionKey.READ_WRITE)) {
+</span><span class='line'>                return fetchConnection(writeDataSourceMap, connectionKey.getKey());
+</span><span class='line'>            }
+</span><span class='line'>        } catch (Exception e) {
+</span><span class='line'>            logger.error("getConnectionError", e);
+</span><span class='line'>            if (e instanceof SQLException) {
+</span><span class='line'>                throw (SQLException) e;
+</span><span class='line'>            } else {
+</span><span class='line'>                throw new SQLException(e);
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        // impossible code
+</span><span class='line'>        throw new IllegalArgumentException("invalid connection type: " + connectionKey.getType() + ", key: "
+</span><span class='line'>                + connectionKey.getKey());
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 根据key从对应的Map中获取数据库连接
+</span><span class='line'>     *
+</span><span class='line'>     * @param dbSourceMap
+</span><span class='line'>     * @param key
+</span><span class='line'>     * @return
+</span><span class='line'>     * @throws SQLException
+</span><span class='line'>     */
+</span><span class='line'>    private Connection fetchConnection(final Map&lt;String, DataSource&gt; dbSourceMap, String key) throws SQLException {
+</span><span class='line'>        if (key == null || key.length() == 0) { // null key, return a random read connection
+</span><span class='line'>            key = randomKey(dbSourceMap);
+</span><span class='line'>        }
+</span><span class='line'>        if (dbSourceMap.get(key) == null) {
+</span><span class='line'>            key = randomKey(dbSourceMap);
+</span><span class='line'>        }
+</span><span class='line'>        return dbSourceMap.get(key).getConnection();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 随机获取一个Key
+</span><span class='line'>     * @return
+</span><span class='line'>     */
+</span><span class='line'>    private String randomKey(final Map&lt;String, DataSource&gt; dbSourceMap) {
+</span><span class='line'>        String[] keys = dbSourceMap.keySet().toArray(new String[0]);
+</span><span class='line'>        int size = dbSourceMap.size();
+</span><span class='line'>        int rand = new Random().nextInt(size);
+</span><span class='line'>        return keys[rand];
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public Connection getConnection(String username, String password) throws SQLException {
+</span><span class='line'>        throw new UnsupportedOperationException();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public void afterPropertiesSet() throws Exception {
+</span><span class='line'>        Preconditions.checkArgument(MapUtils.isNotEmpty(writeDataSourceMap));
+</span><span class='line'>        Preconditions.checkArgument(MapUtils.isNotEmpty(readDataSourceMap));
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public void setWriteDataSource(Map&lt;String, DataSource&gt; writeDataSourceMap) {
+</span><span class='line'>        this.writeDataSourceMap = writeDataSourceMap;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public void setReadDataSourceMap(Map&lt;String, DataSource&gt; readDataSourceMap) {
+</span><span class='line'>        this.readDataSourceMap = readDataSourceMap;
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class ConnectionKey {
+</span><span class='line'>    /**
+</span><span class='line'>     * 读库,只读
+</span><span class='line'>     */
+</span><span class='line'>    public static final String READ = "R";
+</span><span class='line'>    /**
+</span><span class='line'>     * 写库,可读可写
+</span><span class='line'>     */
+</span><span class='line'>    public static final String READ_WRITE = "RW";
+</span><span class='line'>
+</span><span class='line'>    private String type;
+</span><span class='line'>    private String key;
+</span><span class='line'>
+</span><span class='line'>    public ConnectionKey() {
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public ConnectionKey(String type, String key) {
+</span><span class='line'>        this.type = type;
+</span><span class='line'>        this.key = key;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public String getType() {
+</span><span class='line'>        return type;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public String getKey() {
+</span><span class='line'>        return key;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public void setType(String type) {
+</span><span class='line'>        this.type = type;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public void setKey(String key) {
+</span><span class='line'>        this.key = key;
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class ConnectionKeyHolder {
+</span><span class='line'>    private static ThreadLocal&lt;ConnectionKey&gt; connType = new ThreadLocal&lt;ConnectionKey&gt;();
+</span><span class='line'>
+</span><span class='line'>    public static void set(ConnectionKey type) {
+</span><span class='line'>        connType.set(type);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public static ConnectionKey get() {
+</span><span class='line'>        return connType.get();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public static void release() {
+</span><span class='line'>        connType.remove();
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>3.3 使用实现动态数据源</h3>
+
+<p>以我们自己实现的为例子,我们简单展示一下如何使用Spring加上AOP使用我们的动态数据源.</p>
+
+<p>首先定义使用读库和使用写库的注解:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'>* 使用读库的注解,value()代表key
+</span><span class='line'>*/
+</span><span class='line'>@Target({ ElementType.TYPE, ElementType.METHOD })
+</span><span class='line'>@Retention(RetentionPolicy.RUNTIME)
+</span><span class='line'>@Documented
+</span><span class='line'>public @interface Read {
+</span><span class='line'>    String value() default "";
+</span><span class='line'>}
+</span><span class='line'>/**
+</span><span class='line'>* 使用写库的注解,value()代表key
+</span><span class='line'>*/
+</span><span class='line'>@Target({ ElementType.TYPE, ElementType.METHOD })
+</span><span class='line'>@Retention(RetentionPolicy.RUNTIME)
+</span><span class='line'>@Documented
+</span><span class='line'>public @interface Write {
+</span><span class='line'>    String value() default "";
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>然后定义Aspect,逻辑很简单,只是在执行我们的业务逻辑之前给线程上文写入ConnectionKey信息:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class RoutingAop {
+</span><span class='line'>
+</span><span class='line'>    protected Logger log = LoggerFactory.getLogger(getClass());
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 解析读库的注解
+</span><span class='line'>     *
+</span><span class='line'>     * @param pjp
+</span><span class='line'>     * @param read
+</span><span class='line'>     * @return
+</span><span class='line'>     * @throws Throwable
+</span><span class='line'>     */
+</span><span class='line'>    public Object aroundRead(ProceedingJoinPoint pjp, Read read) throws Throwable {
+</span><span class='line'>        ConnectionKey origType = ConnectionKeyHolder.get();
+</span><span class='line'>        try {
+</span><span class='line'>            ConnectionKey newType = ConnectionKey.buildReadConnectionKey(read.value());
+</span><span class='line'>            ConnectionKeyHolder.set(newType);
+</span><span class='line'>            return pjp.proceed();
+</span><span class='line'>        } catch (Throwable throwable) {
+</span><span class='line'>            log.warn("error while processing read method", throwable);
+</span><span class='line'>            throw throwable;
+</span><span class='line'>        } finally {
+</span><span class='line'>            if (origType != null) {
+</span><span class='line'>                ConnectionKeyHolder.set(origType);
+</span><span class='line'>            } else {
+</span><span class='line'>                ConnectionKeyHolder.release();
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 解析写库的注解
+</span><span class='line'>     *
+</span><span class='line'>     * @param pjp
+</span><span class='line'>     * @param write
+</span><span class='line'>     * @return
+</span><span class='line'>     * @throws Throwable
+</span><span class='line'>     */
+</span><span class='line'>    public Object aroundWrite(ProceedingJoinPoint pjp, Write write) throws Throwable {
+</span><span class='line'>        ConnectionKey origType = ConnectionKeyHolder.get();
+</span><span class='line'>        try {
+</span><span class='line'>            ConnectionKey newType = ConnectionKey.buildWriteConnectionKey(write.value());
+</span><span class='line'>            ConnectionKeyHolder.set(newType);
+</span><span class='line'>            return pjp.proceed();
+</span><span class='line'>        } catch (Throwable throwable) {
+</span><span class='line'>            log.warn("error while processing write method", throwable);
+</span><span class='line'>            throw throwable;
+</span><span class='line'>        } finally {
+</span><span class='line'>            if (origType != null) {
+</span><span class='line'>                ConnectionKeyHolder.set(origType);
+</span><span class='line'>            } else {
+</span><span class='line'>                ConnectionKeyHolder.release();
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在Spring配置文件中定义好各个读库和各个写库,定义我们的RoutingDataSource的bean,之后扫描注解就可以了:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;!-- DataSource 写库  --&gt;
+</span><span class='line'>&lt;bean id="writeDataSource" class="..."&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;!-- DataSource 读库  --&gt;
+</span><span class='line'>&lt;bean id="readDataSource" class="..."&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;bean id="routingDataSource" class="com.Xxx.RoutingDataSource"&gt;
+</span><span class='line'>    &lt;property name="writeDataSourceMap"&gt;
+</span><span class='line'>        &lt;map key-type="java.lang.String" value-type="javax.sql.DataSource"&gt;
+</span><span class='line'>            &lt;entry key="write1" value-ref="writeDataSource"/&gt;
+</span><span class='line'>        &lt;/map&gt;
+</span><span class='line'>    &lt;/property&gt;
+</span><span class='line'>    &lt;property name="readDataSourceMap"&gt;
+</span><span class='line'>        &lt;map key-type="java.lang.String" value-type="javax.sql.DataSource"&gt;
+</span><span class='line'>            &lt;entry key="read1" value-ref="readDataSource"/&gt;
+</span><span class='line'>        &lt;/map&gt;
+</span><span class='line'>    &lt;/property&gt;
+</span><span class='line'>&lt;/bean&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;bean id="routingAop" class="com.Xxx.RoutingAop"/&gt;
+</span><span class='line'>&lt;!-- 定义Read Write注解扫描  --&gt;
+</span><span class='line'>&lt;aop:config&gt;
+</span><span class='line'>    &lt;aop:aspect ref="routingAop"&gt;
+</span><span class='line'>        &lt;aop:around method="aroundRead" arg-names="read" pointcut="@annotation(read) &amp;&amp; execution(public * com.Xxx.controller.*.*(..))" /&gt;
+</span><span class='line'>    &lt;/aop:aspect&gt;
+</span><span class='line'>
+</span><span class='line'>    &lt;aop:aspect ref="routingAop"&gt;
+</span><span class='line'>        &lt;aop:around method="aroundWrite" arg-names="write" pointcut="@annotation(write) &amp;&amp; execution(public * com.Xxx.controller.*.*(..)) " /&gt;
+</span><span class='line'>    &lt;/aop:aspect&gt;
+</span><span class='line'>&lt;/aop:config&gt;
+</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/05/21/elasticsearchpei-zhi-jie-xi/">Elasticsearch配置解析</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-05-21T04:31:05+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>21</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>4:31 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>可以使用正则grep出各个配置项:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>grep '^#\w' elasticsearch.yml</span></code></pre></td></tr></table></div></figure>
+
+
+<p>解析Elasticsearch的配置文件elasticsearch.yml中各个关键参数的意义:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+<span class='line-number'>111</span>
+<span class='line-number'>112</span>
+<span class='line-number'>113</span>
+<span class='line-number'>114</span>
+<span class='line-number'>115</span>
+<span class='line-number'>116</span>
+<span class='line-number'>117</span>
+<span class='line-number'>118</span>
+<span class='line-number'>119</span>
+<span class='line-number'>120</span>
+<span class='line-number'>121</span>
+<span class='line-number'>122</span>
+<span class='line-number'>123</span>
+<span class='line-number'>124</span>
+<span class='line-number'>125</span>
+<span class='line-number'>126</span>
+<span class='line-number'>127</span>
+<span class='line-number'>128</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>################################### Cluster ###################################
+</span><span class='line'>elasticsearch的config文件夹里面有两个配置文件：elasticsearch.yml和logging.yml，第一个是es的基本配置文件，第二个是日志配置文件，es也是使用log4j来记录日志的，所以logging.yml里的设置按普通log4j配置文件来设置就行了。下面主要讲解下elasticsearch.yml这个文件中可配置的东西。
+</span><span class='line'>
+</span><span class='line'>cluster.name: elasticsearch
+</span><span class='line'>配置es的集群名称，默认是elasticsearch，es会自动发现在同一网段下的es，如果在同一网段下有多个集群，就可以用这个属性来区分不同的集群。
+</span><span class='line'>
+</span><span class='line'>node.name: "Franz Kafka"
+</span><span class='line'>节点名，默认随机指定一个name列表中名字，该列表在es的jar包中config文件夹里name.txt文件中，其中有很多作者添加的有趣名字。
+</span><span class='line'>
+</span><span class='line'>node.master: true
+</span><span class='line'>指定该节点是否有资格被选举成为node，默认是true，es是默认集群中的第一台机器为master，如果这台机挂了就会重新选举master。
+</span><span class='line'>
+</span><span class='line'>node.data: true
+</span><span class='line'>指定该节点是否存储索引数据，默认为true。
+</span><span class='line'>
+</span><span class='line'>index.number_of_shards: 5
+</span><span class='line'>设置默认索引分片个数，默认为5片。
+</span><span class='line'>
+</span><span class='line'>index.number_of_replicas: 1
+</span><span class='line'>设置默认索引副本个数，默认为1个副本。
+</span><span class='line'>
+</span><span class='line'>path.conf: /path/to/conf
+</span><span class='line'>设置配置文件的存储路径，默认是es根目录下的config文件夹。
+</span><span class='line'>
+</span><span class='line'>path.data: /path/to/data
+</span><span class='line'>设置索引数据的存储路径，默认是es根目录下的data文件夹，可以设置多个存储路径，用逗号隔开，例：
+</span><span class='line'>path.data: /path/to/data1,/path/to/data2
+</span><span class='line'>
+</span><span class='line'>path.work: /path/to/work
+</span><span class='line'>设置临时文件的存储路径，默认是es根目录下的work文件夹。
+</span><span class='line'>
+</span><span class='line'>path.logs: /path/to/logs
+</span><span class='line'>设置日志文件的存储路径，默认是es根目录下的logs文件夹
+</span><span class='line'>
+</span><span class='line'>path.plugins: /path/to/plugins
+</span><span class='line'>设置插件的存放路径，默认是es根目录下的plugins文件夹
+</span><span class='line'>
+</span><span class='line'>bootstrap.mlockall: true
+</span><span class='line'>设置为true来锁住内存。因为当jvm开始swapping时es的效率会降低，所以要保证它不swap，可以把ES_MIN_MEM和ES_MAX_MEM两个环境变量设置成同一个值，并且保证机器有足够的内存分配给es。同时也要允许elasticsearch的进程可以锁住内存，linux下可以通过`ulimit -l unlimited`命令。设置ES_HEAP_SIZE表示ES_MIN_MEM和ES_MAX_MEM相同且为ES_HEAP_SIZE的值.
+</span><span class='line'>
+</span><span class='line'>network.bind_host: 192.168.0.1
+</span><span class='line'>设置绑定的ip地址，可以是ipv4或ipv6的，默认为0.0.0.0。
+</span><span class='line'>
+</span><span class='line'>network.publish_host: 192.168.0.1
+</span><span class='line'>设置其它节点和该节点交互的ip地址，如果不设置它会自动判断，值必须是个真实的ip地址。
+</span><span class='line'>
+</span><span class='line'>network.host: 192.168.0.1
+</span><span class='line'>这个参数是用来同时设置bind_host和publish_host上面两个参数。
+</span><span class='line'>
+</span><span class='line'>transport.tcp.port: 9300
+</span><span class='line'>设置节点间交互的tcp端口，默认是9300。
+</span><span class='line'>
+</span><span class='line'>transport.tcp.compress: true
+</span><span class='line'>设置是否压缩tcp传输时的数据，默认为false，不压缩。
+</span><span class='line'>
+</span><span class='line'>http.port: 9200
+</span><span class='line'>设置对外服务的http端口，默认为9200。
+</span><span class='line'>
+</span><span class='line'>http.max_content_length: 100mb
+</span><span class='line'>设置内容的最大容量，默认100mb
+</span><span class='line'>
+</span><span class='line'>http.enabled: false
+</span><span class='line'>是否使用http协议对外提供服务，默认为true，开启。
+</span><span class='line'>
+</span><span class='line'>gateway.type: local
+</span><span class='line'>gateway的类型，默认为local即为本地文件系统，可以设置为本地文件系统，分布式文件系统，hadoop的HDFS，和amazon的s3服务器，其它文件系统的设置方法下次再详细说。
+</span><span class='line'>
+</span><span class='line'>gateway.recover_after_nodes: 1
+</span><span class='line'>设置集群中N个节点启动时进行数据恢复，默认为1。
+</span><span class='line'>
+</span><span class='line'>gateway.recover_after_time: 5m
+</span><span class='line'>设置初始化数据恢复进程的超时时间，默认是5分钟。
+</span><span class='line'>
+</span><span class='line'>gateway.expected_nodes: 2
+</span><span class='line'>设置这个集群中节点的数量，默认为2.一旦一旦这N个节点启动(并且数字和recover_after_nodes相同),就会立即开始数据恢复而不用等待gateway.recover_after_time时间之后再开始.
+</span><span class='line'>
+</span><span class='line'>cluster.routing.allocation.node_initial_primaries_recoveries: 4
+</span><span class='line'>初始化数据恢复时，并发恢复线程的个数，默认为4。
+</span><span class='line'>
+</span><span class='line'>cluster.routing.allocation.node_concurrent_recoveries: 2
+</span><span class='line'>添加删除节点或负载均衡时并发恢复线程的个数，默认为4。
+</span><span class='line'>
+</span><span class='line'>indices.recovery.max_size_per_sec: 0
+</span><span class='line'>设置数据恢复时限制的带宽，如入100mb，默认为0，即无限制。
+</span><span class='line'>
+</span><span class='line'>indices.recovery.concurrent_streams: 5
+</span><span class='line'>设置这个参数来限制从其它分片恢复数据时最大同时打开并发流的个数，默认为5。
+</span><span class='line'>
+</span><span class='line'>discovery.zen.minimum_master_nodes: 1
+</span><span class='line'>设置这个参数来保证集群中的节点可以知道其它N个有master资格的节点。默认为1，对于大的集群来说，可以设置大一点的值(2-4).
+</span><span class='line'>
+</span><span class='line'>discovery.zen.ping.timeout: 3s
+</span><span class='line'>设置集群中自动发现其它节点时ping连接超时时间，默认为3秒，对于比较差的网络环境可以高点的值来防止自动发现时出错。
+</span><span class='line'>
+</span><span class='line'>discovery.zen.ping.multicast.enabled: false
+</span><span class='line'>设置是否打开多播发现节点，默认是true。使用单播发现节点策略(Unicast discovery)允许显示的控制使用哪个节点去发现集群.
+</span><span class='line'>
+</span><span class='line'>discovery.zen.ping.unicast.hosts: ["host1", "host2:port", "host3[portX-portY]"]
+</span><span class='line'>设置集群中master节点的初始列表，可以通过这些节点来自动发现新加入集群的节点。
+</span><span class='line'>
+</span><span class='line'>下面是一些查询时的慢日志参数设置,默认日志级别为TRACE.
+</span><span class='line'>超过10秒的查询打印warn日志,超过5秒的查询打印info日志,超过2秒的查询打印debug日志,超过0.5秒的查询打印trace日志
+</span><span class='line'>index.search.slowlog.level: TRACE
+</span><span class='line'>index.search.slowlog.threshold.query.warn: 10s
+</span><span class='line'>index.search.slowlog.threshold.query.info: 5s
+</span><span class='line'>index.search.slowlog.threshold.query.debug: 2s
+</span><span class='line'>index.search.slowlog.threshold.query.trace: 500ms
+</span><span class='line'>
+</span><span class='line'>index.search.slowlog.threshold.fetch.warn: 1s
+</span><span class='line'>index.search.slowlog.threshold.fetch.info: 800ms
+</span><span class='line'>index.search.slowlog.threshold.fetch.debug:500ms
+</span><span class='line'>index.search.slowlog.threshold.fetch.trace: 200ms
+</span><span class='line'>
+</span><span class='line'>超过10秒的查检索引打印warn日志,超过5秒的查检索引打印info日志,超过2秒的查检索引打印debug日志,超过0.5秒的查检索引打印trace日志
+</span><span class='line'>index.indexing.slowlog.threshold.index.warn: 10s
+</span><span class='line'>index.indexing.slowlog.threshold.index.info: 5s
+</span><span class='line'>index.indexing.slowlog.threshold.index.debug: 2s
+</span><span class='line'>index.indexing.slowlog.threshold.index.trace: 500ms
+</span><span class='line'>
+</span><span class='line'>下面是GC日志相关的配置,young GC超过1000ms打印warn日志,超过700ms打印info日志,超过400ms打印的debug日志
+</span><span class='line'>monitor.jvm.gc.young.warn: 1000ms
+</span><span class='line'>monitor.jvm.gc.young.info: 700ms
+</span><span class='line'>monitor.jvm.gc.young.debug: 400ms
+</span><span class='line'>
+</span><span class='line'>full GC超过10s打印warn日志,超过5s打印info日志,超过2s打印的debug日志
+</span><span class='line'>monitor.jvm.gc.old.warn: 10s
+</span><span class='line'>monitor.jvm.gc.old.info: 5s
+</span><span class='line'>monitor.jvm.gc.old.debug: 2s</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
+  
+  <div class="pagination">
+    
+      <a class="prev" href="/posts/2">&larr; Older</a>
+    
+    <a href="/blog/archives">Blog Archives</a>
+    
+  </div>
+</div>
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2015/07/17/fen-ci/">分词</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2015 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

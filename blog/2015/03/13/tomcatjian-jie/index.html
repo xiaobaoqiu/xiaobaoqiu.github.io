@@ -1,0 +1,263 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Tomcat简介 - xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="最近会重新看一下Tomcat的源代码，整理一些东西，包括但不限于： 1.Tomcat架构
+2.Tomcat启动过程
+3.请求在Tomcat中的流转
+4.Tomcat目录结构与配置 这里会首先简单介绍一些Tomcat的知识。后面会逐渐详细介绍。 &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/03/13/tomcatjian-jie/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Keep Runnnnnnnnnning...</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Tomcat简介</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-03-13T04:34:51+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>13</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:34 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>最近会重新看一下Tomcat的源代码，整理一些东西，包括但不限于：</p>
+
+<pre><code>1.Tomcat架构
+2.Tomcat启动过程
+3.请求在Tomcat中的流转
+4.Tomcat目录结构与配置
+</code></pre>
+
+<p>这里会首先简单介绍一些Tomcat的知识。后面会逐渐详细介绍。</p>
+
+<p>Tomcat是由Apache软件基金会下属的Jakarta项目开发的一个Servlet容器，按照Sun Microsystems提供的技术规范，实现了对Servlet和JavaServer Page(JSP)的支持，并提供了作为Web服务器的一些特有功能,如Tomcat管理和控制平台、安全域管理和Tomcat阀等。由于Tomcat本身也内含了一个HTTP服务器，它也可以被视作一个单独的Web服务器。</p>
+
+<p>由于有了Sun的参与和支持，最新的Servlet和Jsp规范总能在Tomcat中得到体现。而进来因为Tomcat 技术先进、性能稳定，而且免费，因而深受Java 爱好者的喜爱并得到了部分软件开发商的认可，成为目前比较流行的Web 应用服务器。</p>
+
+<p>官方网站：<a href="http://tomcat.apache.org/">http://tomcat.apache.org/</a></p>
+
+<p>Tomcat wiki：<a href="http://wiki.apache.org/tomcat/FrontPage">http://wiki.apache.org/tomcat/FrontPage</a></p>
+
+<h1>1.JSP和Servlet</h1>
+
+<p>Jsp（JavaServer Page）是在普通Html中嵌入了Java代码的一个脚本，在这一点上，它与其它的脚本语言（如Php）一样，但它与其它语言不同的是：其它脚本语言由服务器直接解释这个脚本，而Jsp则由Jsp容器（如Tomcat）首先将其转化为Servlet，然后再调用Javac将Servlet编译为Class文件。</p>
+
+<p>Servlet其实是一个特殊的Java类，Servlet类一般从HttpServlet类继承而来，在这个类中至少要实现doGet或者doPost函数，在这两个函数中处理来自客户的请求，然后将结果返回。</p>
+
+<h1>2.Servlet容器</h1>
+
+<p>负责处理客户请求、把请求传送给Servlet并把结果返回给客户。不同程序的容器实际实现可能有所变化，但容器与Servlet之间的接口是由Servlet API定义好的，这个接口定义了Servlet容器在Servlet上要调用的方法及传递给Servlet的对象类。</p>
+
+<h1>3.Servlet生命周期</h1>
+
+<pre><code>1.Servlet容器创建Servlet的一个实例
+2.容器调用该实例的init()方法
+3.如果容器对该Servlet有请求，则调用此实例的service()方法
+4.容器在销毁本实例前调用它的destroy()方法
+5.销毁并标记该实例以供作为垃圾收集
+</code></pre>
+
+<h1>4.Tomcat简介</h1>
+
+<p>Tomcat中的Servlet容器称之为Catalina。</p>
+
+<p>Tomcat中的应用程序是一个WAR（Web Archive）文件。WAR是Sun提出的一种Web应用程序格式，与JAR类似，也是许多文件的一个压缩包。这个包中的文件按一定目录结构来组织：通常其根目录下包含有Html和Jsp文件或者包含这两种文件的目录，另外还会有一个WEB-INF目录，这个目录很重要。通常在WEB-INF目录下有一个web.xml文件和一个classes目录，web.xml是这个应用的配置文件，而classes目录下则包含编译好的Servlet类和Jsp或Servlet所依赖的其它类（如JavaBean）。</p>
+
+<p>在Tomcat中，应用程序的部署很简单，你只需将你的WAR放到Tomcat的webapp目录下，Tomcat会自动检测到这个文件，并将其解压。你在浏览器中访问这个应用的Jsp时，通常第一次会很慢，因为Tomcat要将Jsp转化为Servlet文件，然后编译。编译以后，访问将会很快。另外Tomcat也提供了一个应用：manager，访问这个应用需要用户名和密码，用户名和密码存储在一个xml文件中。通过这个应用，你可以在远程通过Web部署和撤销应用。</p>
+
+<h1>5.Tomcat各个版本</h1>
+
+<p><a href="http://wiki.apache.org/tomcat/TomcatVersions">http://wiki.apache.org/tomcat/TomcatVersions</a></p>
+
+<h1>6.参考：</h1>
+
+<p><a href="http://zh.wikipedia.org/wiki/Apache_Tomcat">http://zh.wikipedia.org/wiki/Apache_Tomcat</a></p>
+
+<p><a href="http://www.ibm.com/developerworks/cn/java/j-lo-tomcat1/">http://www.ibm.com/developerworks/cn/java/j-lo-tomcat1/</a></p>
+
+<p><a href="http://gearever.iteye.com/category/223001">http://gearever.iteye.com/category/223001</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">xiaobaoqiu</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2015-03-13T04:34:51+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>13</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:34 am</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/tomcat/'>tomcat</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/03/13/tomcatjian-jie/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/03/13/tomcatjian-jie/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2015/03/11/guava-lazy-load/" title="Previous Post: Guava Lazy Load引发的问题">&laquo; Guava Lazy Load引发的问题</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2015/03/14/mysqlyou-hua/" title="Next Post: Mysql优化">Mysql优化 &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2015/07/17/fen-ci/">分词</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2015 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

@@ -1,0 +1,1141 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>揭秘sun.misc.Unsafe - xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="Java最初被设计为一种安全的受控环境.尽管如此,Java HotSpot还是包含了一个“后门”,它提供了一些可以直接操控内存和线程的低层次操作.这个后门类就是sun.misc.Unsafe,它被JDK广泛用于自己的包中,如java.nio和java.util.concurrent. &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2014/11/08/jie-mi-sun-dot-misc-dot-unsafe/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Keep Runnnnnnnnnning...</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">揭秘sun.misc.Unsafe</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-11-08T00:23:47+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>8</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>12:23 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>Java最初被设计为一种安全的受控环境.尽管如此,Java HotSpot还是包含了一个“后门”,它提供了一些可以直接操控内存和线程的低层次操作.这个后门类就是sun.misc.Unsafe,它被JDK广泛用于自己的包中,如java.nio和java.util.concurrent.但是丝毫不建议在生产环境中使用这个后门.因为这个API十分不安全、不轻便、而且不稳定.这个不安全的类提供了一个观察HotSpot JVM内部结构并且可以对其进行修改.</p>
+
+<h1>1.源代码及文档</h1>
+
+<p>源码:<a href="http://www.docjar.com/html/api/sun/misc/Unsafe.java.html">http://www.docjar.com/html/api/sun/misc/Unsafe.java.html</a></p>
+
+<p>文档:<a href="http://www.docjar.com/docs/api/sun/misc/Unsafe.html">http://www.docjar.com/docs/api/sun/misc/Unsafe.html</a></p>
+
+<h1>2.Unsafe身影</h1>
+
+<p>典型的在concurrent包中的Atomic系列的实现中,比如compareAndSet等Atomic实现就是借助于Unsafe类:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">AtomicInteger</span> <span class="kd">extends</span> <span class="n">Number</span> <span class="kd">implements</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="n">Unsafe</span> <span class="n">unsafe</span> <span class="o">=</span> <span class="n">Unsafe</span><span class="o">.</span><span class="na">getUnsafe</span><span class="o">();</span>    <span class="c1">//</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">valueOffset</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">static</span> <span class="o">{</span>
+</span><span class='line'>      <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">valueOffset</span> <span class="o">=</span> <span class="n">unsafe</span><span class="o">.</span><span class="na">objectFieldOffset</span>
+</span><span class='line'>            <span class="o">(</span><span class="n">AtomicInteger</span><span class="o">.</span><span class="na">class</span><span class="o">.</span><span class="na">getDeclaredField</span><span class="o">(</span><span class="s">&quot;value&quot;</span><span class="o">));</span>
+</span><span class='line'>      <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">Exception</span> <span class="n">ex</span><span class="o">)</span> <span class="o">{</span> <span class="k">throw</span> <span class="k">new</span> <span class="nf">Error</span><span class="o">(</span><span class="n">ex</span><span class="o">);</span> <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">volatile</span> <span class="kt">int</span> <span class="n">value</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">compareAndSet</span><span class="o">(</span><span class="kt">int</span> <span class="n">expect</span><span class="o">,</span> <span class="kt">int</span> <span class="n">update</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">unsafe</span><span class="o">.</span><span class="na">compareAndSwapInt</span><span class="o">(</span><span class="k">this</span><span class="o">,</span> <span class="n">valueOffset</span><span class="o">,</span> <span class="n">expect</span><span class="o">,</span> <span class="n">update</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.Unsafe初始化</h1>
+
+<p>sun.misc.Unsafe这个类是如此地不安全,以至于JDK开发者增加了很多特殊限制来访问它.它的构造器是私有的,工厂方法getUnsafe()的调用器只能被Bootloader加载.</p>
+
+<p>在使用Unsafe之前,我们需要创建Unsafe对象的实例.这并不像Unsafe unsafe = new Unsafe()这么简单,因为Unsafe的构造器是私有的.它也有一个静态的getUnsafe()方法,但如果你直接调用Unsafe.getUnsafe(),你可能会得到SecurityException异常.只能从受信任的代码中使用这个方法:</p>
+
+<pre><code>public static Unsafe getUnsafe() {
+    Class cc = sun.reflect.Reflection.getCallerClass(2);
+    if (cc.getClassLoader() != null)
+        throw new SecurityException("Unsafe");
+    return theUnsafe;
+}
+</code></pre>
+
+<p>Unsafe类包含一个私有的、名为theUnsafe的实例,我们可以通过Java反射窃取该变量:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">Field</span> <span class="n">f</span> <span class="o">=</span> <span class="n">Unsafe</span><span class="o">.</span><span class="na">class</span><span class="o">.</span><span class="na">getDeclaredField</span><span class="o">(</span><span class="s">&quot;theUnsafe&quot;</span><span class="o">);</span>
+</span><span class='line'><span class="n">f</span><span class="o">.</span><span class="na">setAccessible</span><span class="o">(</span><span class="kc">true</span><span class="o">);</span>
+</span><span class='line'><span class="n">Unsafe</span> <span class="n">unsafe</span> <span class="o">=</span> <span class="o">(</span><span class="n">Unsafe</span><span class="o">)</span> <span class="n">f</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="kc">null</span><span class="o">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.Unsafe API</h1>
+
+<p>sun.misc.Unsafe类包含105个方法.实际上,对各种实体操作有几组重要方法:</p>
+
+<h3>4.1 Info-仅返回一些低级的内存信息</h3>
+
+<pre><code>addressSize
+pageSize
+</code></pre>
+
+<h3>4.2 Objects-提供用于操作对象及其字段的方法</h3>
+
+<pre><code>allocateInstance
+objectFieldOffset
+</code></pre>
+
+<h3>4.3 Classes-提供用于操作类及其静态字段的方法</h3>
+
+<pre><code>staticFieldOffset
+defineClass
+defineAnonymousClass
+ensureClassInitialized
+</code></pre>
+
+<h3>4.4 Arrays-操作数组</h3>
+
+<pre><code>arrayBaseOffset
+arrayIndexScale
+</code></pre>
+
+<h3>4.5 Synchronization-低级的同步原语</h3>
+
+<pre><code>monitorEnter
+tryMonitorEnter
+monitorExit
+compareAndSwapInt
+putOrderedInt
+</code></pre>
+
+<h3>4.6 Memory-直接内存访问方法</h3>
+
+<pre><code>allocateMemory
+copyMemory
+freeMemory
+getAddress
+getInt
+putInt
+</code></pre>
+
+<h1>5.有趣的Case</h1>
+
+<h3>5.1 避免初始化</h3>
+
+<p>当你想要跳过对象初始化阶段,或绕过构造器的安全检查,或实例化一个没有任何公共构造器的类,allocateInstance方法是非常有用的.考虑以下类：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">class</span> <span class="nc">A</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">long</span> <span class="n">a</span><span class="o">;</span> <span class="c1">// not initialized value</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">//构造器</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">A</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">a</span> <span class="o">=</span> <span class="mi">1</span><span class="o">;</span> <span class="c1">// initialization</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">long</span> <span class="nf">a</span><span class="o">()</span> <span class="o">{</span> <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">a</span><span class="o">;</span> <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>使用构造器、反射和unsafe初始化它,将得到不同的结果.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">A</span> <span class="n">o1</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">A</span><span class="o">();</span> <span class="c1">// 构造器</span>
+</span><span class='line'><span class="n">o1</span><span class="o">.</span><span class="na">a</span><span class="o">();</span> <span class="c1">// prints 1</span>
+</span><span class='line'>
+</span><span class='line'><span class="n">A</span> <span class="n">o2</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="na">class</span><span class="o">.</span><span class="na">newInstance</span><span class="o">();</span> <span class="c1">// 反射</span>
+</span><span class='line'><span class="n">o2</span><span class="o">.</span><span class="na">a</span><span class="o">();</span> <span class="c1">// prints 1</span>
+</span><span class='line'>
+</span><span class='line'><span class="n">A</span> <span class="n">o3</span> <span class="o">=</span> <span class="o">(</span><span class="n">A</span><span class="o">)</span> <span class="n">unsafe</span><span class="o">.</span><span class="na">allocateInstance</span><span class="o">(</span><span class="n">A</span><span class="o">.</span><span class="na">class</span><span class="o">);</span> <span class="c1">// unsafe</span>
+</span><span class='line'><span class="n">o3</span><span class="o">.</span><span class="na">a</span><span class="o">();</span> <span class="c1">// prints 0</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外一种情况,当构造器的代价十分昂贵,我们可以绕过构造器:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">class</span> <span class="nc">ClassWithExpensiveConstructor</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="kt">int</span> <span class="n">value</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="nf">ClassWithExpensiveConstructor</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">value</span> <span class="o">=</span> <span class="n">doExpensiveLookup</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="nf">doExpensiveLookup</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>      <span class="n">Thread</span><span class="o">.</span><span class="na">sleep</span><span class="o">(</span><span class="mi">2000</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>      <span class="n">e</span><span class="o">.</span><span class="na">printStackTrace</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="k">return</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">getValue</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">return</span> <span class="n">value</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>绕过昂贵的构造器:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="nd">@Test</span>
+</span><span class='line'><span class="kd">public</span> <span class="kt">void</span> <span class="nf">testObjectCreation</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">Exception</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">ClassWithExpensiveConstructor</span> <span class="n">instance</span> <span class="o">=</span> <span class="o">(</span><span class="n">ClassWithExpensiveConstructor</span><span class="o">)</span>
+</span><span class='line'>    <span class="n">unsafe</span><span class="o">.</span><span class="na">allocateInstance</span><span class="o">(</span><span class="n">ClassWithExpensiveConstructor</span><span class="o">.</span><span class="na">class</span><span class="o">);</span>
+</span><span class='line'>    <span class="n">assertEquals</span><span class="o">(</span><span class="mi">0</span><span class="o">,</span> <span class="n">instance</span><span class="o">.</span><span class="na">getValue</span><span class="o">());</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>5.2 内存崩溃(Memory corruption)</h3>
+
+<p>这对于每个C程序员来说是常见的.顺便说一下,它是绕过安全的常用技术.</p>
+
+<p>考虑下那些用于检查“访问规则”的简单类：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">class</span> <span class="nc">Guard</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">ACCESS_ALLOWED</span> <span class="o">=</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">giveAccess</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="mi">42</span> <span class="o">==</span> <span class="n">ACCESS_ALLOWED</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>客户端代码是非常安全的,并且通过调用giveAccess()来检查访问规则.可惜,对于客户,它总是返回false.只有特权用户可以以某种方式改变ACCESS_ALLOWED常量的值并且得到访问,即giveAccess()方法返回true.</p>
+
+<p>实际上,这并不是真的.演示代码如下：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">Guard</span> <span class="n">guard</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">Guard</span><span class="o">();</span>
+</span><span class='line'><span class="n">guard</span><span class="o">.</span><span class="na">giveAccess</span><span class="o">();</span>   <span class="c1">// false, no access</span>
+</span><span class='line'>
+</span><span class='line'><span class="c1">// by pass</span>
+</span><span class='line'><span class="n">Unsafe</span> <span class="n">unsafe</span> <span class="o">=</span> <span class="n">getUnsafe</span><span class="o">();</span>
+</span><span class='line'><span class="n">Field</span> <span class="n">f</span> <span class="o">=</span> <span class="n">guard</span><span class="o">.</span><span class="na">getClass</span><span class="o">().</span><span class="na">getDeclaredField</span><span class="o">(</span><span class="s">&quot;ACCESS_ALLOWED&quot;</span><span class="o">);</span>
+</span><span class='line'><span class="n">unsafe</span><span class="o">.</span><span class="na">putInt</span><span class="o">(</span><span class="n">guard</span><span class="o">,</span> <span class="n">unsafe</span><span class="o">.</span><span class="na">objectFieldOffset</span><span class="o">(</span><span class="n">f</span><span class="o">),</span> <span class="mi">42</span><span class="o">);</span> <span class="c1">// memory corruption</span>
+</span><span class='line'>
+</span><span class='line'><span class="n">guard</span><span class="o">.</span><span class="na">giveAccess</span><span class="o">();</span> <span class="c1">// true, access granted</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>现在所有的客户都拥有无限制的访问权限.</p>
+
+<p>实际上,反射可以实现相同的功能.但值得关注的是,我们可以修改任何对象,甚至没有这些对象的引用.</p>
+
+<p>例如,有一个guard对象,所在内存中的位置紧接着在当前guard对象之后.我们可以用以下代码来修改它的ACCESS_ALLOWED字段：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">unsafe</span><span class="o">.</span><span class="na">putInt</span><span class="o">(</span><span class="n">guard</span><span class="o">,</span> <span class="mi">16</span> <span class="o">+</span> <span class="n">unsafe</span><span class="o">.</span><span class="na">objectFieldOffset</span><span class="o">(</span><span class="n">f</span><span class="o">),</span> <span class="mi">42</span><span class="o">);</span> <span class="c1">// memory corruption</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>注意：我们不必持有这个对象的引用.16是Guard对象在32位架构上的大小.我们可以手工计算它,或者通过使用sizeOf方法.</p>
+
+<h3>5.2 sizeOf</h3>
+
+<p>使用objectFieldOffset方法可以实现C-风格（C-style）的sizeof方法.这个实现返回对象的自身内存大小:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="kt">long</span> <span class="nf">sizeOf</span><span class="o">(</span><span class="n">Object</span> <span class="n">o</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Unsafe</span> <span class="n">u</span> <span class="o">=</span> <span class="n">getUnsafe</span><span class="o">();</span>
+</span><span class='line'>    <span class="n">HashSet</span><span class="o">&lt;</span><span class="n">Field</span><span class="o">&gt;</span> <span class="n">fields</span> <span class="o">=</span> <span class="k">new</span> <span class="n">HashSet</span><span class="o">&lt;</span><span class="n">Field</span><span class="o">&gt;();</span>
+</span><span class='line'>    <span class="n">Class</span> <span class="n">c</span> <span class="o">=</span> <span class="n">o</span><span class="o">.</span><span class="na">getClass</span><span class="o">();</span>
+</span><span class='line'>    <span class="k">while</span> <span class="o">(</span><span class="n">c</span> <span class="o">!=</span> <span class="n">Object</span><span class="o">.</span><span class="na">class</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="n">Field</span> <span class="n">f</span> <span class="o">:</span> <span class="n">c</span><span class="o">.</span><span class="na">getDeclaredFields</span><span class="o">())</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">((</span><span class="n">f</span><span class="o">.</span><span class="na">getModifiers</span><span class="o">()</span> <span class="o">&amp;</span> <span class="n">Modifier</span><span class="o">.</span><span class="na">STATIC</span><span class="o">)</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">fields</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="n">f</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">c</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="na">getSuperclass</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">// get offset</span>
+</span><span class='line'>    <span class="kt">long</span> <span class="n">maxSize</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(</span><span class="n">Field</span> <span class="n">f</span> <span class="o">:</span> <span class="n">fields</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kt">long</span> <span class="n">offset</span> <span class="o">=</span> <span class="n">u</span><span class="o">.</span><span class="na">objectFieldOffset</span><span class="o">(</span><span class="n">f</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">offset</span> <span class="o">&gt;</span> <span class="n">maxSize</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">maxSize</span> <span class="o">=</span> <span class="n">offset</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">return</span> <span class="o">((</span><span class="n">maxSize</span><span class="o">/</span><span class="mi">8</span><span class="o">)</span> <span class="o">+</span> <span class="mi">1</span><span class="o">)</span> <span class="o">*</span> <span class="mi">8</span><span class="o">;</span>   <span class="c1">// padding</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>算法如下：通过所有非静态字段（包含父类的）,获取每个字段的偏移量（offset）,找到偏移最大值并填充字节数(padding).</p>
+
+<p>如果我们仅读取对象的类结构大小值,sizeOf的实现可以更简单,这位于JVM 1.7 32 bit中的偏移量12.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="kt">long</span> <span class="nf">sizeOf</span><span class="o">(</span><span class="n">Object</span> <span class="n">object</span><span class="o">){</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">getUnsafe</span><span class="o">().</span><span class="na">getAddress</span><span class="o">(</span>
+</span><span class='line'>        <span class="n">normalize</span><span class="o">(</span><span class="n">getUnsafe</span><span class="o">().</span><span class="na">getInt</span><span class="o">(</span><span class="n">object</span><span class="o">,</span> <span class="mi">4L</span><span class="o">))</span> <span class="o">+</span> <span class="mi">12L</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>normalize是一个为了正确内存地址使用,将有符号的int类型强制转换成无符号的long类型的方法.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="kd">static</span> <span class="kt">long</span> <span class="nf">normalize</span><span class="o">(</span><span class="kt">int</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">if</span><span class="o">(</span><span class="n">value</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="o">)</span> <span class="k">return</span> <span class="n">value</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">return</span> <span class="o">(~</span><span class="mi">0L</span> <span class="o">&gt;&gt;&gt;</span> <span class="mi">32</span><span class="o">)</span> <span class="o">&amp;</span> <span class="n">value</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>真棒,这个方法返回的结果与我们之前的sizeof方法一样.</p>
+
+<p>实际上,对于良好、安全、准确的sizeof方法,最好使用 java.lang.instrument包,但这需要在JVM中指定agent选项.</p>
+
+<h3>5.3 浅拷贝(Shallow copy)</h3>
+
+<p>为了实现计算对象自身内存大小,我们可以简单地添加拷贝对象方法.标准的解决方案是使用Cloneable修改你的代码,或者在你的对象中实现自定义的拷贝方法,但它不会是多用途的方法.</p>
+
+<p>浅拷贝：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">static</span> <span class="n">Object</span> <span class="nf">shallowCopy</span><span class="o">(</span><span class="n">Object</span> <span class="n">obj</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kt">long</span> <span class="n">size</span> <span class="o">=</span> <span class="n">sizeOf</span><span class="o">(</span><span class="n">obj</span><span class="o">);</span>
+</span><span class='line'>    <span class="kt">long</span> <span class="n">start</span> <span class="o">=</span> <span class="n">toAddress</span><span class="o">(</span><span class="n">obj</span><span class="o">);</span>
+</span><span class='line'>    <span class="kt">long</span> <span class="n">address</span> <span class="o">=</span> <span class="n">getUnsafe</span><span class="o">().</span><span class="na">allocateMemory</span><span class="o">(</span><span class="n">size</span><span class="o">);</span>
+</span><span class='line'>    <span class="n">getUnsafe</span><span class="o">().</span><span class="na">copyMemory</span><span class="o">(</span><span class="n">start</span><span class="o">,</span> <span class="n">address</span><span class="o">,</span> <span class="n">size</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">fromAddress</span><span class="o">(</span><span class="n">address</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>toAddress和fromAddress将对象转换为其在内存中的地址,反之亦然.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">static</span> <span class="kt">long</span> <span class="nf">toAddress</span><span class="o">(</span><span class="n">Object</span> <span class="n">obj</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Object</span><span class="o">[]</span> <span class="n">array</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Object</span><span class="o">[]</span> <span class="o">{</span><span class="n">obj</span><span class="o">};</span>
+</span><span class='line'>    <span class="kt">long</span> <span class="n">baseOffset</span> <span class="o">=</span> <span class="n">getUnsafe</span><span class="o">().</span><span class="na">arrayBaseOffset</span><span class="o">(</span><span class="n">Object</span><span class="o">[].</span><span class="na">class</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">normalize</span><span class="o">(</span><span class="n">getUnsafe</span><span class="o">().</span><span class="na">getInt</span><span class="o">(</span><span class="n">array</span><span class="o">,</span> <span class="n">baseOffset</span><span class="o">));</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">static</span> <span class="n">Object</span> <span class="nf">fromAddress</span><span class="o">(</span><span class="kt">long</span> <span class="n">address</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Object</span><span class="o">[]</span> <span class="n">array</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Object</span><span class="o">[]</span> <span class="o">{</span><span class="kc">null</span><span class="o">};</span>
+</span><span class='line'>    <span class="kt">long</span> <span class="n">baseOffset</span> <span class="o">=</span> <span class="n">getUnsafe</span><span class="o">().</span><span class="na">arrayBaseOffset</span><span class="o">(</span><span class="n">Object</span><span class="o">[].</span><span class="na">class</span><span class="o">);</span>
+</span><span class='line'>    <span class="n">getUnsafe</span><span class="o">().</span><span class="na">putLong</span><span class="o">(</span><span class="n">array</span><span class="o">,</span> <span class="n">baseOffset</span><span class="o">,</span> <span class="n">address</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">return</span> <span class="n">array</span><span class="o">[</span><span class="mi">0</span><span class="o">];</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个拷贝方法可以用来拷贝任何类型的对象,动态计算它的大小.注意,在拷贝后,你需要将对象转换成特定的类型.</p>
+
+<h3>5.4 隐藏密码（Hide Password）</h3>
+
+<p>在Unsafe中,一个更有趣的直接内存访问的用法是,从内存中删除不必要的对象.</p>
+
+<p>检索用户密码的大多数API的签名为byte[]或char[],为什么是数组呢?</p>
+
+<p>这完全是出于安全的考虑,因为我们可以删除不需要的数组元素.如果将用户密码检索成字符串,这可以像一个对象一样在内存中保存,而删除该对象只需执行解除引用的操作.但是,这个对象仍然在内存中,由GC决定的时间来执行清除.</p>
+
+<p>创建具有相同大小、假的String对象,来取代在内存中原来的String对象的技巧：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">String</span> <span class="n">password</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">String</span><span class="o">(</span><span class="s">&quot;l00k@myHor$e&quot;</span><span class="o">);</span>
+</span><span class='line'><span class="n">String</span> <span class="n">fake</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">String</span><span class="o">(</span><span class="n">password</span><span class="o">.</span><span class="na">replaceAll</span><span class="o">(</span><span class="s">&quot;.&quot;</span><span class="o">,</span> <span class="s">&quot;?&quot;</span><span class="o">));</span>
+</span><span class='line'><span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="n">password</span><span class="o">);</span> <span class="c1">// l00k@myHor$e</span>
+</span><span class='line'><span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="n">fake</span><span class="o">);</span> <span class="c1">// ????????????</span>
+</span><span class='line'>
+</span><span class='line'><span class="n">getUnsafe</span><span class="o">().</span><span class="na">copyMemory</span><span class="o">(</span>
+</span><span class='line'>          <span class="n">fake</span><span class="o">,</span> <span class="mi">0L</span><span class="o">,</span> <span class="kc">null</span><span class="o">,</span> <span class="n">toAddress</span><span class="o">(</span><span class="n">password</span><span class="o">),</span> <span class="n">sizeOf</span><span class="o">(</span><span class="n">password</span><span class="o">));</span>
+</span><span class='line'>
+</span><span class='line'><span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="n">password</span><span class="o">);</span> <span class="c1">// ????????????</span>
+</span><span class='line'><span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="n">fake</span><span class="o">);</span> <span class="c1">// ????????????</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>感觉很安全.</p>
+
+<p>其实这并不安全.为了真正的安全,我们需要通过反射删除后台char数组：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">Field</span> <span class="n">stringValue</span> <span class="o">=</span> <span class="n">String</span><span class="o">.</span><span class="na">class</span><span class="o">.</span><span class="na">getDeclaredField</span><span class="o">(</span><span class="s">&quot;value&quot;</span><span class="o">);</span>
+</span><span class='line'><span class="n">stringValue</span><span class="o">.</span><span class="na">setAccessible</span><span class="o">(</span><span class="kc">true</span><span class="o">);</span>
+</span><span class='line'><span class="kt">char</span><span class="o">[]</span> <span class="n">mem</span> <span class="o">=</span> <span class="o">(</span><span class="kt">char</span><span class="o">[])</span> <span class="n">stringValue</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">password</span><span class="o">);</span>
+</span><span class='line'><span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">mem</span><span class="o">.</span><span class="na">length</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
+</span><span class='line'>  <span class="n">mem</span><span class="o">[</span><span class="n">i</span><span class="o">]</span> <span class="o">=</span> <span class="sc">&#39;?&#39;</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>5.5 多继承(Multiple Inheritance)</h3>
+
+<pre><code>Java中没有多继承,这是对的,除非我们可以将任意类型转换成我们想要的其他类:
+
+long intClassAddress = normalize(getUnsafe().getInt(new Integer(0), 4L));
+long strClassAddress = normalize(getUnsafe().getInt("", 4L));
+getUnsafe().putAddress(intClassAddress + 36, strClassAddress);
+</code></pre>
+
+<p>这个代码片段将String类型添加到Integer超类中,因此我们可以强制转换,且没有运行时异常:</p>
+
+<pre><code>(String) (Object) (new Integer(666))
+</code></pre>
+
+<p>有一个问题,我们必须预先强制转换对象,以欺骗编译器.</p>
+
+<h3>5.6 动态类（Dynamic classes）</h3>
+
+<p>我们可以在运行时创建一个类,比如从已编译的class文件中.将类内容读取为字节数组,并正确地传递给defineClass方法.</p>
+
+<pre><code>byte[] classContents = getClassContent();
+Class c = getUnsafe().defineClass(
+              null, classContents, 0, classContents.length);
+c.getMethod("a").invoke(c.newInstance(), null); // 1
+</code></pre>
+
+<p>从定义文件（class文件）中读取（代码）如下：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="kd">static</span> <span class="kt">byte</span><span class="o">[]</span> <span class="nf">getClassContent</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">Exception</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">File</span> <span class="n">f</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">File</span><span class="o">(</span><span class="s">&quot;/home/mishadoff/tmp/A.class&quot;</span><span class="o">);</span>
+</span><span class='line'>    <span class="n">FileInputStream</span> <span class="n">input</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">FileInputStream</span><span class="o">(</span><span class="n">f</span><span class="o">);</span>
+</span><span class='line'>    <span class="kt">byte</span><span class="o">[]</span> <span class="n">content</span> <span class="o">=</span> <span class="k">new</span> <span class="kt">byte</span><span class="o">[(</span><span class="kt">int</span><span class="o">)</span><span class="n">f</span><span class="o">.</span><span class="na">length</span><span class="o">()];</span>
+</span><span class='line'>    <span class="n">input</span><span class="o">.</span><span class="na">read</span><span class="o">(</span><span class="n">content</span><span class="o">);</span>
+</span><span class='line'>    <span class="n">input</span><span class="o">.</span><span class="na">close</span><span class="o">();</span>
+</span><span class='line'>    <span class="k">return</span> <span class="n">content</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>当你必须动态创建类,而现有代码中有一些代理, 这是很有用的.</p>
+
+<h3>5.7 抛出异常（Throw an Exception）</h3>
+
+<p>不喜欢受检异常？没问题</p>
+
+<pre><code>getUnsafe().throwException(new IOException());
+</code></pre>
+
+<p>该方法抛出受检异常,但你的代码不必捕捉或重新抛出它,正如运行时异常一样.</p>
+
+<h3>5.8 大数组（Big Arrays）</h3>
+
+<p>正如你所知,Java数组大小的最大值为Integer.MAX_VALUE.使用直接内存分配,我们创建的数组大小受限于堆大小.</p>
+
+<p>SuperArray的实现：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">class</span> <span class="nc">SuperArray</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="kd">static</span> <span class="kt">int</span> <span class="n">BYTE</span> <span class="o">=</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">long</span> <span class="n">size</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">long</span> <span class="n">address</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">SuperArray</span><span class="o">(</span><span class="kt">long</span> <span class="n">size</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">size</span> <span class="o">=</span> <span class="n">size</span><span class="o">;</span>
+</span><span class='line'>        <span class="n">address</span> <span class="o">=</span> <span class="n">getUnsafe</span><span class="o">().</span><span class="na">allocateMemory</span><span class="o">(</span><span class="n">size</span> <span class="o">*</span> <span class="n">BYTE</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">set</span><span class="o">(</span><span class="kt">long</span> <span class="n">i</span><span class="o">,</span> <span class="kt">byte</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">getUnsafe</span><span class="o">().</span><span class="na">putByte</span><span class="o">(</span><span class="n">address</span> <span class="o">+</span> <span class="n">i</span> <span class="o">*</span> <span class="n">BYTE</span><span class="o">,</span> <span class="n">value</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">get</span><span class="o">(</span><span class="kt">long</span> <span class="n">idx</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="nf">getUnsafe</span><span class="o">().</span><span class="na">getByte</span><span class="o">(</span><span class="n">address</span> <span class="o">+</span> <span class="n">idx</span> <span class="o">*</span> <span class="n">BYTE</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">long</span> <span class="nf">size</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">size</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>简单用法：</p>
+
+<pre><code>long SUPER_SIZE = (long)Integer.MAX_VALUE * 2;
+SuperArray array = new SuperArray(SUPER_SIZE);
+System.out.println("Array size:" + array.size()); // 4294967294
+for (int i = 0; i &lt; 100; i++) {
+    array.set((long)Integer.MAX_VALUE + i, (byte)3);
+    sum += array.get((long)Integer.MAX_VALUE + i);
+}
+System.out.println("Sum of 100 elements:" + sum);  // 300
+</code></pre>
+
+<p>实际上,这是堆外内存（off-heap memory）技术,在java.nio包中部分可用.</p>
+
+<p>这种方式的内存分配不在堆上,且不受GC管理,所以必须小心Unsafe.freeMemory()的使用.它也不执行任何边界检查,所以任何非法访问可能会导致JVM崩溃.</p>
+
+<p>这可用于数学计算,代码可操作大数组的数据.此外,这可引起实时程序员的兴趣,可打破GC在大数组上延迟的限制.</p>
+
+<h3>5.9 并发（Concurrency）</h3>
+
+<p>关于Unsafe的并发性.compareAndSwap方法是原子的,并且可用来实现高性能的、无锁的数据结构.</p>
+
+<p>比如,考虑问题：在使用大量线程的共享对象上增长值.</p>
+
+<p>首先,我们定义简单的Counter接口：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">interface</span> <span class="nc">Counter</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kt">void</span> <span class="nf">increment</span><span class="o">();</span>
+</span><span class='line'>    <span class="kt">long</span> <span class="nf">getCounter</span><span class="o">();</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>然后,我们定义使用Counter的工作线程CounterClient：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">class</span> <span class="nc">CounterClient</span> <span class="kd">implements</span> <span class="n">Runnable</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">Counter</span> <span class="n">c</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">num</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">CounterClient</span><span class="o">(</span><span class="n">Counter</span> <span class="n">c</span><span class="o">,</span> <span class="kt">int</span> <span class="n">num</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">c</span> <span class="o">=</span> <span class="n">c</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">num</span> <span class="o">=</span> <span class="n">num</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">run</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">num</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">c</span><span class="o">.</span><span class="na">increment</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>测试代码：</p>
+
+<pre><code>int NUM_OF_THREADS = 1000;
+int NUM_OF_INCREMENTS = 100000;
+ExecutorService service = Executors.newFixedThreadPool(NUM_OF_THREADS);
+Counter counter = ... // creating instance of specific counter
+long before = System.currentTimeMillis();
+for (int i = 0; i &lt; NUM_OF_THREADS; i++) {
+    service.submit(new CounterClient(counter, NUM_OF_INCREMENTS));
+}
+service.shutdown();
+service.awaitTermination(1, TimeUnit.MINUTES);
+long after = System.currentTimeMillis();
+System.out.println("Counter result: " + c.getCounter());
+System.out.println("Time passed in ms:" + (after - before));
+</code></pre>
+
+<p>第一个无锁版本的计数器：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">class</span> <span class="nc">StupidCounter</span> <span class="kd">implements</span> <span class="n">Counter</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">long</span> <span class="n">counter</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">increment</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">counter</span><span class="o">++;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">long</span> <span class="nf">getCounter</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">counter</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>输出：</p>
+
+<pre><code>Counter result: 99542945
+Time passed in ms: 679
+</code></pre>
+
+<p>运行快,但没有线程管理,结果是不准确的.</p>
+
+<p>第二次尝试,添加上最简单的java式同步：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">class</span> <span class="nc">SyncCounter</span> <span class="kd">implements</span> <span class="n">Counter</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">long</span> <span class="n">counter</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">increment</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">counter</span><span class="o">++;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">long</span> <span class="nf">getCounter</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">counter</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>输出:</p>
+
+<pre><code>Counter result: 100000000
+Time passed in ms: 10136
+</code></pre>
+
+<p>激进的同步有效,但耗时长.</p>
+
+<p>试试ReentrantReadWriteLock：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">class</span> <span class="nc">LockCounter</span> <span class="kd">implements</span> <span class="n">Counter</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">long</span> <span class="n">counter</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">WriteLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">ReentrantReadWriteLock</span><span class="o">().</span><span class="na">writeLock</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">increment</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
+</span><span class='line'>        <span class="n">counter</span><span class="o">++;</span>
+</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">long</span> <span class="nf">getCounter</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">counter</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>输出:</p>
+
+<pre><code>Counter result: 100000000
+Time passed in ms: 8065
+</code></pre>
+
+<p>仍然正确,耗时较短.</p>
+
+<p>atomics的运行效果如何?</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">class</span> <span class="nc">AtomicCounter</span> <span class="kd">implements</span> <span class="n">Counter</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">AtomicLong</span> <span class="n">counter</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">AtomicLong</span><span class="o">(</span><span class="mi">0</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">increment</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">counter</span><span class="o">.</span><span class="na">incrementAndGet</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">long</span> <span class="nf">getCounter</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">counter</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>输出:</p>
+
+<pre><code>Counter result: 100000000
+Time passed in ms: 6552
+</code></pre>
+
+<p>AtomicCounter的运行结果更好.</p>
+
+<p>最后,试试Unsafe原始的compareAndSwapLong,看看它是否真的只有特权才能使用它?</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">class</span> <span class="nc">CASCounter</span> <span class="kd">implements</span> <span class="n">Counter</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">volatile</span> <span class="kt">long</span> <span class="n">counter</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">Unsafe</span> <span class="n">unsafe</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">long</span> <span class="n">offset</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">CASCounter</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">Exception</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">unsafe</span> <span class="o">=</span> <span class="n">getUnsafe</span><span class="o">();</span>
+</span><span class='line'>        <span class="n">offset</span> <span class="o">=</span> <span class="n">unsafe</span><span class="o">.</span><span class="na">objectFieldOffset</span><span class="o">(</span><span class="n">CASCounter</span><span class="o">.</span><span class="na">class</span><span class="o">.</span><span class="na">getDeclaredField</span><span class="o">(</span><span class="s">&quot;counter&quot;</span><span class="o">));</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">increment</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kt">long</span> <span class="n">before</span> <span class="o">=</span> <span class="n">counter</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">while</span> <span class="o">(!</span><span class="n">unsafe</span><span class="o">.</span><span class="na">compareAndSwapLong</span><span class="o">(</span><span class="k">this</span><span class="o">,</span> <span class="n">offset</span><span class="o">,</span> <span class="n">before</span><span class="o">,</span> <span class="n">before</span> <span class="o">+</span> <span class="mi">1</span><span class="o">))</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">before</span> <span class="o">=</span> <span class="n">counter</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">long</span> <span class="nf">getCounter</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">counter</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>输出:</p>
+
+<pre><code>Counter result: 100000000
+Time passed in ms: 6454
+</code></pre>
+
+<p>看起来似乎等价于atomics,实际上,atomics正是使用Unsafe实现.</p>
+
+<p>实际上,这个例子很简单,但它展示了Unsafe的一些能力.</p>
+
+<p>如我所说,CAS原语可以用来实现无锁的数据结构.背后的原理很简单：</p>
+
+<pre><code>有一些状态
+创建它的副本
+修改它
+执行CAS
+如果失败,重复尝试
+</code></pre>
+
+<p>实际上,现实中比你现象的更难.存在着许多问题,如ABA问题、指令重排序等.</p>
+
+<p>如果你真的感兴趣,可以参考<a href="https://github.com/EsotericSoftware/kryo">lock-free HashMap</a>的精彩展示.</p>
+
+<h1>6.结论</h1>
+
+<p>即使Unsafe对应用程序很有用,但建议不要使用它.</p>
+
+<h1>参考</h1>
+
+<p><a href="http://mishadoff.com/blog/java-magic-part-4-sun-dot-misc-dot-unsafe/">http://mishadoff.com/blog/java-magic-part-4-sun-dot-misc-dot-unsafe/</a>
+<a href="http://java.dzone.com/articles/understanding-sunmiscunsafe">http://java.dzone.com/articles/understanding-sunmiscunsafe</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">xiaobaoqiu</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2014-11-08T00:23:47+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>8</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>12:23 am</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/java/'>java</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2014/11/08/jie-mi-sun-dot-misc-dot-unsafe/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2014/11/08/jie-mi-sun-dot-misc-dot-unsafe/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2014/11/03/memcachedwang-luo-mo-xing/" title="Previous Post: Memcached网络模型">&laquo; Memcached网络模型</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2014/11/11/javabing-fa-rong-qi/" title="Next Post: Java并发容器">Java并发容器 &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2015/07/17/fen-ci/">分词</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2015 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

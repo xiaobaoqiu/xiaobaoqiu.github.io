@@ -1,0 +1,324 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Crate Jdbc查询死循环bug - xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="历经一个月的项目,使用Crate提升搜索速度终于要上线.先交代一下背景,我们使用的crate相关的依赖的版本: 1.crate-client 0.47.8
+2.crate-jdbc 1.5.1 发布之后,验证阶段一切正常,等把流量入口打开,一段时间之后, &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/05/20/crate-jdbccha-xun-si-xun-huan-bug/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Keep Runnnnnnnnnning...</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Crate Jdbc查询死循环bug</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-05-20T05:41:17+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>20</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:41 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>历经一个月的项目,使用Crate提升搜索速度终于要上线.先交代一下背景,我们使用的crate相关的依赖的版本:</p>
+
+<pre><code>1.crate-client  0.47.8
+2.crate-jdbc    1.5.1
+</code></pre>
+
+<p>发布之后,验证阶段一切正常,等把流量入口打开,一段时间之后,猛然发现crate的一个查询服务所在的机器load飙到20往上,机器是4核CPU,4G内存的虚拟机.</p>
+
+<p>top -H发现有大量的tomcat线程(10+),每个线程占用的CPU都达到20%,并且这种线程有增多的趋势.</p>
+
+<p>vmstat命令发现r数字特别高,即正在等待CPU的线程非常多.</p>
+
+<p>jstack的结果发现runnable的线程多达300多.</p>
+
+<p>看现象,感觉问题是线程池分配没有回收,但是定位不到问题在哪.</p>
+
+<p>最终定位的问题是在特定场景下存在死循环,并且直接才crate服务器执行相同的查询逻辑正常返回,因此基本定位在crate-jdbc中.</p>
+
+<h1>1.死循环场景</h1>
+
+<pre><code>1.crate中数据为空,这是很从crate中查询数据;
+2.crate中存在满足查询条件数据,我们分页查询,假设总数据量为10页,我们因为代码问题,直接查询第11页的内容(实际上肯定不存在);
+</code></pre>
+
+<h1>2.原因</h1>
+
+<p>原因是这个版本crate-jdbc和mybatis一起存在死循环,如下,我们对crate的查询首先经过mybatis,从</p>
+
+<pre><code>1.MapperProxy.invoke
+2.MapperMethod.execute
+3.SqlSessionTemplate.selectList, SqlSessionTemplate.invoke
+4.DefaultSqlSession.selectList
+5.BaseExecutor.query, BaseExecutor.queryFromDatabase
+6.ReuseExecutor.doQuery
+7.RoutingStatementHandler.query
+8.PreparedStatementHandler.query
+9.CratePreparedStatement.execute()
+10.DefaultResultSetHandler.handleResultSets, DefaultResultSetHandler.getFirstResultSet
+</code></pre>
+
+<p>问题的代码就在DefaultResultSetHandler.getFirstResultSet中:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private ResultSetWrapper getFirstResultSet(Statement stmt) throws SQLException {
+</span><span class='line'>    ResultSet rs = stmt.getResultSet();
+</span><span class='line'>    while (rs == null) {
+</span><span class='line'>        // move forward to get the first resultset in case the driver
+</span><span class='line'>        // doesn't return the resultset as the first result (HSQLDB 2.1)
+</span><span class='line'>        if (stmt.getMoreResults()) {
+</span><span class='line'>            rs = stmt.getResultSet();
+</span><span class='line'>        } else {
+</span><span class='line'>            if (stmt.getUpdateCount() == -1) {
+</span><span class='line'>                // no more results. Must be no resultset
+</span><span class='line'>                break;
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>    return rs != null ? new ResultSetWrapper(rs, configuration) : null;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中stmt为CratePreparedStatement,其getMoreResults()实现:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>public boolean getMoreResults() throws SQLException {
+</span><span class='line'>    return false;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因此逻辑进入到else中,stmt.getUpdateCount()的实现:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>public int getUpdateCount() throws SQLException {
+</span><span class='line'>    checkClosed();  //check connection是否被关闭
+</span><span class='line'>    if (resultSet == null && sqlResponse != null) {
+</span><span class='line'>        return (int) sqlResponse.rowCount();
+</span><span class='line'>    }
+</span><span class='line'>    return -1;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中CratePreparedStatement的resultSet为null,并且sqlResponse不为空,sqlResponse的rowCount为0,因此getUpdateCount()返回值为0.因此getFirstResultSet中继续在while循环中,无法跳出.</p>
+
+<p><img src="/images/crate/crate_jdbc_bug_code.png"></p>
+
+<h1>3.绕过</h1>
+
+<p>归结起来产生问题的很简单,就是查询的结果集为空的时候,就会产生死循环,针对两种死循环场景,我们都可以绕过:</p>
+
+<pre><code>1.查询之前,先执行count查询,当count为0,即crate中没有满足我们查询条件的数据,则直接返回空数据集;
+2.分页查询的时候,先执行count查询,当分页的offset大于等于count,则值额节返回空数据集;
+</code></pre>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">xiaobaoqiu</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2015-05-20T05:41:17+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>20</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:41 am</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/search/'>search</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/05/20/crate-jdbccha-xun-si-xun-huan-bug/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/05/20/crate-jdbccha-xun-si-xun-huan-bug/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2015/05/19/mysql-thread-pool-size/" title="Previous Post: Mysql thread_pool_size">&laquo; Mysql thread_pool_size</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2015/05/20/tpcc-mysqljian-jie/" title="Next Post: TPCC-MySQL简介">TPCC-MySQL简介 &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2015/07/17/fen-ci/">分词</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2015 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

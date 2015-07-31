@@ -1,0 +1,338 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Tomcat架构 - xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="主要整理Tomcat的整体架构.分析各个主要模块的功能. 1.整体结构 Tomcat基本结构图如下所示: 简单介绍: 1.一个serve包括多个service;
+2.一个service包含两个核心部件:一个容器(Container)和多个连接器(Connector), &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/03/18/tomcatjia-gou/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Keep Runnnnnnnnnning...</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Tomcat架构</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-03-18T19:03:09+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>18</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:03 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>主要整理Tomcat的整体架构.分析各个主要模块的功能.</p>
+
+<h1>1.整体结构</h1>
+
+<p>Tomcat基本结构图如下所示:</p>
+
+<p><img src="/images/tomcat/struct.gif"></p>
+
+<p>简单介绍:</p>
+
+<pre><code>1.一个serve包括多个service;
+2.一个service包含两个核心部件:一个容器(Container)和多个连接器(Connector),Connector主要负责对外交流,Container主要处理Connector接受的请求,主要是处理内部事务;
+3.Tomcat基于JMX(Java Management Extensions,即Java管理扩展,是一个为应用程序、设备、系统等植入管理功能的框架)管理这些组件,另外实现以上接口的组件也实现了代表生存期的接口Lifecycle,使其组件履行固定的生存期,在其整个生存期的过程中通过事件侦听LifecycleEvent实现扩展;
+</code></pre>
+
+<h1>2.核心部件</h1>
+
+<p>Tomcat的核心类图如下所示：</p>
+
+<p><img src="/images/tomcat/classes.jpg"></p>
+
+<p>其中Container是一个接口,定义一些容器的行为, 比如addChild(),getPipeline()等.每个Container都有一个Pipeline,其中包含一系列的表示请求处理器的Valve,注意Pipeline不是通过server.xml配置产生的,是必须有的,在pipeline上配置不同的valve,当需要调用此容器实现逻辑时,就会按照顺序将此pipeline上的所有valve调用一遍,类似于责任链模式.Engine,Host,Context和Wrapper都是实现了Container这个接口.Container还包含用来处理安全里授权与认证Realm等组件.</p>
+
+<p>Tomcat(Container)的容器分成4个等级,如下：</p>
+
+<p><img src="/images/tomcat/tomcat_containner.jpg"></p>
+
+<p>假设访问的URL是
+<a href="http://www.mydomain.com/app/index.html">http://www.mydomain.com/app/index.html</a>
+各个容器处理的详细情况如图所示:</p>
+
+<p><img src="/images/tomcat/tomcat_path.jpg"></p>
+
+<p>Wrapper封装了具体的访问资源,例如 index.html
+Context 封装了各个wrapper资源的集合,例如 app
+Host 封装了各个context资源的集合,例如 www.mydomain.com</p>
+
+<p>下面简单介绍一下各个类:</p>
+
+<h3>2.1 Bootstrap</h3>
+
+<p>Bootstrap简单说就是Tomcat的启动类,它只负责创建Catalina实例并将输入参数传递给Catalina实例;</p>
+
+<h3>2.2 Catalina</h3>
+
+<p>Catalina是Tomcat实际的入口,执行Tomcat的初始化,启动,停止等关键逻辑;
+(1).初始化的逻辑中初始化一个解析配置文件的Digester,这个Digester使用SAX方式解析xml文件,它获取解析conf目录下的server.xml这个配置文件并会生成Server等实例;并执行Server的初始化;Server会顺序往后执行Service,Connector,Containner等的初始化.
+(2).启动逻辑就是调用Server的启动;
+(3).停止逻辑就是调用Server的停止;</p>
+
+<h3>2.3 Server</h3>
+
+<p>Server(参考StandardServer类)是整个Tomcat组件的容器,包含一个或多个Service.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public void addService(Service service);</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2.4 Service</h3>
+
+<p>Service(参考StandardService类)是包含Connector和Container的集合,Service用适当的Connector接收用户的请求,再发给相应的Container来处理.</p>
+
+<h3>2.5 Connector</h3>
+
+<p>Connector是网络socket相关接口模块,默认实现HTTP、AJP等协议的.connector主要作用包括:</p>
+
+<pre><code>(1).接收socket
+(2).从socket获取数据包,并解析成HttpServletRequest对象
+(3).从engine容器开始走调用流程,经过各层valve,最后调用servlet完成业务逻辑
+(4).返回response,关闭socket
+</code></pre>
+
+<p>connector配置举例为:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;Connector port="80" URIEncoding="UTF-8" protocol="HTTP/1.1"
+</span><span class='line'>               connectionTimeout="20000"
+</span><span class='line'>               redirectPort="7443" /&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中protocol的选择包括
+    (1).BIO实现:
+    org.apache.coyote.http11.Http11Protocol
+    (2).NIO实现
+    org.apache.coyote.http11.Http11NioProtocol</p>
+
+<p>以Http11Protocol举例解析connector结构:</p>
+
+<p><img src="/images/tomcat/connector.jpg"></p>
+
+<p>Http11ConnectionHandler对象维护了一个Http11Processor对象池, 完成http request的解析和分派.</p>
+
+<p>JIoEndpoint维护了两个线程池,Acceptor及Worker
+Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理socket,如果worker线程池没有空闲线程,则Acceptor将阻塞;Worker是典型的线程池实现.Worker线程拿到socket后,就从Http11Processor对象池中获取Http11Processor对象;</p>
+
+<p>Mapper维护了一个从Host到Wrapper的各级容器的快照.它主要是为了,当http request被解析后,能够将http request绑定到相应的servlet进行业务处理.</p>
+
+<p>CoyoteAdapter将http request解析成HttpServletRequest对象,之后绑定相应的容器,然后从engine开始逐层调用.</p>
+
+<h3>2.6 Engine</h3>
+
+<p>Engine(参考StandardEngine类)</p>
+
+<h3>2.7 Host</h3>
+
+<p>Host(参考StandardHost类)就是我们所理解的虚拟主机.</p>
+
+<h3>2.8 Context</h3>
+
+<p>Context(参考StandardContext类)就是我们所部属的具体Web应用的上下文,每个请求都在是相应的上下文里处理的.</p>
+
+<h3>2.9 Wrapper</h3>
+
+<p>Wrapper(参考StandardWrapper类)Wrapper是针对每个Servlet的Container,每个Servlet都有相应的Wrapper来管理.</p>
+
+<p>它封装的处理资源的每个具体的servlet,除了上面提到的Pipeline和Valve之外,还包含我们熟悉的servlet对象.</p>
+
+<p>wrapper主要包括三大类</p>
+
+<pre><code>(1).处理静态资源的一个wrapper：例如html, jpg.对应wrapper为org.apache.catalina.servlets.DefaultServlet
+(2).处理jsp文件,对应wrapper为org.apache.jasper.servlet.JspServlet
+(3).自定义的servlet对象. 在web.xml中定义的serlvet
+</code></pre>
+
+<h3>2.10 Pipeline和Valve</h3>
+
+<p>Pipeline(参考StandardPipeline类),Pipeline就是一串Valve.请求到达当前容器,则从前往后执行每个Valve的逻辑.</p>
+
+<p>Valve实现具体业务逻辑单元.可以定制化valve（实现特定接口）,然后配置在server.xml里.对其包含的所有host里的应用有效.定制化的valve是可选的,但是每个容器有一个缺省的valve,例如engine的StandardEngineValve,是在StandardEngine里自带的,它主要实现了对其子host对象的StandardHostValve的调用,以此类推.</p>
+
+<p>缺省的valve的Valve实在Pipeline的最后面.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">xiaobaoqiu</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2015-03-18T19:03:09+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>18</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:03 pm</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/tomcat/'>tomcat</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/03/18/tomcatjia-gou/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/03/18/tomcatjia-gou/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2015/03/14/mysqlyou-hua/" title="Previous Post: Mysql优化">&laquo; Mysql优化</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2015/04/01/enumfan-xu-lie-hua-wen-ti/" title="Next Post: Enum反序列化问题">Enum反序列化问题 &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2015/07/17/fen-ci/">分词</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2015 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

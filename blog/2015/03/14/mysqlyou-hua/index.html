@@ -1,0 +1,306 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Mysql优化 - xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="最近项目组遇到的慢查询比较多，大家的慢查询意识逐渐有了，同事做的工作中使用到的优化慢查询的方法分享，这里简单总结一些，便于以后使用。 通常这些优化方式是组合使用的。 1.合理使用索引 1.1 一个表只会使用一个索引 假设customer表有两个索引： 1
+2 KEY ` &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/03/14/mysqlyou-hua/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Keep Runnnnnnnnnning...</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Mysql优化</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-03-14T05:02:34+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>14</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:02 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>最近项目组遇到的慢查询比较多，大家的慢查询意识逐渐有了，同事做的工作中使用到的优化慢查询的方法分享，这里简单总结一些，便于以后使用。</p>
+
+<p>通常这些优化方式是组合使用的。</p>
+
+<h1>1.合理使用索引</h1>
+
+<h3>1.1 一个表只会使用一个索引</h3>
+
+<p>假设customer表有两个索引：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  KEY `idx_create_time` (`create_time`) USING BTREE,
+</span><span class='line'>  KEY `idx_city` (`city`)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>sql语句的where条件包含create_time和city</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where city = 'beijing' and create_time &gt; '2015-01-01';</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个sql语句只会走一个索引。</p>
+
+<h3>1.2 索引区分度越大越好</h3>
+
+<p>索引的区分读越大越好，可以使用show index from table看表的索引情况。</p>
+
+<h3>1.3 行数越少越好</h3>
+
+<p>执行计划中sql搜索的行数(rows)越小越好。</p>
+
+<h3>1.4 查询条件字段不要套函数，无法使用索引</h3>
+
+<p>比如下面这个sql是不走索引的</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where left(city, 2) = 'be';</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.不要复合条件查询</h1>
+
+<p>将复合条件根据规则转换为单个条件，避免多个字段去or。</p>
+
+<p>比如我们在city上面建立了索引，但是我们没有在name上建立索引，下面这个sql会走全表而不走索引</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where city = 'beijing' or name = 'beijing';</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.减少join</h1>
+
+<p>利用Mybatis的动态SQL，保证同一时刻JOIN的表最少。即满足某一个条件的时候才join。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>select * from customer
+</span><span class='line'>&lt;if test="conditions.name != null and conditions.name != ''"&gt;
+</span><span class='line'>    join user on user.id = customer.user_id
+</span><span class='line'>&lt;/if&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.分步查询</h1>
+
+<p>比如一个sql需要大量的join，并且每个join表的数据量都很大，这时候，尝试将单独的sql拆分成多个sql。</p>
+
+<p>我们可以从搜索条件入手，不包含搜索条件的表一定可以拆分成单独的sql。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>select *
+</span><span class='line'>from A
+</span><span class='line'>join B on ...
+</span><span class='line'>join C on ...
+</span><span class='line'>join D on ...
+</span><span class='line'>join E on ...
+</span><span class='line'>where
+</span><span class='line'>A.name = ...
+</span><span class='line'>and B.city = ...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这是可以考虑对C，D，E表的查询单独拆分出来。</p>
+
+<h1>5.合理使用Cache</h1>
+
+<p>通常根据条件Count比较耗时，可以将Count数Cache，比如list接口的count通常成千上万，count数只是用来展示页数，这时候可以考虑缓存下来，但是需要考虑好缓存策略。</p>
+
+<h1>6.业务逻辑上优化</h1>
+
+<p>当我们使用上述步骤无法优化时，可以考虑从逻辑上优化。</p>
+
+<p>比如join很多个表查询的时候，我们需要确认应用方所有的字段都需要，通常减少字段能让我们少join表。</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">xiaobaoqiu</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2015-03-14T05:02:34+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>14</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:02 am</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/mysql/'>mysql</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/03/14/mysqlyou-hua/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/03/14/mysqlyou-hua/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2015/03/13/tomcatjian-jie/" title="Previous Post: Tomcat简介">&laquo; Tomcat简介</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2015/03/18/tomcatjia-gou/" title="Next Post: Tomcat架构">Tomcat架构 &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2015/07/17/fen-ci/">分词</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2015 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
