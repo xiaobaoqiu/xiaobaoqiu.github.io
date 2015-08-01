@@ -1009,8 +1009,34 @@ WHAT: 用户当前正在使用的命令
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static RateLimiter create(double permitsPerSecond);
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'>* 创建一个稳定输出令牌的RateLimiter，保证了平均每秒不超过permitsPerSecond个请求
+</span><span class='line'>* 当请求到来的速度超过了permitsPerSecond，保证每秒只处理permitsPerSecond个请求
+</span><span class='line'>* 当这个RateLimiter使用不足(即请求到来速度小于permitsPerSecond)，会囤积最多permitsPerSecond个请求
+</span><span class='line'>*/
+</span><span class='line'>public static RateLimiter create(double permitsPerSecond);
 </span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'>* 创建一个稳定输出令牌的RateLimiter，保证了平均每秒不超过permitsPerSecond个请求
+</span><span class='line'>* 还包含一个热身期(warmup period),热身期内，RateLimiter会平滑的将其释放令牌的速率加大，直到起达到最大速率
+</span><span class='line'>* 同样，如果RateLimiter在热身期没有足够的请求(unused),则起速率会逐渐降低到冷却状态
+</span><span class='line'>* 
+</span><span class='line'>* 设计这个的意图是为了满足那种资源提供方需要热身时间，而不是每次访问都能提供稳定速率的服务的情况(比如带缓存服务，需要定期刷新缓存的)
+</span><span class='line'>* 参数warmupPeriod和unit决定了其从冷却状态到达最大速率的时间
+</span><span class='line'>*/
 </span><span class='line'>public static RateLimiter create(double permitsPerSecond, long warmupPeriod, TimeUnit unit);</span></code></pre></td></tr></table></div></figure>
 
 
@@ -1166,9 +1192,249 @@ WHAT: 用户当前正在使用的命令
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
+<p>另外，对于storedPermits的使用，RateLimiter存在两种策略，二者区别主要体现在使用storedPermits时候需要等待的时间。这个逻辑由storedPermitsToWaitTime函数实现：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Translates a specified portion of our currently stored permits which we want to
+</span><span class='line'> * spend/acquire, into a throttling time. Conceptually, this evaluates the integral
+</span><span class='line'> * of the underlying function we use, for the range of
+</span><span class='line'> * [(storedPermits - permitsToTake), storedPermits].
+</span><span class='line'> *
+</span><span class='line'> * &lt;p&gt;This always holds: {@code 0 &lt;= permitsToTake &lt;= storedPermits}
+</span><span class='line'> */
+</span><span class='line'>abstract long storedPermitsToWaitTime(double storedPermits, double permitsToTake);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>存在两种策略就是为了应对我们上面讲到的，存在资源使用不足大致分为两种情况：
+    (1).资源确实使用不足，这些剩余的资源我们私海可以使用的；
+    (2).提供资源的服务过去还没准备好，比如服务刚启动等；</p>
+
+<p>为此，RateLimiter实际上由两种实现策略，其实现分别见SmoothBursty和SmoothWarmingUp。二者主要的区别就是storedPermitsToWaitTime实现以及maxPermits数量的计算。</p>
+
 <h3>6.1 SmoothBursty</h3>
 
+<p>SmoothBursty使用storedPermits不需要额外等待时间。并且默认maxBurstSeconds未1，因此maxPermits为permitsPerSecond，即最多可以存储1秒的剩余令牌，比如QPS=5，则maxPermits=5.</p>
+
+<p>下面这个RateLimiter的入口就是用来创建SmoothBursty类型的RateLimiter，</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static RateLimiter create(double permitsPerSecond)</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'>     * This implements a "bursty" RateLimiter, where storedPermits are translated to
+</span><span class='line'>     * zero throttling. The maximum number of permits that can be saved (when the RateLimiter is
+</span><span class='line'>     * unused) is defined in terms of time, in this sense: if a RateLimiter is 2qps, and this
+</span><span class='line'>     * time is specified as 10 seconds, we can save up to 2 * 10 = 20 permits.
+</span><span class='line'>     */
+</span><span class='line'>    static final class SmoothBursty extends SmoothRateLimiter {
+</span><span class='line'>        /** The work (permits) of how many seconds can be saved up if this RateLimiter is unused? */
+</span><span class='line'>        final double maxBurstSeconds;
+</span><span class='line'>
+</span><span class='line'>        SmoothBursty(SleepingStopwatch stopwatch, double maxBurstSeconds) {
+</span><span class='line'>            super(stopwatch);
+</span><span class='line'>            this.maxBurstSeconds = maxBurstSeconds;
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        void doSetRate(double permitsPerSecond, double stableIntervalMicros) {
+</span><span class='line'>            double oldMaxPermits = this.maxPermits;
+</span><span class='line'>            maxPermits = maxBurstSeconds * permitsPerSecond;
+</span><span class='line'>            System.out.println("maxPermits=" + maxPermits);
+</span><span class='line'>            if (oldMaxPermits == Double.POSITIVE_INFINITY) {
+</span><span class='line'>                // if we don't special-case this, we would get storedPermits == NaN, below
+</span><span class='line'>                storedPermits = maxPermits;
+</span><span class='line'>            } else {
+</span><span class='line'>                storedPermits = (oldMaxPermits == 0.0)
+</span><span class='line'>                        ? 0.0 // initial state
+</span><span class='line'>                        : storedPermits * maxPermits / oldMaxPermits;
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        long storedPermitsToWaitTime(double storedPermits, double permitsToTake) {
+</span><span class='line'>            return 0L;
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>一个简单的使用示意图及解释，下面私海一个QPS=4的SmoothBursty:
+    (1).t=1,这时候storedPermits=0，请求1个令牌，等待时间=0；
+    (2).t=2,这时候storedPermits=3，请求3个令牌，等待时间=0；
+    (3).t=3,这时候storedPermits=4，请求10个令牌，等待时间=0，超前使用了2个令牌；
+    (4).t=4,这时候storedPermits=0，请求1个令牌，等待时间=0.5；</p>
+
+<p>代码的输出：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>maxPermits=4.0, storedPermits=7.2E-4, stableIntervalMicros=250000.0, nextFreeTicketMicros=1472
+</span><span class='line'>acquire(1), sleepSecond=0.0
+</span><span class='line'>maxPermits=4.0, storedPermits=3.012212, stableIntervalMicros=250000.0, nextFreeTicketMicros=1004345
+</span><span class='line'>acquire(3), sleepSecond=0.0
+</span><span class='line'>maxPermits=4.0, storedPermits=4.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=2004668
+</span><span class='line'>acquire(10), sleepSecond=0.0
+</span><span class='line'>maxPermits=4.0, storedPermits=0.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=3504668
+</span><span class='line'>acquire(1), sleepSecond=0.499591</span></code></pre></td></tr></table></div></figure>
+
+
+<p><img src="/images/guava/BurstyRateLimiter.png"></p>
+
 <h3>6.2 SmoothWarmingUp</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>static final class SmoothWarmingUp extends SmoothRateLimiter {
+</span><span class='line'>        private final long warmupPeriodMicros;
+</span><span class='line'>        /**
+</span><span class='line'>         * The slope of the line from the stable interval (when permits == 0), to the cold interval
+</span><span class='line'>         * (when permits == maxPermits)
+</span><span class='line'>         */
+</span><span class='line'>        private double slope;
+</span><span class='line'>        private double halfPermits;
+</span><span class='line'>
+</span><span class='line'>        SmoothWarmingUp(SleepingStopwatch stopwatch, long warmupPeriod, TimeUnit timeUnit) {
+</span><span class='line'>            super(stopwatch);
+</span><span class='line'>            this.warmupPeriodMicros = timeUnit.toMicros(warmupPeriod);
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        @Override
+</span><span class='line'>        void doSetRate(double permitsPerSecond, double stableIntervalMicros) {
+</span><span class='line'>            double oldMaxPermits = maxPermits;
+</span><span class='line'>            maxPermits = warmupPeriodMicros / stableIntervalMicros;
+</span><span class='line'>            halfPermits = maxPermits / 2.0;
+</span><span class='line'>            // Stable interval is x, cold is 3x, so on average it's 2x. Double the time -&gt; halve the rate
+</span><span class='line'>            double coldIntervalMicros = stableIntervalMicros * 3.0;
+</span><span class='line'>            slope = (coldIntervalMicros - stableIntervalMicros) / halfPermits;
+</span><span class='line'>            if (oldMaxPermits == Double.POSITIVE_INFINITY) {
+</span><span class='line'>                // if we don't special-case this, we would get storedPermits == NaN, below
+</span><span class='line'>                storedPermits = 0.0;
+</span><span class='line'>            } else {
+</span><span class='line'>                storedPermits = (oldMaxPermits == 0.0)
+</span><span class='line'>                        ? maxPermits // initial state is cold
+</span><span class='line'>                        : storedPermits * maxPermits / oldMaxPermits;
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        @Override
+</span><span class='line'>        long storedPermitsToWaitTime(double storedPermits, double permitsToTake) {
+</span><span class='line'>            double availablePermitsAboveHalf = storedPermits - halfPermits;
+</span><span class='line'>            long micros = 0;
+</span><span class='line'>            // measuring the integral on the right part of the function (the climbing line)
+</span><span class='line'>            if (availablePermitsAboveHalf &gt; 0.0) {
+</span><span class='line'>                double permitsAboveHalfToTake = min(availablePermitsAboveHalf, permitsToTake);
+</span><span class='line'>                micros = (long) (permitsAboveHalfToTake * (permitsToTime(availablePermitsAboveHalf)
+</span><span class='line'>                        + permitsToTime(availablePermitsAboveHalf - permitsAboveHalfToTake)) / 2.0);
+</span><span class='line'>                permitsToTake -= permitsAboveHalfToTake;
+</span><span class='line'>            }
+</span><span class='line'>            // measuring the integral on the left part of the function (the horizontal line)
+</span><span class='line'>            micros += (stableIntervalMicros * permitsToTake);
+</span><span class='line'>            return micros;
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        private double permitsToTime(double permits) {
+</span><span class='line'>            return stableIntervalMicros + permits * slope;
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
 
 <p>参考:
 <a href="https://github.com/springside/springside4/wiki/Rate-Limiter">https://github.com/springside/springside4/wiki/Rate-Limiter</a></p>
