@@ -9,7 +9,7 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="想给自己的博客加评论很久了，一致没时间。今天抽了点时间，上午把google和百度检索的搞定了，下午抽时间把评论系统加上。 本文的评论是基于disqus实现的。 1.Disqus介绍 Disqus号称世界级的评论系统，对现在各种系统的支持都比较全面。 官方网站：https://disqus.com &hellip;">
+  <meta name="description" content="本文主要想理清同步，异步，阻塞，非阻塞这几个概念;之后理解unix上的五种IO模型。 1.同步VS异步，阻塞VS非阻塞 1.1 同步VS异步 访问数据的方式，同步需要主动读写数据，在读写数据的过程中还是会阻塞；异步只需要I/O操作完成的通知，并不主动读写数据，由操作系统内核完成数据的读写。 同步( &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -65,6 +65,167 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/01/04/io-mo-xing/">IO模型</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-01-04T19:38:04+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>4</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:38 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>本文主要想理清同步，异步，阻塞，非阻塞这几个概念;之后理解unix上的五种IO模型。</p>
+
+<h1>1.同步VS异步，阻塞VS非阻塞</h1>
+
+<h3>1.1 同步VS异步</h3>
+
+<p>访问数据的方式，同步需要主动读写数据，在读写数据的过程中还是会阻塞；异步只需要I/O操作完成的通知，并不主动读写数据，由操作系统内核完成数据的读写。</p>
+
+<p>同步(synchronous)和异步(asynchronous)是针对应用程序和内核的交互而言的:</p>
+
+<pre><code>(1).同步指的是用户进程触发I/O操作并等待或者轮询的去查看I/O操作是否就绪;
+(2).异步是指用户进程触发I/O操作以后便开始做自己的事情，而当I/O操作已经完成的时候会得到I/O完成的通知;
+</code></pre>
+
+<h3>1.2 阻塞VS非阻塞</h3>
+
+<p>阻塞(blocking)和非阻塞(non-blocking)是针对于进程在访问数据的时候，根据I/O操作的就绪状态来采取的不同方式，说白了是一种读取或者写入操作函数的实现方式:</p>
+
+<pre><code>(1).阻塞方式下读取或者写入函数将一直等待;
+(2).非阻塞方式下，读取或者写入函数会立即返回一个状态值;
+</code></pre>
+
+<h1>2.IO模型</h1>
+
+<p>《Unix网络编程卷》将unix上的IO模型分为5类：</p>
+
+<pre><code>(1).Blocking I/O
+(2).Nonblocking I/O
+(3).I/O Multiplexing (select and poll)
+(4).Signal Driven I/O (SIGIO)
+(5).Asynchronous I/O (the POSIX aio_functions).
+</code></pre>
+
+<p>一个读操作通常包括两个不同阶段：</p>
+
+<pre><code>(1).等待数据准备好;
+(2).从内核向进程复制数据;
+</code></pre>
+
+<p>我们以一个从网络读数据为例，当网络数据包到达的时候，首先内核通过网卡读输入数据，数据被复制到内核的缓冲区;然后应用程序从内核中将数据拷贝到应用程序缓冲区。</p>
+
+<p>以从网络读数据为例解释上面提到的5个IO模型, 即应用程序通过socket的recvfrom方法读取网络数据，关于recvfrom方法参考：<a href="http://baike.baidu.com/view/1744189.htm.">http://baike.baidu.com/view/1744189.htm.</a></p>
+
+<h3>2.1 Blocking I/O</h3>
+
+<p>阻塞IO：应用程序调用recvfrom试图读取数据，其实是通过系统调用从网卡读取网络数据，当网络无数据可读的时候，应用程序会一直等待;当内核从网卡读取完数据，会将数据从内核缓冲区拷贝到应用程序缓冲区，当拷贝完成，应用程序调用recvfrom才算完成。示意图如下：</p>
+
+<p><img src="/images/io/block.jpg"></p>
+
+<p>优势在于非常简单，等待的过程中占用的系统资源微乎其微，程序调用返回时，必定可以拿到数据；
+但简单也带来一些缺点，程序在数据到来并准备好以前，不能进行其他操作;</p>
+
+<h3>2.2 Nonblocking I/O</h3>
+
+<p>非阻塞IO：应用程序调用recvfrom试图读取数据，当网络无数据可读的时候，应用程序不是一直等待，而是直接返回错误，过一段时间再去查看数据是否可读，即有一个操作时轮询（polling）。 示意图如下：</p>
+
+<p><img src="/images/io/noblock.jpg"></p>
+
+<p>这种模式在没有数据可以接收时，可以进行其他的一些操作；实际应用中，这种I/O模型的直接使用并不常见，因为它需要不停的查询，而这些查询大部分会是无必要的调用，白白浪费了系统资源；非阻塞I/O应该算是一个铺垫，为I/O复用和信号驱动奠定了非阻塞使用的基础。</p>
+
+<h3>2.3 I/O Multiplexing</h3>
+
+<p>首先I/O多路复用的函数也是阻塞的，但是其与以上两种还是有不同的，I/O多路复用是阻塞在select，epoll这样的系统调用之上，而没有阻塞在真正的I/O系统调用如recvfrom之上。</p>
+
+<p>IO复用的目的：将等待数据准备和将数据拷贝给应用这两个阶段分开处理，让一个线程（而且是内核级别的线程）来处理所有的等待，一旦有相应的IO事件发生就通知继续完成IO操作，虽然仍然有阻塞和等待，但是等待总是发生在一个线程，这时使用多线程可以保证其他线程一旦唤醒就是处理数据。</p>
+
+<p><img src="/images/io/select_poll.jpg"></p>
+
+<p>至于select、poll和epoll的区别，推荐这篇文章： <a href="http://www.cnblogs.com/Anker/p/3265058.html">http://www.cnblogs.com/Anker/p/3265058.html</a> 。简单来说：select,poll无脑的轮询，忽略了高并发下，轮询本身成了瓶颈，而epoll使用回调实现了轮询真正需要处理的连接。</p>
+
+<h3>2.4 Signal Driven I/O</h3>
+
+<p>应用线程调用recvfrom试图读取数据，并且直接返回，不管是否有数据可读，内核线程读完数据，给发信号通知应用线程，应用线程收到信息，等待内核线程将数据拷贝给应用线程。</p>
+
+<p><img src="/images/io/sign.jpg"></p>
+
+<h3>2.5 Asynchronous I/O</h3>
+
+<p>这类函数的工作机制是告知内核启动某个操作，并让内核在整个操作（包括将数据从内核拷贝到用户空间）完成后通知我们。</p>
+
+<p><img src="/images/io/aio.jpg"></p>
+
+<p>注意，之前的几个模型的recvfrom都是在数据拷贝完成（即第二阶段完成）才返回，而异步IO是在第一阶段直接返回并继续往下执行，数据拷贝完成后系统内核再通知应用进程。</p>
+
+<h3>2.6 总结</h3>
+
+<p>前4种都是同步IO，只有最后一种是异步IO。他们第二阶段（拷贝数据阶段）是相同的，区别在于第一阶段，同步IO第二阶段是阻塞的，即一定会阻塞于等待数据拷贝完成，而异步IO是不阻塞于数据拷贝，数据拷贝完成，内核进程会通知应用进程。</p>
+
+<p>这就是同步和异步的区别：异步在整个过程都没有阻塞，而同步至少有一个步骤被阻塞（等待内核IO或者等待内核将数据拷贝给应用）。</p>
+
+<p>5种IO的比较：</p>
+
+<p><img src="/images/io/compare.png"></p>
+
+<h1>3.举例子</h1>
+
+<p>为了理解上面的理论，举例子如下：</p>
+
+<p>陪女朋友逛街，逛累了，向找个地方吃饭，于是取了一个山西面馆，但是发现面馆生意比较好人比较多，而且面条都是先做的。但是这段时间又想干点别的事，比如去附近的书店看看书。于是引发了一些列的思考：</p>
+
+<h3>3.1 Blocking I/O</h3>
+
+<p>我不指定做面条需要多久，不敢出去，只能在那里坐在等。等做完，等服务员上面并且我吃调再走。</p>
+
+<p>这里我们是应用线程，面条相当于等待读的数据，厨师相当于内核线程，我们需要等待初始做面条，还需要等待等服务员上面，我才能吃到我的面。</p>
+
+<h3>3.2 Nonblocking I/O</h3>
+
+<p>我不甘心在这里无聊的等待，我想在这段时间逛逛书店，但是又怕面条做好了，所有我决定取书店看一会书就回面馆看一下我的面是不是好了。如果没好继续取书店看会书再回面馆看看。结果就是来回跑了很多次。</p>
+
+<h3>3.3 I/O Multiplexing</h3>
+
+<p>我饭量比较大，同时在几个餐馆都点了饭菜，我这样来回来回看的话累死了，善良的管理员（管理所有餐馆）在前台装了一个大屏幕，上面写着每个人每个菜的状态。因此我虽然点了很多份饭菜，但只需要看屏幕就可以了。屏幕高速我某一个菜号了，我就可以去吃。</p>
+
+<h3>3.4 Signal Driven I/O</h3>
+
+<p>管理员看老是很多人来前台看状态，烦死了，于是弄来个喊号的系统，即每次有饭菜做好了，就会喊点菜的人来吃。但是，这个喊号的系统只会喊一次，并且如果同时多个菜好了，需要一个一个喊，因此部分饭菜有延时。</p>
+
+<h3>3.5 Asynchronous I/O</h3>
+
+<p>随着行业竞争加大，管理员为了提高用户体验，每次饭菜好了，让各个餐馆的服务员亲自将饭菜送到顾客的手上。</p>
+
+<h1>4.参考</h1>
+
+<p><a href="http://www.yeolar.com/note/2012/12/15/high-performance-io-design-patterns/">http://www.yeolar.com/note/2012/12/15/high-performance-io-design-patterns/</a></p>
+
+<p><a href="http://www.cnblogs.com/zhuYears/archive/2012/09/28/2690194.html">http://www.cnblogs.com/zhuYears/archive/2012/09/28/2690194.html</a></p>
+
+<p><a href="http://yaocoder.blog.51cto.com/2668309/1308899">http://yaocoder.blog.51cto.com/2668309/1308899</a></p>
+
+<p><a href="http://www.open-open.com/doc/view/cbb2c3363c3b49ceb5812220a9c42e42">http://www.open-open.com/doc/view/cbb2c3363c3b49ceb5812220a9c42e42</a></p>
+
+<p><a href="http://www.ibm.com/developerworks/cn/linux/l-async/">http://www.ibm.com/developerworks/cn/linux/l-async/</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -3372,635 +3533,6 @@ ConcurrentSkipListSet
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/11/24/javabing-fa-rong-qi-zhi-blockingqueue/">Java并发容器之BlockingQueue</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-11-24T17:35:13+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>24</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>5:35 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>这篇文章主要分析Concurrent包中的BlockingQueue系列的并发容器实现原理和源代码.</p>
-
-<h1>1.实现原理</h1>
-
-<p>阻塞队列与普通队列的区别在于，当队列是空的时，从队列中获取元素的操作将会被阻塞，或者当队列是满时，往队列里添加元素的操作会被阻塞。试图从空的阻塞队列中获取元素的线程将会被阻塞，直到其他的线程往空的队列插入新的元素。同样，试图往已满的阻塞队列中添加新元素的线程同样也会被阻塞，直到其他的线程使队列重新变得空闲起来，如从队列中移除一个或者多个元素，或者完全清空队列.</p>
-
-<p>下图展示了如何通过阻塞队列来合作：</p>
-
-<p><img src="/images/concurrent/blocking-queue.png"></p>
-
-<p>线程1往阻塞队列中添加元素，而线程2从阻塞队列中移除元素.</p>
-
-<h1>1.1 阻塞队列简单实现</h1>
-
-<p>下面是阻塞队列的一个简单实现:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">BlockingQueue</span> <span class="o">{</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="n">List</span> <span class="n">queue</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">LinkedList</span><span class="o">();</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span>  <span class="n">limit</span> <span class="o">=</span> <span class="mi">10</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="nf">BlockingQueue</span><span class="o">(</span><span class="kt">int</span> <span class="n">limit</span><span class="o">){</span>
-</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">limit</span> <span class="o">=</span> <span class="n">limit</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//入队列</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">enqueue</span><span class="o">(</span><span class="n">Object</span> <span class="n">item</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">InterruptedException</span> <span class="o">{</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">while</span><span class="o">(</span><span class="k">this</span><span class="o">.</span><span class="na">queue</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">==</span> <span class="k">this</span><span class="o">.</span><span class="na">limit</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">wait</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="k">this</span><span class="o">.</span><span class="na">queue</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">notifyAll</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">queue</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="n">item</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//出队列</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="n">Object</span> <span class="nf">dequeue</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">while</span><span class="o">(</span><span class="k">this</span><span class="o">.</span><span class="na">queue</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">==</span> <span class="mi">0</span><span class="o">){</span>
-</span><span class='line'>            <span class="n">wait</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="k">this</span><span class="o">.</span><span class="na">queue</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">==</span> <span class="k">this</span><span class="o">.</span><span class="na">limit</span><span class="o">){</span>
-</span><span class='line'>            <span class="n">notifyAll</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">queue</span><span class="o">.</span><span class="na">remove</span><span class="o">(</span><span class="mi">0</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>必须注意到，在enqueue和dequeue方法内部，只有队列的大小等于上限（limit）或者下限（0）时，才调用notifyAll方法。如果队列的大小既不等于上限，也不等于下限，任何线程调用enqueue或者dequeue方法时，都不会阻塞，都能够正常的往队列中添加或者移除元素。</p>
-
-<h1>2.Java BlockingQueue整体介绍</h1>
-
-<p>BlockingQueue系列并发容器包括一下几个:</p>
-
-<pre><code>BlockingQueue
-BlockingDeque
-ArrayBlockingQueue
-LinkedBlockingDeque
-LinkedBlockingQueue
-PriorityBlockingQueue
-DelayQueue
-</code></pre>
-
-<h3>2.1 其继承关系如下图:</h3>
-
-<h3>2.2 主要的方法如下:</h3>
-
-<p><strong>放入数据</strong></p>
-
-<pre><code>(1).offer(anObject)
-表示如果可能的话,将anObject加到BlockingQueue里,即如果BlockingQueue可以容纳,则返回true,否则返回false.(本方法不阻塞当前执行方法的线程);
-(2).offer(E o, long timeout, TimeUnit unit)可以设定等待的时间，如果在指定的时间内，还不能往队列中加入BlockingQueue，则返回失败;
-(3).put(anObject)
-把anObject加到BlockingQueue里,如果BlockQueue没有空间,则调用此方法的线程被阻断直到BlockingQueue里面有空间再继续.
-</code></pre>
-
-<p><strong>获取数据</strong></p>
-
-<pre><code>(1).poll(time)
-取走BlockingQueue里排在首位的对象,若不能立即取出,则可以等time参数规定的时间,取不到时返回null;
-(2).poll(long timeout, TimeUnit unit)
-从BlockingQueue取出一个队首的对象，如果在指定时间内，队列一旦有数据可取，则立即返回队列中的数据,否则知道时间超时还没有数据可取，返回失败;
-(3).take()
-取走BlockingQueue里排在首位的对象,若BlockingQueue为空,阻断进入等待状态直到BlockingQueue有新的数据被加入; 
-(4).drainTo()
-一次性从BlockingQueue获取所有可用的数据对象（还可以指定获取数据的个数），通过该方法，可以提升获取数据效率；不需要多次分批加锁或释放锁。
-</code></pre>
-
-<h1>3. ArrayBlockingQueue</h1>
-
-<p>数组实现的BlockingQueue,实现上用一个数组保存数据</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ArrayBlockingQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">AbstractQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
-</span><span class='line'>        <span class="kd">implements</span> <span class="n">BlockingQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;,</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">serialVersionUID</span> <span class="o">=</span> <span class="o">-</span><span class="mi">817911632652898426L</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/** 队列数据  */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">E</span><span class="o">[]</span> <span class="n">items</span><span class="o">;</span>
-</span><span class='line'>    <span class="cm">/** 下一个take, poll 或者 remove的下标 */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">takeIndex</span><span class="o">;</span>
-</span><span class='line'>    <span class="cm">/** 下一个 put, offer 或者 add的下标 */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">putIndex</span><span class="o">;</span>
-</span><span class='line'>    <span class="cm">/** 队列内元素的数目 */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">count</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/** 锁 */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="cm">/** 等待take的Condition */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Condition</span> <span class="n">notEmpty</span><span class="o">;</span>
-</span><span class='line'>    <span class="cm">/** 等待puts的Condition */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Condition</span> <span class="n">notFull</span><span class="o">;</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>三个构造函数,可以输入容量,锁的公平性等,默认是锁非公平的,注意这里的锁是独占的ReentrantLock,因为这里从队列(数组)中读取数据和旺队列中写数据都应该和别的线程是互斥的.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="c1">//默认锁是不公平的</span>
-</span><span class='line'><span class="kd">public</span> <span class="nf">ArrayBlockingQueue</span><span class="o">(</span><span class="kt">int</span> <span class="n">capacity</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">this</span><span class="o">(</span><span class="n">capacity</span><span class="o">,</span> <span class="kc">false</span><span class="o">);</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="kd">public</span> <span class="nf">ArrayBlockingQueue</span><span class="o">(</span><span class="kt">int</span> <span class="n">capacity</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">fair</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">capacity</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="o">)</span> <span class="k">throw</span> <span class="k">new</span> <span class="nf">IllegalArgumentException</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">this</span><span class="o">.</span><span class="na">items</span> <span class="o">=</span> <span class="o">(</span><span class="n">E</span><span class="o">[])</span> <span class="k">new</span> <span class="n">Object</span><span class="o">[</span><span class="n">capacity</span><span class="o">];</span>
-</span><span class='line'>    <span class="n">lock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">ReentrantLock</span><span class="o">(</span><span class="n">fair</span><span class="o">);</span>
-</span><span class='line'>    <span class="n">notEmpty</span> <span class="o">=</span> <span class="n">lock</span><span class="o">.</span><span class="na">newCondition</span><span class="o">();</span>
-</span><span class='line'>    <span class="n">notFull</span> <span class="o">=</span>  <span class="n">lock</span><span class="o">.</span><span class="na">newCondition</span><span class="o">();</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'><span class="c1">//c为初始数据</span>
-</span><span class='line'><span class="kd">public</span> <span class="nf">ArrayBlockingQueue</span><span class="o">(</span><span class="kt">int</span> <span class="n">capacity</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">fair</span><span class="o">,</span>
-</span><span class='line'>                          <span class="n">Collection</span><span class="o">&lt;?</span> <span class="kd">extends</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">c</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">this</span><span class="o">(</span><span class="n">capacity</span><span class="o">,</span> <span class="n">fair</span><span class="o">);</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">capacity</span> <span class="o">&lt;</span> <span class="n">c</span><span class="o">.</span><span class="na">size</span><span class="o">())</span> <span class="k">throw</span> <span class="k">new</span> <span class="nf">IllegalArgumentException</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">for</span> <span class="o">(</span><span class="n">Iterator</span><span class="o">&lt;?</span> <span class="kd">extends</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">it</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="na">iterator</span><span class="o">();</span> <span class="n">it</span><span class="o">.</span><span class="na">hasNext</span><span class="o">();)</span>
-</span><span class='line'>        <span class="n">add</span><span class="o">(</span><span class="n">it</span><span class="o">.</span><span class="na">next</span><span class="o">());</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>下面分析offer,put,poll,take这几个主要的函数实现:</p>
-
-<h3>3.1 offer</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">offer</span><span class="o">(</span><span class="n">E</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">e</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="k">throw</span> <span class="k">new</span> <span class="nf">NullPointerException</span><span class="o">();</span>    <span class="c1">//不支持null元素</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">count</span> <span class="o">==</span> <span class="n">items</span><span class="o">.</span><span class="na">length</span><span class="o">)</span>  <span class="c1">//队列满,直接返回false</span>
-</span><span class='line'>            <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">else</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">insert</span><span class="o">(</span><span class="n">e</span><span class="o">);</span>
-</span><span class='line'>            <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>insert的实现:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="kt">void</span> <span class="nf">insert</span><span class="o">(</span><span class="n">E</span> <span class="n">x</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="n">items</span><span class="o">[</span><span class="n">putIndex</span><span class="o">]</span> <span class="o">=</span> <span class="n">x</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">putIndex</span> <span class="o">=</span> <span class="n">inc</span><span class="o">(</span><span class="n">putIndex</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">++</span><span class="n">count</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">notEmpty</span><span class="o">.</span><span class="na">signal</span><span class="o">();</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>即offer不能插入立即返回,插入成功会触发notEmpty这个Condition,唤醒那些等待读取数据的被阻塞的线程</p>
-
-<h3>3.2 put</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kt">void</span> <span class="nf">put</span><span class="o">(</span><span class="n">E</span> <span class="n">e</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">InterruptedException</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">e</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="k">throw</span> <span class="k">new</span> <span class="nf">NullPointerException</span><span class="o">();</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">E</span><span class="o">[]</span> <span class="n">items</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">items</span><span class="o">;</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lockInterruptibly</span><span class="o">();</span>   <span class="c1">//可被interrupt的lock</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">while</span> <span class="o">(</span><span class="n">count</span> <span class="o">==</span> <span class="n">items</span><span class="o">.</span><span class="na">length</span><span class="o">)</span>
-</span><span class='line'>                <span class="n">notFull</span><span class="o">.</span><span class="na">await</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">ie</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">notFull</span><span class="o">.</span><span class="na">signal</span><span class="o">();</span> <span class="c1">// propagate to non-interrupted thread</span>
-</span><span class='line'>            <span class="k">throw</span> <span class="n">ie</span><span class="o">;</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>        <span class="n">insert</span><span class="o">(</span><span class="n">e</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>put不能插入时候,会一直被阻塞,但是这个阻塞的线程是可以被interrupt的.</p>
-
-<h3>3.3 poll</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">E</span> <span class="nf">poll</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">count</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="c1">//没有数据可取,直接返回</span>
-</span><span class='line'>            <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
-</span><span class='line'>        <span class="n">E</span> <span class="n">x</span> <span class="o">=</span> <span class="n">extract</span><span class="o">();</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">x</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中extract()的实现如下:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="n">E</span> <span class="nf">extract</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">E</span><span class="o">[]</span> <span class="n">items</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">items</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">E</span> <span class="n">x</span> <span class="o">=</span> <span class="n">items</span><span class="o">[</span><span class="n">takeIndex</span><span class="o">];</span>
-</span><span class='line'>    <span class="n">items</span><span class="o">[</span><span class="n">takeIndex</span><span class="o">]</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">takeIndex</span> <span class="o">=</span> <span class="n">inc</span><span class="o">(</span><span class="n">takeIndex</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">--</span><span class="n">count</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">notFull</span><span class="o">.</span><span class="na">signal</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">return</span> <span class="n">x</span><span class="o">;</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>poll成功会触发notFull这个Condition,即唤醒所有等待插入数据的线程.</p>
-
-<h3>3.4 take</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">E</span> <span class="nf">take</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lockInterruptibly</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">while</span> <span class="o">(</span><span class="n">count</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>                <span class="n">notEmpty</span><span class="o">.</span><span class="na">await</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">ie</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">notEmpty</span><span class="o">.</span><span class="na">signal</span><span class="o">();</span> <span class="c1">// propagate to non-interrupted thread</span>
-</span><span class='line'>            <span class="k">throw</span> <span class="n">ie</span><span class="o">;</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>        <span class="n">E</span> <span class="n">x</span> <span class="o">=</span> <span class="n">extract</span><span class="o">();</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">x</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>take当无数据可取的时候,线程会一致阻塞,但是线程的阻塞状态是可以被interrupt的.</p>
-
-<h1>4. LinkedBlockingQueue</h1>
-
-<p>LinkedBlockingQueue即一个单链表实现的阻塞队列,单链表节点定义如下:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">static</span> <span class="kd">class</span> <span class="nc">Node</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="o">{</span>
-</span><span class='line'>    <span class="n">E</span> <span class="n">item</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">Node</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">next</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">Node</span><span class="o">(</span><span class="n">E</span> <span class="n">x</span><span class="o">)</span> <span class="o">{</span> <span class="n">item</span> <span class="o">=</span> <span class="n">x</span><span class="o">;</span> <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>内部实现,链表实现,注意有两个锁,即一个读取的锁(takeLock)和一个写入的锁(putLock).原因是put和take是不冲突的。</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">LinkedBlockingQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">AbstractQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
-</span><span class='line'>        <span class="kd">implements</span> <span class="n">BlockingQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;,</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
-</span><span class='line'>    <span class="cm">/** 容量 */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="kt">int</span> <span class="n">capacity</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/** 当前元素个数 */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">AtomicInteger</span> <span class="n">count</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">AtomicInteger</span><span class="o">(</span><span class="mi">0</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/** 链表首节点 */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">transient</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">head</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/** 链表尾节点 */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">transient</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">last</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/** take, poll等操作的锁 */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">takeLock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">ReentrantLock</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/** takes操作的等待Condition */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Condition</span> <span class="n">notEmpty</span> <span class="o">=</span> <span class="n">takeLock</span><span class="o">.</span><span class="na">newCondition</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/** put, offer等的锁 */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">putLock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">ReentrantLock</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/** puts操作的等待Condition */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Condition</span> <span class="n">notFull</span> <span class="o">=</span> <span class="n">putLock</span><span class="o">.</span><span class="na">newCondition</span><span class="o">();</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>默认构造指定最大容量为Integer.MAX_VALUE,通过构造函数可以指定容量.</p>
-
-<h1>4. PriorityBlockingQueue</h1>
-
-<p>PriorityBlockingQueue是基于PriorityQueue实现的一个优先级阻塞队列。而PriorityQueue是基于二叉堆实现的优先级队列,它每次从队列中取出的是具有最高优先权的元素。</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">PriorityBlockingQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">AbstractQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
-</span><span class='line'>    <span class="kd">implements</span> <span class="n">BlockingQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;,</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">PriorityQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">q</span><span class="o">;</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">ReentrantLock</span><span class="o">(</span><span class="kc">true</span><span class="o">);</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Condition</span> <span class="n">notEmpty</span> <span class="o">=</span> <span class="n">lock</span><span class="o">.</span><span class="na">newCondition</span><span class="o">();</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>构造函数可以指定比较器(Comparator)，如果不指定就按照对象的自然顺序(对象必须是Comparable的)。</p>
-
-<h1>5.DelayQueue</h1>
-
-<p>DelayQueue是一个无界的BlockingQueue，用于放置实现了Delayed接口的对象，其中的对象只能在其到期时才能从队列中取走。这种队列是有序的，即队头对象的延迟到期时间最长。</p>
-
-<p>Delayed扩展了Comparable接口，比较的基准为延时的时间值，Delayed接口的实现类getDelay的返回值应为固定值（final）。</p>
-
-<p>DelayQueue是基于PriorityQueue实现。简单的说，DelayQueue是一个使用优先队列（PriorityQueue）实现的BlockingQueue，优先队列的比较基准值是时间。</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">DelayQueue</span><span class="o">&lt;</span><span class="n">E</span> <span class="kd">extends</span> <span class="n">Delayed</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">AbstractQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
-</span><span class='line'>    <span class="kd">implements</span> <span class="n">BlockingQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="o">{</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">transient</span> <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">ReentrantLock</span><span class="o">();</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">transient</span> <span class="kd">final</span> <span class="n">Condition</span> <span class="n">available</span> <span class="o">=</span> <span class="n">lock</span><span class="o">.</span><span class="na">newCondition</span><span class="o">();</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">PriorityQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">q</span> <span class="o">=</span> <span class="k">new</span> <span class="n">PriorityQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;();</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>看起take函数的实现：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">E</span> <span class="nf">take</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lockInterruptibly</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">E</span> <span class="n">first</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="na">peek</span><span class="o">();</span> <span class="c1">//第一个元素</span>
-</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">first</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>                <span class="n">available</span><span class="o">.</span><span class="na">await</span><span class="o">();</span>
-</span><span class='line'>            <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
-</span><span class='line'>                <span class="kt">long</span> <span class="n">delay</span> <span class="o">=</span>  <span class="n">first</span><span class="o">.</span><span class="na">getDelay</span><span class="o">(</span><span class="n">TimeUnit</span><span class="o">.</span><span class="na">NANOSECONDS</span><span class="o">);</span>
-</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">delay</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>    <span class="c1">//没有过期，继续等待</span>
-</span><span class='line'>                    <span class="kt">long</span> <span class="n">tl</span> <span class="o">=</span> <span class="n">available</span><span class="o">.</span><span class="na">awaitNanos</span><span class="o">(</span><span class="n">delay</span><span class="o">);</span>
-</span><span class='line'>                <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>    <span class="c1">//过期</span>
-</span><span class='line'>                    <span class="n">E</span> <span class="n">x</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="na">poll</span><span class="o">();</span>
-</span><span class='line'>                    <span class="k">assert</span> <span class="n">x</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">;</span>
-</span><span class='line'>                    <span class="k">if</span> <span class="o">(</span><span class="n">q</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>                        <span class="n">available</span><span class="o">.</span><span class="na">signalAll</span><span class="o">();</span> <span class="c1">//唤醒其他等待take的线程</span>
-</span><span class='line'>                    <span class="k">return</span> <span class="n">x</span><span class="o">;</span>
-</span><span class='line'>                <span class="o">}</span>
-</span><span class='line'>            <span class="o">}</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/6">&larr; Older</a>
@@ -4018,6 +3550,10 @@ DelayQueue
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/08/01/mycli/">Mycli</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/07/17/fen-ci/">分词</a>
       </li>
     
@@ -4031,10 +3567,6 @@ DelayQueue
     
       <li class="post">
         <a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a>
       </li>
     
   </ul>

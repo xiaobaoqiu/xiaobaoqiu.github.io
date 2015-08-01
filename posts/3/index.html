@@ -9,8 +9,9 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="这里想总结一下使用Mysql的一些架构，注意不是Mysql源码的架构。 1.单点 数据量不大，业务简单的情况下，直接单点的mysql instance足够。 1.1 优点 1.简单，不存在数据一致性等问题; 1.2 缺点瓶颈 1.单机存储数据量有限;
-2.数据索引单机内存可能放不下, &hellip;">
+  <meta name="description" content="MYSQL 5.5 之前， UTF8 编码只支持1-3个字节，只支持BMP这部分的unicode编码区， BMP是从哪到哪，到
+http://en.wikipedia.org/wiki/Mapping_of_Unicode_characters
+这里看，基本就是0000～FFFF这一区。 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -66,6 +67,51 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/04/08/mysql-utf8mb4/">Mysql Utf8mb4</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-04-08T04:50:24+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>8</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:50 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>MYSQL 5.5 之前， UTF8 编码只支持1-3个字节，只支持BMP这部分的unicode编码区， BMP是从哪到哪，到
+<a href="http://en.wikipedia.org/wiki/Mapping_of_Unicode_characters">http://en.wikipedia.org/wiki/Mapping_of_Unicode_characters</a>
+这里看，基本就是0000～FFFF这一区。 从MYSQL5.5开始，可支持4个字节UTF编码utf8mb4，一个字符最多能有4字节，所以能支持更多的字符集。</p>
+
+<p>utf8mb4兼容utf8，且比utf8能表示更多的字符。</p>
+
+<p>在做移动应用时，会遇到ios用户会在文本的区域输入emoji表情，emoji就是表情符号，在手机短信里面已经是很流行使用的一种表情。</p>
+
+<p>因为utf8mb4是utf8的超集，理论上即使client修改字符集为utf8mb4，也会不会对已有的utf8编码读取产生任何问题。</p>
+
+<h1>1.问题</h1>
+
+<pre><code>1.MySQL在处理utf8mb4数据时,要比utf8慢;
+2.存储字符数量,utf8mb4要比utf8少;
+3.TIMESTAMP NOT NULL DEFAULT 类型的字段，当我们在程序中传入NULL时，Mysql 5.5会自动填充默认值，而5.6不会自动填充，这就违反了非空约束，会报错;
+4.在mysql 5.6版本, utf8的表和utf8mb4的表join查询会导致索引失效;
+</code></pre>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1439,76 +1485,6 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/02/10/squidxue-xi/">Squid学习</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-02-10T21:14:57+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>10</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>9:14 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>之前在处理图片下载延时比较大问题的时候，OPS说使用Squid这个东东，抽时间看看这个东西。</p>
-
-<p>简而言之，Squid就是一个Web缓存代理服务器。</p>
-
-<h1>1.什么是代理服务器</h1>
-
-<p>代理服务器是介于浏览器和Web服务器之间的另一台服务器。有了该服务器之后，浏览器发出的信息会先送到代理服务器，由代理服务器来取回网页内容并传送给客户的浏览器。对于企业网络而言，代理服务器可以起到控制网络访问并屏蔽不安全信息，以及网络加速的目的。</p>
-
-<h1>2.Squid简介</h1>
-
-<p>Squid官方网站 ： <a href="http://www.squid-cache.org/">http://www.squid-cache.org/</a></p>
-
-<p>Squid 是一个 Web 缓存代理，支持 HTTP, HTTPS, FTP, 以及更多。它通过缓存与重用经常请求的web页面，减少带宽使用同时提升了响应时间，并设置过滤。使用Squid可以通过访问控制特性来灵活的控制用户访问时间、站点等限制。</p>
-
-<h3>2.1 原理简介</h3>
-
-<p>客户端请求访问 WEB 服务时，DNS 将访问的域名解析为 Squid 代理服务器的 IP 地址，这样客户端的 URL 请求将被发送到代理服务器。如果 Squid代理服务器中缓存了该请求的资源，则将该请求的资源直接返回给客户端，否则代理服务器将向后台的WEB服务器请求资源，然后将请求的应答返回给客户端，同时也将该应答缓存在本地，供下一个请求者使用。</p>
-
-<h3>2.2 缓存限制</h3>
-
-<p>Squid 代理一般只缓存可缓冲的数据（比如 html 网页和图片等），而一些ASP、JSP 之类的动态程序默认不缓存。它根据从 WEB 服务器返回的 HTTP 头标记来缓冲静态页面。有四个最重要 HTTP 头标记：</p>
-
-<pre><code>Last-Modified: 告诉代理页面什么时间被修改
-Expires: 告诉代理页面什么时间应该从缓冲区中删除
-Cache-Control: 告诉代理页面是否应该被缓冲
-Pragma: 用来包含实现特定的指令，最常用的是 Pragma:no-cache
-</code></pre>
-
-<h1>3.Squid安装</h1>
-
-<pre><code>(1).下载 squid，这里下载的是3.4版本 : http://www.squid-cache.org/Versions/v3/3.4/
-(2).解压缩
-```
-xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
-```
-(3).配置
-(待续...)
-</code></pre>
-
-<h1>4.参考</h1>
-
-<p><a href="http://www.ibm.com/developerworks/cn/linux/l-cn-squid/">http://www.ibm.com/developerworks/cn/linux/l-cn-squid/</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/4">&larr; Older</a>
@@ -1526,6 +1502,10 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/08/01/mycli/">Mycli</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/07/17/fen-ci/">分词</a>
       </li>
     
@@ -1539,10 +1519,6 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
     
       <li class="post">
         <a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a>
       </li>
     
   </ul>
