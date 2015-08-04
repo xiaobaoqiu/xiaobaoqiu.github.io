@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Java | xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/blog/categories/java/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2015-08-04T15:49:52+08:00</updated>
+  <updated>2015-08-04T23:59:23+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -214,133 +214,79 @@ ReflectionToStringBuilder Avg(微秒)=219.219879
 
 <p>通过上面的数据，concat和StringBuilder及StringBuffer的速度差不多。其他集中语法糖普遍慢一些，我们最常用的ReflectionToStringBuilder实际上是最慢的一个版本。</p>
 
-<h1>1.1 实现原理</h1>
+<h3>1.1 实现原理</h3>
 
 <p>简单分析一下各个toString方式的实现原理。</p>
 
-<pre><code>1.Concat
-没什么说的，使用的是字符串的拼接。
-2.StringBuilder
-内部使用char数组，每次append都会先检查数组空间释放足够，不够的话先申请一块临时数组，大小是原来的两倍大小，再用Arrays.copyOf将数据拷贝。
-3.StringBuffer
-和StringBuilder一样，也是继承自AbstractStringBuilder类，唯一区别是为了保证线程安全，变更数据的方法都加上了synchronized关键字。
-4.ToStringHelper
-Guava的ToStringHelper内部实现是一个简单链表，每个链表节点包含name，value以及下一个节点的指针。
+<ul>
+<li>1.Concat</li>
+</ul>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>private static final class ValueHolder {
-</span><span class='line'>        String name;
-</span><span class='line'>        Object value;
-</span><span class='line'>        Objects.ToStringHelper.ValueHolder next;
-</span><span class='line'>
-</span><span class='line'>        private ValueHolder() {
-</span><span class='line'>        }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-ToStringHelper类持有链表头节点和尾节点。每次调用add都是在链表尾部加一个节点，toString() 的时候遍历整个链表讲内容加到一个StringBuilder中。
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static final class ToStringHelper {
-</span><span class='line'>    private final String className;
-</span><span class='line'>    private Objects.ToStringHelper.ValueHolder holderHead;
-</span><span class='line'>    private Objects.ToStringHelper.ValueHolder holderTail;
-</span><span class='line'>
-</span><span class='line'>    public Objects.ToStringHelper add(String name, long value) {
-</span><span class='line'>        return this.addHolder(name, String.valueOf(value));
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    private Objects.ToStringHelper addHolder(String name, @Nullable Object value) {
-</span><span class='line'>        Objects.ToStringHelper.ValueHolder valueHolder = this.addHolder();
-</span><span class='line'>        valueHolder.value = value;
-</span><span class='line'>        valueHolder.name = (String)Preconditions.checkNotNull(name);
-</span><span class='line'>        return this;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    private Objects.ToStringHelper.ValueHolder addHolder() {
-</span><span class='line'>        Objects.ToStringHelper.ValueHolder valueHolder = new Objects.ToStringHelper.ValueHolder();
-</span><span class='line'>        this.holderTail = this.holderTail.next = valueHolder;
-</span><span class='line'>        return valueHolder;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+<p>没什么说的，使用的是字符串的拼接。</p>
 
-5.ToStringBuilder
-ToStringBuilder内部使用一个StringBuffer，默认大小为512.另外一个style设定来toString的样式，每次执行append都跳转到对应的ToStringStyle的append函数实现上，并将当前的StringBuffer带过去(StringBuffer来存储数据，ToStringStyle来保证格式)：
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class ToStringBuilder implements Builder&lt;String&gt; {
-</span><span class='line'>    private static volatile ToStringStyle defaultStyle;
-</span><span class='line'>    private final StringBuffer buffer;
-</span><span class='line'>    private final Object object;
-</span><span class='line'>    private final ToStringStyle style;
-</span><span class='line'>
-</span><span class='line'>    static {
-</span><span class='line'>    defaultStyle = ToStringStyle.DEFAULT_STYLE;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public ToStringBuilder append(String fieldName, int value) {
-</span><span class='line'>        this.style.append(this.buffer, fieldName, value);
-</span><span class='line'>        return this;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-ToStringStyle的append实现，每个append都很简单，就是往StringBuffer中append数据：
+<ul>
+<li>2.StringBuilder</li>
+</ul>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public void append(StringBuffer buffer, String fieldName, int value) {
-</span><span class='line'>    this.appendFieldStart(buffer, fieldName);
-</span><span class='line'>    this.appendDetail(buffer, fieldName, value);
-</span><span class='line'>    this.appendFieldEnd(buffer, fieldName);
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>protected void appendDetail(StringBuffer buffer, String fieldName, int value) {
-</span><span class='line'>    buffer.append(value);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-6.ReflectionToStringBuilder
-ReflectionToStringBuilder实际上是继承自ToStringBuilder，每次都构建一个ReflectionToStringBuilder对象，toString的实现是使用反射完成，首先反射当前类的所以属性，再逐级往上获取父类并反射获取其属性,每拿到一个属性，调用一次ToStringBuilder的append方法：
 
+<p>内部使用char数组，每次append都会先检查数组空间释放足够，不够的话先申请一块临时数组，大小是原来的两倍大小，再用Arrays.copyOf将数据拷贝。</p>
+
+<ul>
+<li>3.StringBuffer</li>
+</ul>
+
+
+<p>和StringBuilder一样，也是继承自AbstractStringBuilder类，唯一区别是为了保证线程安全，变更数据的方法都加上了synchronized关键字。</p>
+
+<ul>
+<li>4.ToStringHelper</li>
+</ul>
+
+
+<p>Guava的ToStringHelper内部实现是一个简单链表，每个链表节点包含name，value以及下一个节点的指针。</p>
+
+<pre><code>private static final class ValueHolder {
+        String name;
+        Object value;
+        Objects.ToStringHelper.ValueHolder next;
+
+        private ValueHolder() {
+        }
+}
+</code></pre>
+
+<p>ToStringHelper类持有链表头节点和尾节点。每次调用add都是在链表尾部加一个节点，toString() 的时候遍历整个链表讲内容加到一个StringBuilder中。</p>
+
+<pre><code>public static final class ToStringHelper {
+    private final String className;
+    private Objects.ToStringHelper.ValueHolder holderHead;
+    private Objects.ToStringHelper.ValueHolder holderTail;
+
+    public Objects.ToStringHelper add(String name, long value) {
+        return this.addHolder(name, String.valueOf(value));
+    }
+
+    private Objects.ToStringHelper addHolder(String name, @Nullable Object value) {
+        Objects.ToStringHelper.ValueHolder valueHolder = this.addHolder();
+        valueHolder.value = value;
+        valueHolder.name = (String)Preconditions.checkNotNull(name);
+        return this;
+    }
+
+    private Objects.ToStringHelper.ValueHolder addHolder() {
+        Objects.ToStringHelper.ValueHolder valueHolder = new Objects.ToStringHelper.ValueHolder();
+        this.holderTail = this.holderTail.next = valueHolder;
+        return valueHolder;
+    }
+</code></pre>
+
+<ul>
+<li>5.ToStringBuilder</li>
+</ul>
+
+
+<p>ToStringBuilder内部使用一个StringBuffer，默认大小为512.另外一个style设定来toString的样式，每次执行append都跳转到对应的ToStringStyle的append函数实现上，并将当前的StringBuffer带过去(StringBuffer来存储数据，ToStringStyle来保证格式)：
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
@@ -369,77 +315,512 @@ ReflectionToStringBuilder实际上是继承自ToStringBuilder，每次都构建�
 <span class='line-number'>26</span>
 <span class='line-number'>27</span>
 <span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static &lt;T&gt; String toString(
-</span><span class='line'>        final T object, final ToStringStyle style, final boolean outputTransients,
-</span><span class='line'>        final boolean outputStatics, final Class&lt;? super T&gt; reflectUpToClass) {
-</span><span class='line'>    return new ReflectionToStringBuilder(object, style, null, reflectUpToClass, outputTransients, outputStatics)
-</span><span class='line'>            .toString();
-</span><span class='line'>    }
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class ToStringBuilder implements Builder&lt;String&gt; {
+</span><span class='line'>    private static volatile ToStringStyle defaultStyle;
+</span><span class='line'>    private final StringBuffer buffer;
+</span><span class='line'>    private final Object object;
+</span><span class='line'>    private final ToStringStyle style;&lt;/p&gt;
 </span><span class='line'>
-</span><span class='line'>    public String toString() {
-</span><span class='line'>        if (this.getObject() == null) {
-</span><span class='line'>            return this.getStyle().getNullText();
-</span><span class='line'>        }
-</span><span class='line'>        Class&lt;?&gt; clazz = this.getObject().getClass();
-</span><span class='line'>        this.appendFieldsIn(clazz);
-</span><span class='line'>        while (clazz.getSuperclass() != null &amp;&amp; clazz != this.getUpToClass()) {
-</span><span class='line'>            clazz = clazz.getSuperclass();
-</span><span class='line'>            this.appendFieldsIn(clazz);
-</span><span class='line'>        }
-</span><span class='line'>        return super.toString();
-</span><span class='line'>    }
+</span><span class='line'>&lt;pre&gt;&lt;code&gt;static {
+</span><span class='line'>defaultStyle = ToStringStyle.DEFAULT_STYLE;
+</span><span class='line'>}
 </span><span class='line'>
-</span><span class='line'>    protected void appendFieldsIn(final Class&lt;?&gt; clazz) {
-</span><span class='line'>        if (clazz.isArray()) {
-</span><span class='line'>            this.reflectionAppendArray(this.getObject());
-</span><span class='line'>            return;
-</span><span class='line'>        }
-</span><span class='line'>        final Field[] fields = clazz.getDeclaredFields();
-</span><span class='line'>        AccessibleObject.setAccessible(fields, true);
-</span><span class='line'>        for (final Field field : fields) {
-</span><span class='line'>            final String fieldName = field.getName();
-</span><span class='line'>            if (this.accept(field)) {
-</span><span class='line'>                try {
-</span><span class='line'>                    // Warning: Field.get(Object) creates wrappers objects
-</span><span class='line'>                    // for primitive types.
-</span><span class='line'>                    final Object fieldValue = this.getValue(field);
-</span><span class='line'>                    this.append(fieldName, fieldValue);
-</span><span class='line'>                } catch (final IllegalAccessException ex) {
-</span><span class='line'>                    //this can't happen. Would get a Security exception
-</span><span class='line'>                    // instead
-</span><span class='line'>                    //throw a runtime exception in case the impossible
-</span><span class='line'>                    // happens.
-</span><span class='line'>                    throw new InternalError("Unexpected IllegalAccessException: " + ex.getMessage());
-</span><span class='line'>                }
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+</span><span class='line'>public ToStringBuilder append(String fieldName, int value) {
+</span><span class='line'>    this.style.append(this.buffer, fieldName, value);
+</span><span class='line'>    return this;
+</span><span class='line'>}
+</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;pre&gt;&lt;code&gt;ToStringStyle的append实现，每个append都很简单，就是往StringBuffer中append数据：
+</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;public void append(StringBuffer buffer, String fieldName, int value) {
+</span><span class='line'>    this.appendFieldStart(buffer, fieldName);
+</span><span class='line'>    this.appendDetail(buffer, fieldName, value);
+</span><span class='line'>    this.appendFieldEnd(buffer, fieldName);
+</span><span class='line'>}&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;protected void appendDetail(StringBuffer buffer, String fieldName, int value) {
+</span><span class='line'>    buffer.append(value);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure></p>
+
+<ul>
+<li>6.ReflectionToStringBuilder</li>
+</ul>
+
+
+<p>ReflectionToStringBuilder实际上是继承自ToStringBuilder，每次都构建一个ReflectionToStringBuilder对象，toString的实现是使用反射完成，首先反射当前类的所以属性，再逐级往上获取父类并反射获取其属性,每拿到一个属性，调用一次ToStringBuilder的append方法：</p>
+
+<pre><code>public static &lt;T&gt; String toString(
+        final T object, final ToStringStyle style, final boolean outputTransients,
+        final boolean outputStatics, final Class&lt;? super T&gt; reflectUpToClass) {
+    return new ReflectionToStringBuilder(object, style, null, reflectUpToClass, outputTransients, outputStatics)
+            .toString();
+    }
+
+    public String toString() {
+        if (this.getObject() == null) {
+            return this.getStyle().getNullText();
+        }
+        Class&lt;?&gt; clazz = this.getObject().getClass();
+        this.appendFieldsIn(clazz);
+        while (clazz.getSuperclass() != null &amp;&amp; clazz != this.getUpToClass()) {
+            clazz = clazz.getSuperclass();
+            this.appendFieldsIn(clazz);
+        }
+        return super.toString();
+    }
+
+    protected void appendFieldsIn(final Class&lt;?&gt; clazz) {
+        if (clazz.isArray()) {
+            this.reflectionAppendArray(this.getObject());
+            return;
+        }
+        final Field[] fields = clazz.getDeclaredFields();
+        AccessibleObject.setAccessible(fields, true);
+        for (final Field field : fields) {
+            final String fieldName = field.getName();
+            if (this.accept(field)) {
+                try {
+                    // Warning: Field.get(Object) creates wrappers objects
+                    // for primitive types.
+                    final Object fieldValue = this.getValue(field);
+                    this.append(fieldName, fieldValue);
+                } catch (final IllegalAccessException ex) {
+                    //this can't happen. Would get a Security exception
+                    // instead
+                    //throw a runtime exception in case the impossible
+                    // happens.
+                    throw new InternalError("Unexpected IllegalAccessException: " + ex.getMessage());
+                }
+            }
+        }
+    }
 </code></pre>
 
 <h1>2.beanCopy</h1>
 
-<p>beanCopy由很多种方式，Spring和Apache都有实现版本，这里测试各个版本的性能.原因是前段时间项目上很简单的接口时间很慢，最后同事跟到的问题是使用Spring的beanCopy方式，因为接口涉及上百个bean的属性拷贝，因此比较明显的反应了各种beancopy实现方式的差异；</p>
+<p>beanCopy由很多种方式，Spring和Apache都有实现版本，这里测试各个版本的性能.包括：</p>
 
-<h1>2.1 实现原理</h1>
+<pre><code>1.原始的get/set
+2.Spring的BeanUtils
+3.cglib的BeanCopier
+4.apache的BeanUtils
+5.apache的PropertyUtils
+</code></pre>
+
+<p>原因是前段时间项目上很简单的接口时间很慢，最后同事跟到的问题是使用Spring的beanCopy方式，因为接口涉及上百个bean的属性拷贝，因此比较明显的反应了各种beancopy实现方式的差异；我们最常用的应该是Spring版本的BeanUtils。apache的BeanUtils的设计有点反人类(第一个参数是dest，第二个参数是source)。</p>
+
+<p>各个包的版本：</p>
+
+<pre><code>1.Spring : 3.2.1
+2.cglib : 3.1
+3.commons-beanutils : 1.9.2
+</code></pre>
+
+<p>各种方式的实现很简单：</p>
+
+<pre><code>public class GetSetCopy {
+    public static HotelVo copy(HotelEntity entity) {
+        HotelVo vo = new HotelVo();
+        vo.setId(entity.getId());
+        vo.setName(entity.getName());
+        vo.setAddress(entity.getAddress());
+        vo.setPhone(entity.getPhone());
+        vo.setCreateTime(entity.getCreateTime());
+        vo.setUpdateTime(entity.getUpdateTime());
+        vo.setPrice(entity.getPrice());
+        vo.setKp(entity.getKp());
+
+        return vo;
+    }
+}
+
+public class ApacheBeanUtilsCopy {
+    public static HotelVo copy(HotelEntity entity) throws Exception {
+        HotelVo vo = new HotelVo();
+        BeanUtils.copyProperties(vo, entity);
+        return vo;
+    }
+}
+
+public class ApachePropertyUtilsCopy {
+    public static HotelVo copy(HotelEntity entity) throws Exception {
+        HotelVo vo = new HotelVo();
+        PropertyUtils.copyProperties(vo, entity);
+        return vo;
+    }
+}
+
+public class CglibBeanCopy {
+    public static HotelVo copy(HotelEntity entity) {
+        HotelVo vo = new HotelVo();
+        BeanCopier copier = BeanCopier.create(entity.getClass(), HotelVo.class, false);
+        copier.copy(entity, vo, null);
+        return vo;
+    }
+}
+
+public class SpringBeanUtilsCopy {
+    public static HotelVo copy(HotelEntity entity) {
+        HotelVo vo = new HotelVo();
+        BeanUtils.copyProperties(entity, vo);
+        return vo;
+    }
+}
+</code></pre>
+
+<p>测试的一个结果，每个copy运行10000次(各个Copy的第一次copy都很慢，跑10000次基本可以抹平这些差异)：</p>
+
+<pre><code>GetSetCopy Min(微秒)=1.466
+GetSetCopy Max(微秒)=804.236
+GetSetCopy Avg(微秒)=1.7923529
+
+Spring-BeanUtils Min(微秒)=3.339
+Spring-BeanUtils Max(微秒)=99795.719
+Spring-BeanUtils Avg(微秒)=28.2915534
+
+Apache-BeanUtils Min(微秒)=9.812
+Apache-BeanUtils Max(微秒)=92416.696
+Apache-BeanUtils Avg(微秒)=79.0868131
+
+Apache-PropertyUtils Min(微秒)=7.083
+Apache-PropertyUtils Max(微秒)=6405.457
+Apache-PropertyUtils Avg(微秒)=22.114272
+
+Cglib-BeanCopy Min(微秒)=7.707
+Cglib-BeanCopy Max(微秒)=156932.173
+Cglib-BeanCopy Avg(微秒)=33.135989
+</code></pre>
+
+<table>
+<thead>
+<tr>
+<th style="text-align:center;">copy策略 </th>
+<th style="text-align:center;"> 平均(微秒) </th>
+<th style="text-align:center;"> 最大(微秒) </th>
+<th style="text-align:center;"> 最小(微秒)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">GetSet </td>
+<td style="text-align:center;">1.7923529  </td>
+<td style="text-align:center;">804.236 </td>
+<td style="text-align:center;"> 1.466</td>
+</tr>
+<tr>
+<td style="text-align:center;">Spring-BeanUtils </td>
+<td style="text-align:center;">28.2915534  </td>
+<td style="text-align:center;">99795.719</td>
+<td style="text-align:center;"> 3.339</td>
+</tr>
+<tr>
+<td style="text-align:center;">Apache-BeanUtils </td>
+<td style="text-align:center;">79.0868131 </td>
+<td style="text-align:center;">6405.457 </td>
+<td style="text-align:center;"> 9.812</td>
+</tr>
+<tr>
+<td style="text-align:center;">Apache-PropertyUtils </td>
+<td style="text-align:center;">22.114272  </td>
+<td style="text-align:center;">9503.836 </td>
+<td style="text-align:center;"> 7.083</td>
+</tr>
+<tr>
+<td style="text-align:center;">Cglib-BeanCopy </td>
+<td style="text-align:center;">33.135989  </td>
+<td style="text-align:center;">156932.173</td>
+<td style="text-align:center;"> 7.707</td>
+</tr>
+</tbody>
+</table>
+
+
+<p>原始的get/set是最快的，而且是快一个数量级。Apache-BeanUtils是最慢的。Spring-BeanUtils的性能还是比其他几个强一些。</p>
+
+<h3>2.1 实现原理</h3>
 
 <p>简单分析一下各个bean copy方式的实现原理。</p>
+
+<ul>
+<li>1.原始的get/set</li>
+</ul>
+
+
+<p>没什么好说的，最原始。</p>
+
+<ul>
+<li>2.Spring的BeanUtils</li>
+</ul>
+
+
+<p>Spring的BeanUtils可以使用String [] ignoreProperties 指定忽略某些属性的复制，当我们需要手动处理一些特定属性的时候挺有用。</p>
+
+<p>copyProperties的原理很我们想想的一样：</p>
+
+<pre><code>1.获取target类的属性列表；
+2.循环遍历target属性，对每个属性，如果由write方法并且不在ignoreProperties里面，调用soure对应属性的read方法获取属性值，再调用target的write方法；
+</code></pre>
+
+<p>细节：</p>
+
+<pre><code>1.缓存
+获取target类的属性列表的时候有缓存，见CachedIntrospectionResults类。这也再一定成都上解释了为什么第一次调用会慢一些。
+2.Accessible
+注意，source的read和target的write方法可以不是Accessible的，即可以是private等修饰的方法；
+3.浅拷贝
+注意其拷贝是浅拷贝。
+</code></pre>
+
+<p>大致的代码(精简了一些)：</p>
+
+<pre><code>private static void copyProperties(Object source, Object target, Class&lt;?&gt; editable, String[] ignoreProperties) throws BeansException {
+
+        PropertyDescriptor[] targetPds = getPropertyDescriptors(actualEditable);    //获取target的属性描述符，有缓存
+        List ignoreList = ignoreProperties != null?Arrays.asList(ignoreProperties):null;
+        PropertyDescriptor[] arr$ = targetPds;
+        int len$ = targetPds.length;
+
+        for(int i$ = 0; i$ &lt; len$; ++i$) {
+            PropertyDescriptor targetPd = arr$[i$];
+            if(targetPd.getWriteMethod() != null &amp;&amp; (ignoreProperties == null || !ignoreList.contains(targetPd.getName()))) {   //有write方法并且不在ignoreProperties中
+                PropertyDescriptor sourcePd = getPropertyDescriptor(source.getClass(), targetPd.getName());
+                if(sourcePd != null &amp;&amp; sourcePd.getReadMethod() != null) {
+                    try {
+                        Method ex = sourcePd.getReadMethod();   //获取source的read方法
+                        if(!Modifier.isPublic(ex.getDeclaringClass().getModifiers())) {
+                            ex.setAccessible(true);
+                        }
+
+                        Object value = ex.invoke(source, new Object[0]);    //调用source的read方法获取属性对应的value
+                        Method writeMethod = targetPd.getWriteMethod();
+                        if(!Modifier.isPublic(writeMethod.getDeclaringClass().getModifiers())) {
+                            writeMethod.setAccessible(true);
+                        }
+
+                        writeMethod.invoke(target, new Object[]{value});    //调用target的write方法
+                    } catch (Throwable var15) {
+                        throw new FatalBeanException("Could not copy properties from source to target", var15);
+                    }
+                }
+            }
+        }
+    }
+</code></pre>
+
+<ul>
+<li>3.cglib的BeanCopier</li>
+</ul>
+
+
+<p>BeanCopier是CGLIB包中的一个工具类，使用基于动态代理机制的方式进行Bean Copy。因为使用生成的子类中的方法进行属性复制，所以会比使用反射机制的复制在效率上会高出很多。前面一直想写一片代理方面的Blog，一直没完成，尽量他会补上，到时候会分析CGLIB的原理。</p>
+
+<p>我们这里的测试结果显示BeanCopier还不如Spring的BeanUtils，原因说BeanCopier.create的创建效率会比较低，所以在使用过程中建议将 BeanCopier.create 创建的对象声明为 static，避免使用中每次都去创建新的 BeanCopier 对象。我测试中发现，如果我们只显示的调用一次create方法，发现起速度明显快于Spring的BeanUtils(起最小值甚至小于get/set方式的最小值)：</p>
+
+<pre><code>GetSetCopy Min(微秒)=1.46
+GetSetCopy Max(微秒)=2149.855
+GetSetCopy Avg(微秒)=2.0715596
+
+Spring-BeanUtils Min(微秒)=3.669
+Spring-BeanUtils Max(微秒)=101262.127
+Spring-BeanUtils Avg(微秒)=29.613658
+
+Apache-BeanUtils Min(微秒)=10.174
+Apache-BeanUtils Max(微秒)=80342.749
+Apache-BeanUtils Avg(微秒)=82.383995
+
+Apache-PropertyUtils Min(微秒)=5.468
+Apache-PropertyUtils Max(微秒)=17185.561
+Apache-PropertyUtils Avg(微秒)=26.5104518
+
+Cglib-BeanCopy Min(微秒)=0.745
+Cglib-BeanCopy Max(微秒)=130832.581
+Cglib-BeanCopy Avg(微秒)=14.6252958
+</code></pre>
+
+<ul>
+<li>4.apache的BeanUtils</li>
+</ul>
+
+
+<p>主要代码大致如下：</p>
+
+<pre><code>    public static void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException {
+        BeanUtilsBean.getInstance().copyProperties(dest, orig);
+    }
+
+    public void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException {
+            int i;
+            String name;
+            Object e;
+            if(orig instanceof DynaBean) {  //DynaBean ？？
+                DynaProperty[] origDescriptors = ((DynaBean)orig).getDynaClass().getDynaProperties(); 
+
+                for(i = 0; i &lt; origDescriptors.length; ++i) {
+                    name = origDescriptors[i].getName();
+                    if(this.getPropertyUtils().isReadable(orig, name) &amp;&amp; this.getPropertyUtils().isWriteable(dest, name)) {
+                        e = ((DynaBean)orig).get(name);
+                        this.copyProperty(dest, name, e);
+                    }
+                }
+            } else if(orig instanceof Map) {    //原始数据是一个Map，即支持从一个Map到target属性的拷贝
+                Map var8 = (Map)orig;
+                Iterator var10 = var8.entrySet().iterator();
+
+                while(var10.hasNext()) {
+                    Entry var11 = (Entry)var10.next();
+                    String var12 = (String)var11.getKey();
+                    if(this.getPropertyUtils().isWriteable(dest, var12)) {
+                        this.copyProperty(dest, var12, var11.getValue());
+                    }
+                }
+            } else { 
+                PropertyDescriptor[] var9 = this.getPropertyUtils().getPropertyDescriptors(orig);   //获取target的属性描述符，有缓存
+
+                for(i = 0; i &lt; var9.length; ++i) {
+                    name = var9[i].getName();
+                    //要求source的read方法是Accessible，target的write方法是Accessible
+                    if(!"class".equals(name) &amp;&amp; this.getPropertyUtils().isReadable(orig, name) &amp;&amp; this.getPropertyUtils().isWriteable(dest, name)) {
+                        try {
+                            e = this.getPropertyUtils().getSimpleProperty(orig, name);  //获取source对应属性的value
+                            this.copyProperty(dest, name, e);   //设置target对应属性
+                        } catch (NoSuchMethodException var7) {
+                            ;
+                        }
+                    }
+                }
+            }
+    }
+</code></pre>
+
+<p>细节：</p>
+
+<pre><code>1.BeanUtilsBean实例
+BeanUtilsBean需要第一次new实例，因此第一次调用会慢一些。
+2.缓存
+获取target类的属性列表的时候有缓存，见BeanIntrospectionData类。这也再一定成都上解释了为什么第一次调用会慢一些。
+3.Accessible
+注意，source的read和target的write方法要求都是Accessible的；
+4.浅拷贝
+其拷贝是浅拷贝。
+</code></pre>
+
+<ul>
+<li>5.apache的PropertyUtils
+PropertyUtils的实现和BeanUtils的实现基本一致。</li>
+</ul>
+
+
+<pre><code>    public static void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException {
+        PropertyUtilsBean.getInstance().copyProperties(dest, orig);
+    }
+
+    public void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException {
+            int i;
+            String name;
+            Object e;
+            if(orig instanceof DynaBean) {
+                DynaProperty[] origDescriptors = ((DynaBean)orig).getDynaClass().getDynaProperties();
+
+                for(i = 0; i &lt; origDescriptors.length; ++i) {
+                    name = origDescriptors[i].getName();
+                    if(this.isReadable(orig, name) &amp;&amp; this.isWriteable(dest, name)) {
+                        try {
+                            e = ((DynaBean)orig).get(name);
+                            if(dest instanceof DynaBean) {
+                                ((DynaBean)dest).set(name, e);
+                            } else {
+                                this.setSimpleProperty(dest, name, e);
+                            }
+                        } catch (NoSuchMethodException var9) {
+                            if(this.log.isDebugEnabled()) {
+                                this.log.debug("Error writing to \'" + name + "\' on class \'" + dest.getClass() + "\'", var9);
+                            }
+                        }
+                    }
+                }
+            } else if(orig instanceof Map) {    //sorcce是一个Map
+                Iterator var10 = ((Map)orig).entrySet().iterator();
+
+                while(true) {
+                    Entry var12;
+                    do {
+                        if(!var10.hasNext()) {
+                            return;
+                        }
+
+                        var12 = (Entry)var10.next();
+                        name = (String)var12.getKey();
+                    } while(!this.isWriteable(dest, name)); //要求target对应属性是Accessible的
+
+                    try {
+                        if(dest instanceof DynaBean) {
+                            ((DynaBean)dest).set(name, var12.getValue());
+                        } else {
+                            this.setSimpleProperty(dest, name, var12.getValue());
+                        }
+                    } catch (NoSuchMethodException var8) {
+                        if(this.log.isDebugEnabled()) {
+                            this.log.debug("Error writing to \'" + name + "\' on class \'" + dest.getClass() + "\'", var8);
+                        }
+                    }
+                }
+            } else {
+                PropertyDescriptor[] var11 = this.getPropertyDescriptors(orig); //获取target对象属性的描述符，有缓存
+
+                for(i = 0; i &lt; var11.length; ++i) {
+                    name = var11[i].getName();
+                    if(this.isReadable(orig, name) &amp;&amp; this.isWriteable(dest, name)) {   //要求source的read方法是Accessible，target的write方法是Accessible
+                        try {
+                            e = this.getSimpleProperty(orig, name); //获取source对应属性的值
+                            if(dest instanceof DynaBean) {
+                                ((DynaBean)dest).set(name, e);
+                            } else {
+                                this.setSimpleProperty(dest, name, e);  //设置target对应属性的值
+                            }
+                        } catch (NoSuchMethodException var7) {
+                            if(this.log.isDebugEnabled()) {
+                                this.log.debug("Error writing to \'" + name + "\' on class \'" + dest.getClass() + "\'", var7);
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
+</code></pre>
+
+<p>参考：<a href="http://wiki.corp.qunar.com/display/travel/Java+Bean+Attribute+Copy">http://wiki.corp.qunar.com/display/travel/Java+Bean+Attribute+Copy</a></p>
+
+<h1>3.问题</h1>
+
+<p>碰到一个小问题，因为涉及到同一个方法的多次调用，发现第一次调用的时间远大于后面的调用：</p>
+
+<pre><code>GetSetCopy-1(微秒) : 1114.744
+GetSetCopy-2(微秒) : 2.087
+GetSetCopy-3(微秒) : 1.684
+GetSetCopy-4(微秒) : 1.694
+GetSetCopy-5(微秒) : 1.828
+GetSetCopy-6(微秒) : 1.742
+GetSetCopy-7(微秒) : 1.705
+GetSetCopy-8(微秒) : 1.68
+GetSetCopy-9(微秒) : 1.669
+GetSetCopy-10(微秒) : 1.693
+</code></pre>
+
+<p>怀疑：</p>
+
+<pre><code>1.GetSetCopy类的初始化；
+2.拷贝的目标对象类(这里即HotelVo)初始化；
+3.方法调用的缓存；
+</code></pre>
+
+<p>尝试发现如果调用前先显示的new一个GetSetCopy对象和一个HotelVo对象，可以将第一次的时间下降到50微妙左右。如果再外面显示的调用一次copy方法，则循环内的第一次copy会降到和其他次的拷贝时间一样。</p>
+
+<h3>3.1 原理</h3>
+
+<p>待补充，会涉及到JVM一些JIT的优化等问题，自己也很期待到底什么原因&hellip;</p>
 ]]></content>
   </entry>
   
