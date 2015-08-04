@@ -4,7 +4,7 @@
   <title><![CDATA[xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2015-08-04T14:57:21+08:00</updated>
+  <updated>2015-08-04T15:48:06+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -56,7 +56,7 @@
 </span><span class='line'>private Map&lt;String, Object&gt; attrs;</span></code></pre></td></tr></table></div></figure>
 
 
-<p>各个toString的实现版本：</p>
+<p>各个toString的实现版本，其中ReflectionToStringBuilder是我们项目中使用最多的，因为它最简单：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -228,7 +228,7 @@
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<p>跑1000次，记录最大最小平均时间:</p>
+<p>OS是Ubuntu 14.04 LTS版本，Java版本是1.7.0_80。跑1000次，记录最大最小平均时间:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -330,11 +330,139 @@
 </table>
 
 
+<p>通过上面的数据，concat和StringBuilder及StringBuffer的速度差不多。其他集中语法糖普遍慢一些，我们最常用的ReflectionToStringBuilder实际上是最慢的一个版本。</p>
+
 <h1>1.1 实现原理</h1>
 
 <p>简单分析一下各个toString方式的实现原理。</p>
 
-<p>首先看一个toString()</p>
+<pre><code>1.Concat
+没什么说的，使用的是字符串的拼接。
+2.StringBuilder
+内部使用char数组，每次append都会先检查数组空间释放足够，不够的话先申请一块临时数组，大小是原来的两倍大小，再用Arrays.copyOf将数据拷贝。
+3.StringBuffer
+和StringBuilder一样，也是继承自AbstractStringBuilder类，唯一区别是为了保证线程安全，变更数据的方法都加上了synchronized关键字。
+4.ToStringHelper
+Guava的ToStringHelper内部实现是一个简单链表，每个链表节点包含name，value以及下一个节点的指针。
+
+```
+private static final class ValueHolder {
+        String name;
+        Object value;
+        Objects.ToStringHelper.ValueHolder next;
+
+        private ValueHolder() {
+        }
+}
+```
+ToStringHelper类持有链表头节点和尾节点。每次调用add都是在链表尾部加一个节点，toString() 的时候遍历整个链表讲内容加到一个StringBuilder中。
+
+```
+public static final class ToStringHelper {
+    private final String className;
+    private Objects.ToStringHelper.ValueHolder holderHead;
+    private Objects.ToStringHelper.ValueHolder holderTail;
+
+    public Objects.ToStringHelper add(String name, long value) {
+        return this.addHolder(name, String.valueOf(value));
+    }
+
+    private Objects.ToStringHelper addHolder(String name, @Nullable Object value) {
+        Objects.ToStringHelper.ValueHolder valueHolder = this.addHolder();
+        valueHolder.value = value;
+        valueHolder.name = (String)Preconditions.checkNotNull(name);
+        return this;
+    }
+
+    private Objects.ToStringHelper.ValueHolder addHolder() {
+        Objects.ToStringHelper.ValueHolder valueHolder = new Objects.ToStringHelper.ValueHolder();
+        this.holderTail = this.holderTail.next = valueHolder;
+        return valueHolder;
+    }
+```
+
+5.ToStringBuilder
+ToStringBuilder内部使用一个StringBuffer，默认大小为512.另外一个style设定来toString的样式，每次执行append都跳转到对应的ToStringStyle的append函数实现上，并将当前的StringBuffer带过去(StringBuffer来存储数据，ToStringStyle来保证格式)：
+```
+public class ToStringBuilder implements Builder&lt;String&gt; {
+    private static volatile ToStringStyle defaultStyle;
+    private final StringBuffer buffer;
+    private final Object object;
+    private final ToStringStyle style;
+
+    static {
+    defaultStyle = ToStringStyle.DEFAULT_STYLE;
+    }
+
+    public ToStringBuilder append(String fieldName, int value) {
+        this.style.append(this.buffer, fieldName, value);
+        return this;
+    }
+```
+ToStringStyle的append实现，每个append都很简单，就是往StringBuffer中append数据：
+
+```
+public void append(StringBuffer buffer, String fieldName, int value) {
+    this.appendFieldStart(buffer, fieldName);
+    this.appendDetail(buffer, fieldName, value);
+    this.appendFieldEnd(buffer, fieldName);
+}
+
+protected void appendDetail(StringBuffer buffer, String fieldName, int value) {
+    buffer.append(value);
+}
+```
+6.ReflectionToStringBuilder
+ReflectionToStringBuilder实际上是继承自ToStringBuilder，每次都构建一个ReflectionToStringBuilder对象，toString的实现是使用反射完成，首先反射当前类的所以属性，再逐级往上获取父类并反射获取其属性,每拿到一个属性，调用一次ToStringBuilder的append方法：
+
+```
+public static &lt;T&gt; String toString(
+        final T object, final ToStringStyle style, final boolean outputTransients,
+        final boolean outputStatics, final Class&lt;? super T&gt; reflectUpToClass) {
+    return new ReflectionToStringBuilder(object, style, null, reflectUpToClass, outputTransients, outputStatics)
+            .toString();
+    }
+
+    public String toString() {
+        if (this.getObject() == null) {
+            return this.getStyle().getNullText();
+        }
+        Class&lt;?&gt; clazz = this.getObject().getClass();
+        this.appendFieldsIn(clazz);
+        while (clazz.getSuperclass() != null &amp;&amp; clazz != this.getUpToClass()) {
+            clazz = clazz.getSuperclass();
+            this.appendFieldsIn(clazz);
+        }
+        return super.toString();
+    }
+
+    protected void appendFieldsIn(final Class&lt;?&gt; clazz) {
+        if (clazz.isArray()) {
+            this.reflectionAppendArray(this.getObject());
+            return;
+        }
+        final Field[] fields = clazz.getDeclaredFields();
+        AccessibleObject.setAccessible(fields, true);
+        for (final Field field : fields) {
+            final String fieldName = field.getName();
+            if (this.accept(field)) {
+                try {
+                    // Warning: Field.get(Object) creates wrappers objects
+                    // for primitive types.
+                    final Object fieldValue = this.getValue(field);
+                    this.append(fieldName, fieldValue);
+                } catch (final IllegalAccessException ex) {
+                    //this can't happen. Would get a Security exception
+                    // instead
+                    //throw a runtime exception in case the impossible
+                    // happens.
+                    throw new InternalError("Unexpected IllegalAccessException: " + ex.getMessage());
+                }
+            }
+        }
+    }
+```
+</code></pre>
 
 <h1>2.beanCopy</h1>
 

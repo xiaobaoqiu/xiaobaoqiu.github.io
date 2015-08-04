@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Java | xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/blog/categories/java/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2015-08-04T14:57:21+08:00</updated>
+  <updated>2015-08-04T15:48:06+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -45,7 +45,7 @@
     private Map&lt;String, Object&gt; attrs;
 </code></pre>
 
-<p>各个toString的实现版本：</p>
+<p>各个toString的实现版本，其中ReflectionToStringBuilder是我们项目中使用最多的，因为它最简单：</p>
 
 <pre><code>    /**
      * 使用字符串+
@@ -133,7 +133,7 @@
     }
 </code></pre>
 
-<p>跑1000次，记录最大最小平均时间:</p>
+<p>OS是Ubuntu 14.04 LTS版本，Java版本是1.7.0_80。跑1000次，记录最大最小平均时间:</p>
 
 <pre><code>Concat Min(微秒)=25.385
 Concat Max(微秒)=2218.851
@@ -212,11 +212,226 @@ ReflectionToStringBuilder Avg(微秒)=219.219879
 </table>
 
 
+<p>通过上面的数据，concat和StringBuilder及StringBuffer的速度差不多。其他集中语法糖普遍慢一些，我们最常用的ReflectionToStringBuilder实际上是最慢的一个版本。</p>
+
 <h1>1.1 实现原理</h1>
 
 <p>简单分析一下各个toString方式的实现原理。</p>
 
-<p>首先看一个toString()</p>
+<pre><code>1.Concat
+没什么说的，使用的是字符串的拼接。
+2.StringBuilder
+内部使用char数组，每次append都会先检查数组空间释放足够，不够的话先申请一块临时数组，大小是原来的两倍大小，再用Arrays.copyOf将数据拷贝。
+3.StringBuffer
+和StringBuilder一样，也是继承自AbstractStringBuilder类，唯一区别是为了保证线程安全，变更数据的方法都加上了synchronized关键字。
+4.ToStringHelper
+Guava的ToStringHelper内部实现是一个简单链表，每个链表节点包含name，value以及下一个节点的指针。
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private static final class ValueHolder {
+</span><span class='line'>        String name;
+</span><span class='line'>        Object value;
+</span><span class='line'>        Objects.ToStringHelper.ValueHolder next;
+</span><span class='line'>
+</span><span class='line'>        private ValueHolder() {
+</span><span class='line'>        }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+ToStringHelper类持有链表头节点和尾节点。每次调用add都是在链表尾部加一个节点，toString() 的时候遍历整个链表讲内容加到一个StringBuilder中。
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static final class ToStringHelper {
+</span><span class='line'>    private final String className;
+</span><span class='line'>    private Objects.ToStringHelper.ValueHolder holderHead;
+</span><span class='line'>    private Objects.ToStringHelper.ValueHolder holderTail;
+</span><span class='line'>
+</span><span class='line'>    public Objects.ToStringHelper add(String name, long value) {
+</span><span class='line'>        return this.addHolder(name, String.valueOf(value));
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private Objects.ToStringHelper addHolder(String name, @Nullable Object value) {
+</span><span class='line'>        Objects.ToStringHelper.ValueHolder valueHolder = this.addHolder();
+</span><span class='line'>        valueHolder.value = value;
+</span><span class='line'>        valueHolder.name = (String)Preconditions.checkNotNull(name);
+</span><span class='line'>        return this;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private Objects.ToStringHelper.ValueHolder addHolder() {
+</span><span class='line'>        Objects.ToStringHelper.ValueHolder valueHolder = new Objects.ToStringHelper.ValueHolder();
+</span><span class='line'>        this.holderTail = this.holderTail.next = valueHolder;
+</span><span class='line'>        return valueHolder;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+5.ToStringBuilder
+ToStringBuilder内部使用一个StringBuffer，默认大小为512.另外一个style设定来toString的样式，每次执行append都跳转到对应的ToStringStyle的append函数实现上，并将当前的StringBuffer带过去(StringBuffer来存储数据，ToStringStyle来保证格式)：
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class ToStringBuilder implements Builder&lt;String&gt; {
+</span><span class='line'>    private static volatile ToStringStyle defaultStyle;
+</span><span class='line'>    private final StringBuffer buffer;
+</span><span class='line'>    private final Object object;
+</span><span class='line'>    private final ToStringStyle style;
+</span><span class='line'>
+</span><span class='line'>    static {
+</span><span class='line'>    defaultStyle = ToStringStyle.DEFAULT_STYLE;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public ToStringBuilder append(String fieldName, int value) {
+</span><span class='line'>        this.style.append(this.buffer, fieldName, value);
+</span><span class='line'>        return this;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+ToStringStyle的append实现，每个append都很简单，就是往StringBuffer中append数据：
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public void append(StringBuffer buffer, String fieldName, int value) {
+</span><span class='line'>    this.appendFieldStart(buffer, fieldName);
+</span><span class='line'>    this.appendDetail(buffer, fieldName, value);
+</span><span class='line'>    this.appendFieldEnd(buffer, fieldName);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>protected void appendDetail(StringBuffer buffer, String fieldName, int value) {
+</span><span class='line'>    buffer.append(value);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+6.ReflectionToStringBuilder
+ReflectionToStringBuilder实际上是继承自ToStringBuilder，每次都构建一个ReflectionToStringBuilder对象，toString的实现是使用反射完成，首先反射当前类的所以属性，再逐级往上获取父类并反射获取其属性,每拿到一个属性，调用一次ToStringBuilder的append方法：
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static &lt;T&gt; String toString(
+</span><span class='line'>        final T object, final ToStringStyle style, final boolean outputTransients,
+</span><span class='line'>        final boolean outputStatics, final Class&lt;? super T&gt; reflectUpToClass) {
+</span><span class='line'>    return new ReflectionToStringBuilder(object, style, null, reflectUpToClass, outputTransients, outputStatics)
+</span><span class='line'>            .toString();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public String toString() {
+</span><span class='line'>        if (this.getObject() == null) {
+</span><span class='line'>            return this.getStyle().getNullText();
+</span><span class='line'>        }
+</span><span class='line'>        Class&lt;?&gt; clazz = this.getObject().getClass();
+</span><span class='line'>        this.appendFieldsIn(clazz);
+</span><span class='line'>        while (clazz.getSuperclass() != null &amp;&amp; clazz != this.getUpToClass()) {
+</span><span class='line'>            clazz = clazz.getSuperclass();
+</span><span class='line'>            this.appendFieldsIn(clazz);
+</span><span class='line'>        }
+</span><span class='line'>        return super.toString();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    protected void appendFieldsIn(final Class&lt;?&gt; clazz) {
+</span><span class='line'>        if (clazz.isArray()) {
+</span><span class='line'>            this.reflectionAppendArray(this.getObject());
+</span><span class='line'>            return;
+</span><span class='line'>        }
+</span><span class='line'>        final Field[] fields = clazz.getDeclaredFields();
+</span><span class='line'>        AccessibleObject.setAccessible(fields, true);
+</span><span class='line'>        for (final Field field : fields) {
+</span><span class='line'>            final String fieldName = field.getName();
+</span><span class='line'>            if (this.accept(field)) {
+</span><span class='line'>                try {
+</span><span class='line'>                    // Warning: Field.get(Object) creates wrappers objects
+</span><span class='line'>                    // for primitive types.
+</span><span class='line'>                    final Object fieldValue = this.getValue(field);
+</span><span class='line'>                    this.append(fieldName, fieldValue);
+</span><span class='line'>                } catch (final IllegalAccessException ex) {
+</span><span class='line'>                    //this can't happen. Would get a Security exception
+</span><span class='line'>                    // instead
+</span><span class='line'>                    //throw a runtime exception in case the impossible
+</span><span class='line'>                    // happens.
+</span><span class='line'>                    throw new InternalError("Unexpected IllegalAccessException: " + ex.getMessage());
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+</code></pre>
 
 <h1>2.beanCopy</h1>
 
