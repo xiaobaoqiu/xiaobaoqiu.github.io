@@ -9,7 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="这篇文章主要分析Concurrent包中的BlockingQueue系列的并发容器实现原理和源代码. 1.实现原理 阻塞队列与普通队列的区别在于，当队列是空的时，从队列中获取元素的操作将会被阻塞，或者当队列是满时，往队列里添加元素的操作会被阻塞。试图从空的阻塞队列中获取元素的线程将会被阻塞， &hellip;">
+  <meta name="description" content="这里包括两种容器 ConcurrentSkipListMap
+ConcurrentSkipListSet 其中ConcurrentSkipListSet是通过ConcurrentSkipListMap实现的，它包含一个ConcurrentNavigableMap对象m， &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -21,6 +22,8 @@
   <link rel="canonical" href="http://xiaobaoqiu.github.io/posts/6/">
   <link href="/favicon.png" rel="icon">
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  
+
   <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
   <script src="/javascripts/modernizr-2.0.js"></script>
   <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
@@ -67,6 +70,894 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/12/19/javabing-fa-rong-qi-zhi-skiplist/">Java并发容器之SkipList</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-12-19T05:56:59+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>19</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>5:56 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>这里包括两种容器</p>
+
+<pre><code>ConcurrentSkipListMap
+ConcurrentSkipListSet
+</code></pre>
+
+<p>其中ConcurrentSkipListSet是通过ConcurrentSkipListMap实现的，它包含一个ConcurrentNavigableMap对象m，而m对象实际上是ConcurrentNavigableMap的实现类ConcurrentSkipListMap的实例。</p>
+
+<p>ConcurrentSkipListMap中的元素是key-value键值对；而ConcurrentSkipListSet是集合，它只用到了ConcurrentSkipListMap中的key，其value是一个空的Object。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ConcurrentSkipListSet</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="kd">extends</span> <span class="n">AbstractSet</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="kd">implements</span> <span class="n">NavigableSet</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;,</span> <span class="n">Cloneable</span><span class="o">,</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">E</span><span class="o">,</span><span class="n">Object</span><span class="o">&gt;</span> <span class="n">m</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">ConcurrentSkipListSet</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">m</span> <span class="o">=</span> <span class="k">new</span> <span class="n">ConcurrentSkipListMap</span><span class="o">&lt;</span><span class="n">E</span><span class="o">,</span><span class="n">Object</span><span class="o">&gt;();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因此这里只分析ConcurrentSkipListMap的源代码。</p>
+
+<h1>1.ConcurrentSkipListMap</h1>
+
+<p>ConcurrentSkipListMap和TreeMap类似，它们虽然都是有序的哈希表。但是，第一，它们的线程安全机制不同，TreeMap是非线程安全的，而ConcurrentSkipListMap是线程安全的。第二，ConcurrentSkipListMap是通过跳表实现的，而TreeMap是通过红黑树实现的。</p>
+
+<p>ConcurrentSkipListMap的数据结构，如下图所示：</p>
+
+<p><img src="/images/concurrent/ConcurrentSkipListMap.png"></p>
+
+<p>跳表分为许多层(level)，每一层都可以看作是数据的索引，这些索引的意义就是加快跳表查找数据速度。每一层的数据都是有序的，上一层数据是下一层数据的子集，并且第一层(level 1)包含了全部的数据；层次越高，跳跃性越大，包含的数据越少。跳表包含一个表头，它查找数据时，是从上往下，从左往右进行查找。</p>
+
+<p>先以数据“7,14,21,32,37,71,85”序列为例，来对跳表进行简单说明。在跳表中查找“32”节点
+路径如下图所示：</p>
+
+<p><img src="/images/concurrent/SkipList_example.jpg"></p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ConcurrentSkipListMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">AbstractMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="kd">implements</span> <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;,</span>
+</span><span class='line'>               <span class="n">Cloneable</span><span class="o">,</span>
+</span><span class='line'>               <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
+</span><span class='line'>    <span class="c1">//head是跳表的表头</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">transient</span> <span class="kd">volatile</span> <span class="n">HeadIndex</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">head</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">static</span> <span class="kd">class</span> <span class="nc">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">node</span><span class="o">;</span>       <span class="c1">//哈希表节点node</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">down</span><span class="o">;</span>      <span class="c1">//下索引的指针</span>
+</span><span class='line'>    <span class="kd">volatile</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">right</span><span class="o">;</span>  <span class="c1">//右索引的指针</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">static</span> <span class="kd">final</span> <span class="kd">class</span> <span class="nc">HeadIndex</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="kt">int</span> <span class="n">level</span><span class="o">;</span>    <span class="c1">//节点所属层次</span>
+</span><span class='line'>    <span class="n">HeadIndex</span><span class="o">(</span><span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">node</span><span class="o">,</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">down</span><span class="o">,</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">right</span><span class="o">,</span> <span class="kt">int</span> <span class="n">level</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">super</span><span class="o">(</span><span class="n">node</span><span class="o">,</span> <span class="n">down</span><span class="o">,</span> <span class="n">right</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">level</span> <span class="o">=</span> <span class="n">level</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">static</span> <span class="kd">final</span> <span class="kd">class</span> <span class="nc">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">K</span> <span class="n">key</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">volatile</span> <span class="n">Object</span> <span class="n">value</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">volatile</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">next</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面从ConcurrentSkipListMap的添加(put)，删除(remove)，获取(get)这3个方面对它进行分析：</p>
+
+<h1>1.1 添加</h1>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">V</span> <span class="nf">put</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">value</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="k">throw</span> <span class="k">new</span> <span class="nf">NullPointerException</span><span class="o">();</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">doPut</span><span class="o">(</span><span class="n">key</span><span class="o">,</span> <span class="n">value</span><span class="o">,</span> <span class="kc">false</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">private</span> <span class="n">V</span> <span class="nf">doPut</span><span class="o">(</span><span class="n">K</span> <span class="n">kkey</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">onlyIfAbsent</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">kkey</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span> <span class="c1">//找到key的前继节点</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>   <span class="c1">//key的前继节点的后继节点，即 插入节点 的“后继节点”</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">n</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">f</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>                <span class="c1">//如果两次获得的b.next不是相同的Node，就跳转到外层循环，重新遍历。</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">n</span> <span class="o">!=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">)</span>               <span class="c1">// inconsistent read</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;;</span>
+</span><span class='line'>                <span class="n">Object</span> <span class="n">v</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">value</span><span class="o">;</span>
+</span><span class='line'>                <span class="c1">//当n的值为null(意味着其它线程删除了n)；此时删除b的下一个节点，然后跳转到”外层for循环“，重新遍历。</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">v</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>               <span class="c1">// n is deleted</span>
+</span><span class='line'>                    <span class="n">n</span><span class="o">.</span><span class="na">helpDelete</span><span class="o">(</span><span class="n">b</span><span class="o">,</span> <span class="n">f</span><span class="o">);</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="c1">// 如果其它线程删除了b；则跳转到”外层for循环“，重新获得b和n后再遍历。</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">v</span> <span class="o">==</span> <span class="n">n</span> <span class="o">||</span> <span class="n">b</span><span class="o">.</span><span class="na">value</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="c1">// b is deleted</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">n</span><span class="o">.</span><span class="na">key</span><span class="o">);</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">b</span> <span class="o">=</span> <span class="n">n</span><span class="o">;</span>
+</span><span class='line'>                    <span class="n">n</span> <span class="o">=</span> <span class="n">f</span><span class="o">;</span>
+</span><span class='line'>                    <span class="k">continue</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="k">if</span> <span class="o">(</span><span class="n">onlyIfAbsent</span> <span class="o">||</span> <span class="n">n</span><span class="o">.</span><span class="na">casValue</span><span class="o">(</span><span class="n">v</span><span class="o">,</span> <span class="n">value</span><span class="o">))</span>
+</span><span class='line'>                        <span class="k">return</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span><span class="o">;</span>
+</span><span class='line'>                    <span class="k">else</span>
+</span><span class='line'>                        <span class="k">break</span><span class="o">;</span> <span class="c1">// restart if lost race to replace value</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="c1">// else c &lt; 0; fall through</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="c1">// 新建节点(对应是“要插入的键值对”)</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">z</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;(</span><span class="n">kkey</span><span class="o">,</span> <span class="n">value</span><span class="o">,</span> <span class="n">n</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(!</span><span class="n">b</span><span class="o">.</span><span class="na">casNext</span><span class="o">(</span><span class="n">n</span><span class="o">,</span> <span class="n">z</span><span class="o">))</span>   <span class="c1">// 设置“b的后继节点”为z</span>
+</span><span class='line'>                <span class="k">break</span><span class="o">;</span>         <span class="c1">// restart if lost race to append to b，多线程情况下，break才可能发生(其它线程对b进行了操作)</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="c1">// 随机获取一个level，然后在“第1层”到“第level层”的链表中都插入新建节点</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">level</span> <span class="o">=</span> <span class="n">randomLevel</span><span class="o">();</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">level</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                <span class="n">insertIndex</span><span class="o">(</span><span class="n">z</span><span class="o">,</span> <span class="n">level</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>doPut()的作用就是将键值对添加到“跳表”中,其主干部分(即单纯的只考虑“单线程的情况下，将key-value添加到跳表中”，即忽略“多线程相关的内容”),它的流程如下：</p>
+
+<pre><code>第1步：找到“插入位置”。找到key的前去节点(b)和key的后继节点(n)；key是要插入节点的键;
+第2步：新建并插入节点。新建节点z(key对应的节点)，并将新节点z插入到“跳表”中(设置“b的后继节点为z”，“z的后继节点为n”);
+第3步：更新跳表。即随机获取一个level，然后在“跳表”的第1层～第level层之间，每一层都插入节点z；在第level层之上就不再插入节点了。若level数值大于“跳表的层次”，则新建一层;
+</code></pre>
+
+<p>主干代码大致如下：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="n">V</span> <span class="nf">doPut</span><span class="o">(</span><span class="n">K</span> <span class="n">kkey</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">onlyIfAbsent</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">kkey</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">// 找到key的前继节点</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>        <span class="c1">// 设置n为key的后继节点</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">// 新建节点(对应是“要被插入的键值对”)</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">z</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;(</span><span class="n">kkey</span><span class="o">,</span> <span class="n">value</span><span class="o">,</span> <span class="n">n</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// 设置“b的后继节点”为z</span>
+</span><span class='line'>            <span class="n">b</span><span class="o">.</span><span class="na">casNext</span><span class="o">(</span><span class="n">n</span><span class="o">,</span> <span class="n">z</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="c1">// 随机获取一个level，然后在“第1层”到“第level层”的链表中都插入新建节点</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">level</span> <span class="o">=</span> <span class="n">randomLevel</span><span class="o">();</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">level</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                <span class="n">insertIndex</span><span class="o">(</span><span class="n">z</span><span class="o">,</span> <span class="n">level</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>1.2 删除</h1>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">V</span> <span class="nf">remove</span><span class="o">(</span><span class="n">Object</span> <span class="n">key</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">doRemove</span><span class="o">(</span><span class="n">key</span><span class="o">,</span> <span class="kc">null</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">final</span> <span class="n">V</span> <span class="nf">doRemove</span><span class="o">(</span><span class="n">Object</span> <span class="n">okey</span><span class="o">,</span> <span class="n">Object</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">okey</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span> <span class="c1">//前置节点</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>            <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">n</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">f</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">n</span> <span class="o">!=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">)</span>                    <span class="c1">// inconsistent read</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">Object</span> <span class="n">v</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">value</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">v</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>                    <span class="c1">// n is deleted</span>
+</span><span class='line'>                    <span class="n">n</span><span class="o">.</span><span class="na">helpDelete</span><span class="o">(</span><span class="n">b</span><span class="o">,</span> <span class="n">f</span><span class="o">);</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">v</span> <span class="o">==</span> <span class="n">n</span> <span class="o">||</span> <span class="n">b</span><span class="o">.</span><span class="na">value</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>      <span class="c1">// b is deleted</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">n</span><span class="o">.</span><span class="na">key</span><span class="o">);</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">b</span> <span class="o">=</span> <span class="n">n</span><span class="o">;</span>
+</span><span class='line'>                    <span class="n">n</span> <span class="o">=</span> <span class="n">f</span><span class="o">;</span>
+</span><span class='line'>                    <span class="k">continue</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">value</span> <span class="o">!=</span> <span class="kc">null</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="n">value</span><span class="o">.</span><span class="na">equals</span><span class="o">(</span><span class="n">v</span><span class="o">))</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(!</span><span class="n">n</span><span class="o">.</span><span class="na">casValue</span><span class="o">(</span><span class="n">v</span><span class="o">,</span> <span class="kc">null</span><span class="o">))</span><span class="c1">// 设置b的后继节点为null</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(!</span><span class="n">n</span><span class="o">.</span><span class="na">appendMarker</span><span class="o">(</span><span class="n">f</span><span class="o">)</span> <span class="o">||</span> <span class="o">!</span><span class="n">b</span><span class="o">.</span><span class="na">casNext</span><span class="o">(</span><span class="n">n</span><span class="o">,</span> <span class="n">f</span><span class="o">))</span>
+</span><span class='line'>                    <span class="n">findNode</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>                  <span class="c1">// Retry via findNode</span>
+</span><span class='line'>                <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>           <span class="c1">// Clean index</span>
+</span><span class='line'>                    <span class="k">if</span> <span class="o">(</span><span class="n">head</span><span class="o">.</span><span class="na">right</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
+</span><span class='line'>                        <span class="n">tryReduceLevel</span><span class="o">();</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面是删除跳表中键值对的主干步骤：</p>
+
+<pre><code>第1步：找到被删除节点的位置;找到key的前继节点(b)，key所对应的节点(n)，n的后继节点f；key是要删除节点的键;
+第2步：删除节点;将key所对应的节点n从跳表中移除，将b的后继节点设为f;
+第3步：更新跳表;遍历跳表，删除每一层的key节点(如果存在的话)。删除导致某一层为空之后，需要删除这一层;
+</code></pre>
+
+<p>主干部分的doRemove()的代码大致如下：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">final</span> <span class="n">V</span> <span class="nf">doRemove</span><span class="o">(</span><span class="n">Object</span> <span class="n">okey</span><span class="o">,</span> <span class="n">Object</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">okey</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">// 找到key的前继节点b</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>        <span class="c1">// b--&gt;n,即n为b的后继节点，也即n节点为key的节点</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">// f是n的后继节点</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">f</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>            <span class="c1">// 设置n节点为null</span>
+</span><span class='line'>            <span class="n">n</span><span class="o">.</span><span class="na">casValue</span><span class="o">(</span><span class="n">v</span><span class="o">,</span> <span class="kc">null</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// 设置b的后继节点为f</span>
+</span><span class='line'>            <span class="n">b</span><span class="o">.</span><span class="na">casNext</span><span class="o">(</span><span class="n">n</span><span class="o">,</span> <span class="n">f</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// 清除跳表中每一层的key节点</span>
+</span><span class='line'>            <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// 如果“表头的右索引为空”，则将“跳表的层次”-1</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">head</span><span class="o">.</span><span class="na">right</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
+</span><span class='line'>                <span class="n">tryReduceLevel</span><span class="o">();</span>
+</span><span class='line'>            <span class="k">return</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>1.3 获取</h1>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">V</span> <span class="nf">get</span><span class="o">(</span><span class="n">Object</span> <span class="n">key</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">doGet</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">private</span> <span class="n">V</span> <span class="nf">doGet</span><span class="o">(</span><span class="n">Object</span> <span class="n">okey</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">okey</span><span class="o">);</span>
+</span><span class='line'>    <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">bound</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">q</span> <span class="o">=</span> <span class="n">head</span><span class="o">;</span>    <span class="c1">//待比较节点</span>
+</span><span class='line'>    <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">r</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="na">right</span><span class="o">;</span> <span class="c1">//待比较的右边节点</span>
+</span><span class='line'>    <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span><span class="o">;</span>
+</span><span class='line'>    <span class="n">K</span> <span class="n">k</span><span class="o">;</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">c</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">d</span><span class="o">;</span>
+</span><span class='line'>        <span class="c1">// 往右遍历</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">r</span> <span class="o">!=</span> <span class="kc">null</span> <span class="o">&amp;&amp;</span> <span class="o">(</span><span class="n">n</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="na">node</span><span class="o">)</span> <span class="o">!=</span> <span class="n">bound</span> <span class="o">&amp;&amp;</span> <span class="o">(</span><span class="n">k</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">key</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">((</span><span class="n">c</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">k</span><span class="o">))</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">q</span> <span class="o">=</span> <span class="n">r</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">r</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="na">right</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">continue</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">Object</span> <span class="n">v</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">value</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">(</span><span class="n">v</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)?</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span> <span class="o">:</span> <span class="n">getUsingFindNode</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span> <span class="k">else</span>
+</span><span class='line'>                <span class="n">bound</span> <span class="o">=</span> <span class="n">n</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">// 往下遍历</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">((</span><span class="n">d</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="na">down</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">q</span> <span class="o">=</span> <span class="n">d</span><span class="o">;</span>
+</span><span class='line'>            <span class="n">r</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="na">right</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">else</span>
+</span><span class='line'>            <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">// 同一层逐个往后便利</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(</span><span class="n">n</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="na">node</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>  <span class="n">n</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">next</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">((</span><span class="n">k</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">key</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">((</span><span class="n">c</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">k</span><span class="o">))</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">Object</span> <span class="n">v</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">value</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">(</span><span class="n">v</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)?</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span> <span class="o">:</span> <span class="n">getUsingFindNode</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.ShipList的简单实现</h1>
+
+<p>很早之前写过一个简单的SkipList，贴在百度空间：
+<a href="http://hi.baidu.com/nicker2010/item/be641424bb0963c8ef10f1dc">http://hi.baidu.com/nicker2010/item/be641424bb0963c8ef10f1dc</a></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/12/15/selenium/">Selenium</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-12-15T17:45:32+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>15</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>5:45 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><h1>1.什么是Selenium</h1>
+
+<p>Selenium 是一种 Web 应用的自动测试工具，通过模拟用户对 Web 页面的各种操作，可以精确重现软件测试人员编写的 Test Cases 步骤。它所采用的原理是通过录制应用程序产生的线性脚本进行回放从而达到自动化测试的目的。其优点是简单，通过录制就可以得到所需脚本。类似于录制/回放测试工具有很多，我们之所以选择它的原因是它是开源的，而且它测试直接在浏览器中运行，就像真实用户所做的一样。Selenium测试可以在 Windows、Linux上的 Internet Explorer、Mozilla和 Firefox 中运行。其他测试工具都不能覆盖如此多的平台，更重要的是Selenium支持多种语言、JAVA、Ruby、Python等。</p>
+
+<p>Selenium的核心，也称browser bot,是用JavaScript编写的。这使得测试脚本可以在受支持的浏览器中运行。browser bot负责执行从测试脚本接收到的命令，测试脚本要么是用 HTML的表布局编写的，要么是使用一种受支持的编程语言编写的。</p>
+
+<h3>1.1 Selenium名字的来源</h3>
+
+<p>Selenium的中文名为“硒”，是一种化学元素的名字，它对汞（Mercury）有天然的解毒作用，实验表明汞暴露水平越高，硒对汞毒性的拮抗作用越明显，所以说硒是汞的克星。大家应该知道Mercury测试工具系 列吧（QTP，QC，LR，WR&hellip;），他们功能强大，但却价格不菲，大家对此又爱又恨！故thoughtworks特意把他们的Web开源测试工具命 名为Selenium，以此帮助大家脱离汞毒。</p>
+
+<p>Selenium 是thoughtworks所做的，用于Web应用程序测试的工具。Selenium测试直接运行在浏览器中，就像真正的用户在操作一样。支持的浏览器包括IE、Mozilla Firefox、Mozilla Suite等。</p>
+
+<p>在selenium2.0中，包含2个部分 selenium ide 和 selenium webdriver.</p>
+
+<h3>1.2 优势</h3>
+
+<p>使用 Selenium 和在浏览器中运行测试还有很多其他好处。下面是主要的两大好处：</p>
+
+<pre><code>(1).通过编写模仿用户操作的 Selenium 测试脚本，可以从终端用户的角度来测试应用程序;
+(2).通过在不同浏览器中运行测试，更容易发现浏览器的不兼容性;
+</code></pre>
+
+<h3>1.3 Selenium 模式</h3>
+
+<p>可以按两种模式来使用test runner 和 driven,这两种模式在复杂性和编写方式方面有所不同。driven 测试脚本编写起来往往要更复杂一些，因为它们是用编程语言编写的。</p>
+
+<p>两种模式之间最大的不同点在于:如果使用 driven 脚本，测试有一部分在浏览器之外运行，而如果使用 test runner 脚本的话，测试是完全在浏览器中运行的。</p>
+
+<p>不管是 test runner 还是 driven 测试用例，都可以与持续集成工具集成。</p>
+
+<p>本文这里只简单介绍了 driven 模式。</p>
+
+<h1>2.driven 模式</h1>
+
+<p>driven Selenium 脚本是用多种受支持的编程语言中的一种编写的,目前可用的有 Java、Ruby 和 Python 等驱动程序。这些脚本在浏览器之外的一个单独的进程中运行。驱动程序的任务是执行测试脚本，并通过与运行在浏览器中的 browser bot 进行通信来驱动浏览器。驱动程序与 browser bot 之间的通信使用一种简单的特定于 Selenium 的连接语言 Selenese。</p>
+
+<p>driven 脚本比 test runner 脚本更强大、更灵活，可以将它们与 xUnit (比如JUnit)框架集成。driven 脚本的缺点（与 test runner 脚本相比）是，这种脚本编写和部署起来更复杂。这是因为驱动程序必须执行以下任务：</p>
+
+<pre><code>(1).启动服务器;
+(2).部署所测试的应用程序;
+(3).部署测试脚本;
+(4).启动浏览器;
+(5).发送命令到 browser bot;
+(6).验证 browser bot 执行的命令的结果;
+</code></pre>
+
+<h1>3.简单case</h1>
+
+<p>这里用Java实现一个简单的使用Selenium的case</p>
+
+<h3>3.1 Maven包</h3>
+
+<p>使用现有的maven包：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="o">&lt;</span><span class="n">dependency</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="o">&lt;</span><span class="n">groupId</span><span class="o">&gt;</span><span class="n">org</span><span class="o">.</span><span class="na">seleniumhq</span><span class="o">.</span><span class="na">selenium</span><span class="o">&lt;/</span><span class="n">groupId</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="o">&lt;</span><span class="n">artifactId</span><span class="o">&gt;</span><span class="n">selenium</span><span class="o">-</span><span class="n">java</span><span class="o">&lt;/</span><span class="n">artifactId</span><span class="o">&gt;</span>
+</span><span class='line'><span class="o">&lt;/</span><span class="n">dependency</span><span class="o">&gt;</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>3.2 简单case</h3>
+
+<p>下面结合JUnit以打开google为例子：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kn">import</span> <span class="nn">com.google.common.collect.Lists</span><span class="o">;</span>
+</span><span class='line'><span class="kn">import</span> <span class="nn">com.qunar.scm.common.BrowserDriver</span><span class="o">;</span>
+</span><span class='line'><span class="kn">import</span> <span class="nn">org.apache.commons.collections.CollectionUtils</span><span class="o">;</span>
+</span><span class='line'><span class="kn">import</span> <span class="nn">org.junit.Assert</span><span class="o">;</span>
+</span><span class='line'><span class="kn">import</span> <span class="nn">org.junit.Test</span><span class="o">;</span>
+</span><span class='line'><span class="kn">import</span> <span class="nn">org.openqa.selenium.By</span><span class="o">;</span>
+</span><span class='line'><span class="kn">import</span> <span class="nn">org.openqa.selenium.Keys</span><span class="o">;</span>
+</span><span class='line'><span class="kn">import</span> <span class="nn">org.openqa.selenium.WebDriver</span><span class="o">;</span>
+</span><span class='line'><span class="kn">import</span> <span class="nn">org.openqa.selenium.WebElement</span><span class="o">;</span>
+</span><span class='line'><span class="kn">import</span> <span class="nn">org.slf4j.Logger</span><span class="o">;</span>
+</span><span class='line'><span class="kn">import</span> <span class="nn">org.slf4j.LoggerFactory</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="kn">import</span> <span class="nn">java.util.List</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="cm">/**</span>
+</span><span class='line'><span class="cm"> * 测试Google</span>
+</span><span class='line'><span class="cm"> *</span>
+</span><span class='line'><span class="cm"> * @author baoqiu.xiao@qunar.com  Date: 14-12-31 Time: 下午1:42</span>
+</span><span class='line'><span class="cm"> * @version \$Id$</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">GoogleTest</span> <span class="kd">extends</span> <span class="n">AbstractBaseTest</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="n">Logger</span> <span class="n">logger</span> <span class="o">=</span> <span class="n">LoggerFactory</span><span class="o">.</span><span class="na">getLogger</span><span class="o">(</span><span class="n">GoogleTest</span><span class="o">.</span><span class="na">class</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="n">String</span> <span class="n">GOOGLE_URL</span> <span class="o">=</span> <span class="s">&quot;https://www.google.com.hk&quot;</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nd">@Test</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">testGoogle</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">//当前测试case名称</span>
+</span><span class='line'>        <span class="n">caseName</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">().</span><span class="na">getStackTrace</span><span class="o">()[</span><span class="mi">1</span><span class="o">].</span><span class="na">getMethodName</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kt">boolean</span> <span class="n">flag</span> <span class="o">=</span> <span class="n">testCommonProcess</span><span class="o">(</span><span class="n">currentDriverList</span><span class="o">(),</span> <span class="k">new</span> <span class="nf">BrowserVisiter</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>            <span class="nd">@Override</span>
+</span><span class='line'>            <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">visit</span><span class="o">(</span><span class="n">BrowserDriver</span> <span class="n">browserDriver</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="k">return</span> <span class="nf">doTestGoogle</span><span class="o">(</span><span class="n">browserDriver</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">});</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">Assert</span><span class="o">.</span><span class="na">assertTrue</span><span class="o">(</span><span class="n">flag</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 实际的测试逻辑</span>
+</span><span class='line'><span class="cm">     *</span>
+</span><span class='line'><span class="cm">     * @param browserDriver</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">doTestGoogle</span><span class="o">(</span><span class="kd">final</span> <span class="n">BrowserDriver</span> <span class="n">browserDriver</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">browserDriver</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">logger</span><span class="o">.</span><span class="na">error</span><span class="o">(</span><span class="s">&quot;browserDriver is null&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">WebDriver</span> <span class="n">driver</span> <span class="o">=</span> <span class="n">browserDriver</span><span class="o">.</span><span class="na">getWebDriver</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">//1.打开页面</span>
+</span><span class='line'>        <span class="n">driver</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">GOOGLE_URL</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">driver</span><span class="o">.</span><span class="na">manage</span><span class="o">().</span><span class="na">window</span><span class="o">().</span><span class="na">maximize</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">Thread</span><span class="o">.</span><span class="na">sleep</span><span class="o">(</span><span class="mi">1000</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">e</span><span class="o">.</span><span class="na">printStackTrace</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">//2.在搜索框内输入关键字,输入回车</span>
+</span><span class='line'>        <span class="n">WebElement</span> <span class="n">keyWord</span> <span class="o">=</span> <span class="n">driver</span><span class="o">.</span><span class="na">findElement</span><span class="o">(</span><span class="n">By</span><span class="o">.</span><span class="na">name</span><span class="o">(</span><span class="s">&quot;q&quot;</span><span class="o">));</span>
+</span><span class='line'>        <span class="n">keyWord</span><span class="o">.</span><span class="na">sendKeys</span><span class="o">(</span><span class="s">&quot;xiaobaoqiu&quot;</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">keyWord</span><span class="o">.</span><span class="na">sendKeys</span><span class="o">(</span><span class="n">Keys</span><span class="o">.</span><span class="na">RETURN</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 当前需要测试的浏览器列表，这里只使用了firefox</span>
+</span><span class='line'><span class="cm">     *</span>
+</span><span class='line'><span class="cm">     * @return</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">protected</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">BrowserDriver</span><span class="o">&gt;</span> <span class="nf">currentDriverList</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">Lists</span><span class="o">.</span><span class="na">newArrayList</span><span class="o">(</span><span class="n">BrowserDriver</span><span class="o">.</span><span class="na">FIREFOX_DRIVER</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 生成测试报告</span>
+</span><span class='line'><span class="cm">     *</span>
+</span><span class='line'><span class="cm">     * @param driverList</span>
+</span><span class='line'><span class="cm">     * @param result</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">protected</span> <span class="kt">void</span> <span class="nf">doReportResult</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">BrowserDriver</span><span class="o">&gt;</span> <span class="n">driverList</span><span class="o">,</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">Boolean</span><span class="o">&gt;</span> <span class="n">result</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">CollectionUtils</span><span class="o">.</span><span class="na">isEmpty</span><span class="o">(</span><span class="n">driverList</span><span class="o">)</span> <span class="o">||</span> <span class="n">CollectionUtils</span><span class="o">.</span><span class="na">isEmpty</span><span class="o">(</span><span class="n">result</span><span class="o">))</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">logger</span><span class="o">.</span><span class="na">error</span><span class="o">(</span><span class="s">&quot;isEmpty(driverList) or isEmpty(result)&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">driverList</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">!=</span> <span class="n">result</span><span class="o">.</span><span class="na">size</span><span class="o">())</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">logger</span><span class="o">.</span><span class="na">error</span><span class="o">(</span><span class="s">&quot;driverList.size() != result.size()&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">logger</span><span class="o">.</span><span class="na">info</span><span class="o">(</span><span class="s">&quot;BEG====================================={}=====================================BEG&quot;</span><span class="o">,</span> <span class="n">caseName</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">driverList</span><span class="o">.</span><span class="na">size</span><span class="o">();</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">logger</span><span class="o">.</span><span class="na">info</span><span class="o">(</span><span class="s">&quot;{} = {}&quot;</span><span class="o">,</span> <span class="n">driverList</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">i</span><span class="o">).</span><span class="na">getBrowser</span><span class="o">().</span><span class="na">getName</span><span class="o">(),</span> <span class="n">resultString</span><span class="o">(</span><span class="n">result</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">i</span><span class="o">)));</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">logger</span><span class="o">.</span><span class="na">info</span><span class="o">(</span><span class="s">&quot;END====================================={}=====================================END&quot;</span><span class="o">,</span> <span class="n">caseName</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>结果：</p>
+
+<p><img src="/images/selenium/selenium_page_result.png"></p>
+
+<p><img src="/images/selenium/selenium_code_result.png"></p>
+
+<h3>3.3 注意点</h3>
+
+<p>一些Selenuim的注意点，持续补充中：</p>
+
+<pre><code>(1).Selenium默认状态下只支持Firefox，支持Chrome和IE需要安装插件;
+</code></pre>
+
+<h1>4.参考</h1>
+
+<p><a href="http://code.google.com/p/selenium/">http://code.google.com/p/selenium/</a></p>
+
+<p><a href="https://www.ibm.com/developerworks/cn/java/wa-selenium-ajax/">https://www.ibm.com/developerworks/cn/java/wa-selenium-ajax/</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -5765,1348 +6656,6 @@ getSessionByHash的逻辑其实就是在Hash环上找第一个大于key对应has
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/10/15/memcachednei-cun-cun-chu/">Memcached内存存储</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-10-15T18:13:49+08:00'><span class='date'><span class='date-month'>Oct</span> <span class='date-day'>15</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>6:13 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>早就听说过Memcached独特的内存管理方式,写着篇文章的目的就是了解Memcached的内存管理,学习其源代码.</p>
-
-<h1>1.什么是Slab Allocator</h1>
-
-<p>memcached默认情况下采用了名为Slab Allocator的机制分配、管理内存，Slab Allocator的基本原理是按照预先规定的大小，将分配的内存分割成特定长度的块，以期望完全解决内存碎片问题。而且，slab allocator还有重复使用已分配的内存的目的。 也就是说，分配到的内存不会释放，而是重复利用。</p>
-
-<p><img src="/images/memcached/memcached-slab.png"></p>
-
-<h1>2.Slab Allocation的主要术语</h1>
-
-<pre><code>Page        分配给Slab的内存空间,默认是1MB,分配给Slab之后根据slab的大小切分成chunk
-Chunk       用于缓存记录的内存空间
-Slab Class  特定大小的chunk的组
-</code></pre>
-
-<p><img src="/images/memcached/memcached-slab-page.png"></p>
-
-<h1>3.Slab初始化</h1>
-
-<p>在Memcached启动时候会调用slab的初始化代码(详见memcached.c中main函数调用slabs_init函数).</p>
-
-<p>slabs_init函数声明:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/** Init the subsystem. 1st argument is the limit on no. of bytes to allocate,</span>
-</span><span class='line'><span class="cm">    0 if no limit. 2nd argument is the growth factor; each slab will use a chunk</span>
-</span><span class='line'><span class="cm">    size equal to the previous slab&#39;s chunk size times this factor.</span>
-</span><span class='line'><span class="cm">    3rd argument specifies if the slab allocator should allocate all memory</span>
-</span><span class='line'><span class="cm">    up front (if true), or allocate memory in chunks as it is needed (if false)</span>
-</span><span class='line'><span class="cm">*/</span>
-</span><span class='line'><span class="kt">void</span> <span class="nf">slabs_init</span><span class="p">(</span><span class="k">const</span> <span class="kt">size_t</span> <span class="n">limit</span><span class="p">,</span> <span class="k">const</span> <span class="kt">double</span> <span class="n">factor</span><span class="p">,</span> <span class="k">const</span> <span class="kt">bool</span> <span class="n">prealloc</span><span class="p">);</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中limit表示memcached最大使用内存;factor表示slab中chunk size的增长因子,slab中chunk size的大小等于前一个slab的chunk size乘以factor;</p>
-
-<p>memcached.c中main函数调用slabs_init函数:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">slabs_init</span><span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">maxbytes</span><span class="p">,</span> <span class="n">settings</span><span class="p">.</span><span class="n">factor</span><span class="p">,</span> <span class="n">preallocate</span><span class="p">);</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中settings.maxbytes默认值为64M,启动memcached使用选项-m设置;settings.factor默认为1.25,启动memcached时候使用-f设置;preallocate指的是启动memcached的时候默认为每种类型slab预先分配一个page的内存,默认是false;</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">settings</span><span class="p">.</span><span class="n">maxbytes</span> <span class="o">=</span> <span class="mi">64</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">;</span> <span class="cm">/* default is 64MB */</span>
-</span><span class='line'><span class="p">...</span>
-</span><span class='line'><span class="n">settings</span><span class="p">.</span><span class="n">factor</span> <span class="o">=</span> <span class="mf">1.25</span><span class="p">;</span>
-</span><span class='line'><span class="p">...</span>
-</span><span class='line'><span class="n">preallocate</span> <span class="o">=</span> <span class="nb">false</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>slabs_init函数实现:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/**</span>
-</span><span class='line'><span class="cm"> * Determines the chunk sizes and initializes the slab class descriptors</span>
-</span><span class='line'><span class="cm"> * accordingly.</span>
-</span><span class='line'><span class="cm"> */</span>
-</span><span class='line'><span class="kt">void</span> <span class="nf">slabs_init</span><span class="p">(</span><span class="k">const</span> <span class="kt">size_t</span> <span class="n">limit</span><span class="p">,</span> <span class="k">const</span> <span class="kt">double</span> <span class="n">factor</span><span class="p">,</span> <span class="k">const</span> <span class="kt">bool</span> <span class="n">prealloc</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="n">POWER_SMALLEST</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
-</span><span class='line'>    <span class="c1">//真实占用大小=对象大小+48</span>
-</span><span class='line'>    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">size</span> <span class="o">=</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="o">+</span> <span class="n">settings</span><span class="p">.</span><span class="n">chunk_size</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">mem_limit</span> <span class="o">=</span> <span class="n">limit</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//开启预分配,则首先将limit大小(默认64M)的内存全部申请</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">prealloc</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="cm">/* Allocate everything in a big chunk with malloc */</span>
-</span><span class='line'>        <span class="n">mem_base</span> <span class="o">=</span> <span class="n">malloc</span><span class="p">(</span><span class="n">mem_limit</span><span class="p">);</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">mem_base</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">mem_current</span> <span class="o">=</span> <span class="n">mem_base</span><span class="p">;</span>
-</span><span class='line'>            <span class="n">mem_avail</span> <span class="o">=</span> <span class="n">mem_limit</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Warning: Failed to allocate requested memory in&quot;</span>
-</span><span class='line'>                    <span class="s">&quot; one large chunk.</span><span class="se">\n</span><span class="s">Will allocate in smaller chunks</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//清空所有的slab</span>
-</span><span class='line'>    <span class="n">memset</span><span class="p">(</span><span class="n">slabclass</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">slabclass</span><span class="p">));</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">while</span> <span class="p">(</span><span class="o">++</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">POWER_LARGEST</span> <span class="o">&amp;&amp;</span> <span class="n">size</span> <span class="o">&lt;=</span> <span class="n">settings</span><span class="p">.</span><span class="n">item_size_max</span> <span class="o">/</span> <span class="n">factor</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="cm">/* Make sure items are always n-byte aligned */</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">size</span> <span class="o">%</span> <span class="n">CHUNK_ALIGN_BYTES</span><span class="p">)</span>
-</span><span class='line'>            <span class="n">size</span> <span class="o">+=</span> <span class="n">CHUNK_ALIGN_BYTES</span> <span class="o">-</span> <span class="p">(</span><span class="n">size</span> <span class="o">%</span> <span class="n">CHUNK_ALIGN_BYTES</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">size</span> <span class="o">=</span> <span class="n">size</span><span class="p">;</span>
-</span><span class='line'>        <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">perslab</span> <span class="o">=</span> <span class="n">settings</span><span class="p">.</span><span class="n">item_size_max</span> <span class="o">/</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">size</span><span class="p">;</span>
-</span><span class='line'>        <span class="n">size</span> <span class="o">*=</span> <span class="n">factor</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">verbose</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;slab class %3d: chunk size %9u perslab %7u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
-</span><span class='line'>                    <span class="n">i</span><span class="p">,</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">size</span><span class="p">,</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">perslab</span><span class="p">);</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//最大chunksize的一个slab,chunksize为settings.item_size_max(默认1M)</span>
-</span><span class='line'>    <span class="n">power_largest</span> <span class="o">=</span> <span class="n">i</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">slabclass</span><span class="p">[</span><span class="n">power_largest</span><span class="p">].</span><span class="n">size</span> <span class="o">=</span> <span class="n">settings</span><span class="p">.</span><span class="n">item_size_max</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">slabclass</span><span class="p">[</span><span class="n">power_largest</span><span class="p">].</span><span class="n">perslab</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">verbose</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;slab class %3d: chunk size %9u perslab %7u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
-</span><span class='line'>                <span class="n">i</span><span class="p">,</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">size</span><span class="p">,</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">perslab</span><span class="p">);</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//记录已分配的空间大小</span>
-</span><span class='line'>    <span class="cm">/* for the test suite:  faking of how much we&#39;ve already malloc&#39;d */</span>
-</span><span class='line'>    <span class="p">{</span>
-</span><span class='line'>        <span class="kt">char</span> <span class="o">*</span><span class="n">t_initial_malloc</span> <span class="o">=</span> <span class="n">getenv</span><span class="p">(</span><span class="s">&quot;T_MEMD_INITIAL_MALLOC&quot;</span><span class="p">);</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">t_initial_malloc</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">mem_malloced</span> <span class="o">=</span> <span class="p">(</span><span class="kt">size_t</span><span class="p">)</span><span class="n">atol</span><span class="p">(</span><span class="n">t_initial_malloc</span><span class="p">);</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//开启了预分配,则为每种slab都分配一个page的空间</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">prealloc</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">slabs_preallocate</span><span class="p">(</span><span class="n">power_largest</span><span class="p">);</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中settings.chunk_size默认为48:</p>
-
-<pre><code>settings.chunk_size = 48;         /* space for a modest key and value */
-</code></pre>
-
-<p>POWER_LARGEST指slab种类的最大值,默认只为200,在memcached.c中设置</p>
-
-<pre><code>#define POWER_LARGEST  200
-</code></pre>
-
-<p>settings.item_size_max就是每个page的大小,默认1M,在memcached.c中初始化:</p>
-
-<pre><code>settings.item_size_max = 1024 * 1024; /* The famous 1MB upper limit. */
-</code></pre>
-
-<p>默认不开启预分配,因为很多时候Memcached只存储一种类型的数据(即其大小相对比较固定),这时候其他类型的预分配的slab空间就会浪费.</p>
-
-<p>预分配的逻辑就是从最小的slab开始,为每类slab分配一个Page大小的空间(空间不足时停止分配):</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">slabs_preallocate</span> <span class="p">(</span><span class="k">const</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">maxslabs</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">i</span><span class="p">;</span>
-</span><span class='line'>    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">prealloc</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/* pre-allocate a 1MB slab in every size class so people don&#39;t get</span>
-</span><span class='line'><span class="cm">       confused by non-intuitive &quot;SERVER_ERROR out of memory&quot;</span>
-</span><span class='line'><span class="cm">       messages.  this is the most common question on the mailing</span>
-</span><span class='line'><span class="cm">       list.  if you really don&#39;t want this, you can rebuild without</span>
-</span><span class='line'><span class="cm">       these three lines.  */</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="n">POWER_SMALLEST</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;=</span> <span class="n">POWER_LARGEST</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="o">++</span><span class="n">prealloc</span> <span class="o">&gt;</span> <span class="n">maxslabs</span><span class="p">)</span>
-</span><span class='line'>            <span class="k">return</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">do_slabs_newslab</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Error while preallocating slab memory!</span><span class="se">\n</span><span class="s">&quot;</span>
-</span><span class='line'>                <span class="s">&quot;If using -L or other prealloc options, max memory must be &quot;</span>
-</span><span class='line'>                <span class="s">&quot;at least %d megabytes.</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">power_largest</span><span class="p">);</span>
-</span><span class='line'>            <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>do_slabs_newslab的工作就是为某一个slab分配空间,并将空间划分乘固定大小的chunk:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">do_slabs_newslab</span><span class="p">(</span><span class="k">const</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">id</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">slabclass_t</span> <span class="o">*</span><span class="n">p</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">slabclass</span><span class="p">[</span><span class="n">id</span><span class="p">];</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">len</span> <span class="o">=</span> <span class="n">settings</span><span class="p">.</span><span class="n">slab_reassign</span> <span class="o">?</span> <span class="n">settings</span><span class="p">.</span><span class="nl">item_size_max</span>
-</span><span class='line'>        <span class="p">:</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span> <span class="o">*</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">perslab</span><span class="p">;</span>
-</span><span class='line'>    <span class="kt">char</span> <span class="o">*</span><span class="n">ptr</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">if</span> <span class="p">((</span><span class="n">mem_limit</span> <span class="o">&amp;&amp;</span> <span class="n">mem_malloced</span> <span class="o">+</span> <span class="n">len</span> <span class="o">&gt;</span> <span class="n">mem_limit</span> <span class="o">&amp;&amp;</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">slabs</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">||</span>
-</span><span class='line'>        <span class="p">(</span><span class="n">grow_slab_list</span><span class="p">(</span><span class="n">id</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="o">||</span>
-</span><span class='line'>        <span class="p">((</span><span class="n">ptr</span> <span class="o">=</span> <span class="n">memory_allocate</span><span class="p">((</span><span class="kt">size_t</span><span class="p">)</span><span class="n">len</span><span class="p">))</span> <span class="o">==</span> <span class="mi">0</span><span class="p">))</span> <span class="p">{</span>  <span class="c1">//申请内存</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="n">MEMCACHED_SLABS_SLABCLASS_ALLOCATE_FAILED</span><span class="p">(</span><span class="n">id</span><span class="p">);</span>
-</span><span class='line'>        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">memset</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">(</span><span class="kt">size_t</span><span class="p">)</span><span class="n">len</span><span class="p">);</span>
-</span><span class='line'>    <span class="c1">//将内存划分乘chunk</span>
-</span><span class='line'>    <span class="n">split_slab_page_into_freelist</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">id</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//维护slab链表</span>
-</span><span class='line'>    <span class="n">p</span><span class="o">-&gt;</span><span class="n">slab_list</span><span class="p">[</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">slabs</span><span class="o">++</span><span class="p">]</span> <span class="o">=</span> <span class="n">ptr</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">mem_malloced</span> <span class="o">+=</span> <span class="n">len</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">MEMCACHED_SLABS_SLABCLASS_ALLOCATE</span><span class="p">(</span><span class="n">id</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>split_slab_page_into_freelist的主要控制就是Page划分乘chunk并清空:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">split_slab_page_into_freelist</span><span class="p">(</span><span class="kt">char</span> <span class="o">*</span><span class="n">ptr</span><span class="p">,</span> <span class="k">const</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">id</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">slabclass_t</span> <span class="o">*</span><span class="n">p</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">slabclass</span><span class="p">[</span><span class="n">id</span><span class="p">];</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">x</span><span class="p">;</span>
-</span><span class='line'>    <span class="k">for</span> <span class="p">(</span><span class="n">x</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">x</span> <span class="o">&lt;</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">perslab</span><span class="p">;</span> <span class="n">x</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">do_slabs_free</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">id</span><span class="p">);</span>
-</span><span class='line'>        <span class="n">ptr</span> <span class="o">+=</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">;</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>memcached的内存分配策略就是：按slab需求分配page,各slab按需使用chunk存储.</p>
-
-<p>按需分配的意思就是某一类slab没有对象可存,就不会分配(非preallocate模式),某类slab存储对象很多,就会分配多个slab形成链表.</p>
-
-<p>这里有几个特点要注意:</p>
-
-<pre><code>1.Memcached分配出去的page不会被回收或者重新分配;
-2.Memcached申请的内存不会被释放;
-3.slab空闲的chunk不会借给任何其他slab使用(新版本memcached有slab_reassign,slab_automove的功能);
-</code></pre>
-
-<p>slab内存结构图,二维数组链表:</p>
-
-<p><img src="/images/memcached/memcached_slab_alloct.jpg"></p>
-
-<h1>4.往Slab中缓存记录</h1>
-
-<p>memcached根据收到的数据的大小,选择最适合数据大小的slab.
-memcached中保存着slab内空闲chunk的列表,根据该列表选择chunk,
-然后将数据缓存于其中.</p>
-
-<p><img src="/images/memcached/memcached-slab-save.png"></p>
-
-<p>代码如下:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/*</span>
-</span><span class='line'><span class="cm"> * Figures out which slab class (chunk size) is required to store an item of</span>
-</span><span class='line'><span class="cm"> * a given size.</span>
-</span><span class='line'><span class="cm"> *</span>
-</span><span class='line'><span class="cm"> * Given object size, return id to use when allocating/freeing memory for object</span>
-</span><span class='line'><span class="cm"> * 0 means error: can&#39;t store such a large object</span>
-</span><span class='line'><span class="cm"> */</span>
-</span><span class='line'><span class="kt">unsigned</span> <span class="kt">int</span> <span class="nf">slabs_clsid</span><span class="p">(</span><span class="k">const</span> <span class="kt">size_t</span> <span class="n">size</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">res</span> <span class="o">=</span> <span class="n">POWER_SMALLEST</span><span class="p">;</span>   <span class="c1">//最小slab编号</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
-</span><span class='line'>        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>    <span class="k">while</span> <span class="p">(</span><span class="n">size</span> <span class="o">&gt;</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">res</span><span class="p">].</span><span class="n">size</span><span class="p">)</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">res</span><span class="o">++</span> <span class="o">==</span> <span class="n">power_largest</span><span class="p">)</span>     <span class="cm">/* won&#39;t fit in the biggest slab */</span>
-</span><span class='line'>            <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>    <span class="k">return</span> <span class="n">res</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参数是待存储对象的大小,根据这个大小,从最小的Chunk Size开始查找,找到第一个(即最小的)能放下size大小的对象的Chunk.找不到(size大于最大的Chunk Size)返回0(这就是为什么slab class从1开始而不是从0开始).</p>
-
-<p>如果某个Slab没有剩余的Chunk了，系统便会给这个Slab分配一个新的Page以供使用，如果没有Page可用，系统就会触发LRU机制，通过删除冷数据来为新数据腾出空间，这里有一点需要注意的是：LRU不是全局的，而是针对Slab而言的.</p>
-
-<p>slab内存分配示例:</p>
-
-<p><img src="/images/memcached/memcached_slab_ins.jpg"></p>
-
-<h1>5.Slab Allocator的缺点</h1>
-
-<p>由于Slab Allocator分配的是特定长度的内存，因此无法有效利用分配的内存。 例如，将100字节的数据缓存到128字节的chunk中，剩余的28字节就浪费了。</p>
-
-<p><img src="/images/memcached/memcached-slab-disadvantage.png"></p>
-
-<h1>6.Memcached减少内存浪费</h1>
-
-<h3>4.1:调整growth factor</h3>
-
-<pre><code>(1).估算我们item的大小
-key键长＋suffix+value值长＋结构大小(48字节)
-(2).逐步调整growth factor,使得某个slab的大小和我们的item大小接近(必须大于我们item的大小)
-</code></pre>
-
-<h1>7.过期数据</h1>
-
-<pre><code>(1).LRU过期策略;
-(2).在slab级别上执行LRU策略;
-(3).查看是否过去是在get的时候,即懒惰(lazy)检查;
-</code></pre>
-
-<h1>8.memcached-tool脚本</h1>
-
-<p>memcached-tool脚本可以方便地获得slab的使用情况 （它将memcached的返回值整理成容易阅读的格式）,可以从下面的地址获得脚本:
-<a href="http://www.netingcn.com/demo/memcached-tool.zip">http://www.netingcn.com/demo/memcached-tool.zip</a></p>
-
-<p>使用方法也极其简单：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="nl">server_ip</span><span class="p">:</span><span class="n">prot</span> <span class="n">option</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>比如:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="mf">10.0.0.5</span><span class="o">:</span><span class="mi">11211</span> <span class="n">display</span>    <span class="err">#</span> <span class="n">shows</span> <span class="n">slabs</span>
-</span><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="mf">10.0.0.5</span><span class="o">:</span><span class="mi">11211</span>            <span class="err">#</span> <span class="n">same</span><span class="p">.</span>  <span class="p">(</span><span class="k">default</span> <span class="n">is</span> <span class="n">display</span><span class="p">)</span>
-</span><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="mf">10.0.0.5</span><span class="o">:</span><span class="mi">11211</span> <span class="n">stats</span>      <span class="err">#</span> <span class="n">shows</span> <span class="n">general</span> <span class="n">stats</span>
-</span><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="mf">10.0.0.5</span><span class="o">:</span><span class="mi">11211</span> <span class="n">move</span> <span class="mi">7</span> <span class="mi">9</span>   <span class="err">#</span> <span class="n">takes</span> <span class="mi">1</span><span class="n">MB</span> <span class="n">slab</span> <span class="n">from</span> <span class="n">class</span> <span class="err">#</span><span class="mi">7</span>
-</span><span class='line'>                                              <span class="cp"># to class #9.</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>输出示例:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cp">#  Item_Size   Max_age  1MB_pages Count   Full?</span>
-</span><span class='line'> <span class="mi">1</span>     <span class="mi">104</span> <span class="n">B</span>  <span class="mi">1394292</span> <span class="n">s</span>    <span class="mi">1215</span> <span class="mi">12249628</span>    <span class="n">yes</span>
-</span><span class='line'> <span class="mi">2</span>     <span class="mi">136</span> <span class="n">B</span>  <span class="mi">1456795</span> <span class="n">s</span>      <span class="mi">52</span>  <span class="mi">400919</span>     <span class="n">yes</span>
-</span><span class='line'> <span class="p">...</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>各列的含义为：</p>
-
-<pre><code>#           slab class编号
-Item_Size   Chunk大小
-Max_age     LRU内最旧的记录的生存时间
-1MB_pages   分配给Slab的页数
-Count       Slab内的记录数
-Full?       Slab内是否含有空闲chunk
-</code></pre>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/09/23/memcached/">Memcached</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-09-23T00:08:56+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2014</span></span> <span class='time'>12:08 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近项目中的图片上传那块带来很大麻烦,原因是因为业务逻辑的问题,会导致统一张图片上传很多次(平均5次上传有4次是重复的),导致图片服务器压力很大.</p>
-
-<p>直观想法是使用KV缓存,第一个想到的是Memcached.</p>
-
-<p>其实很长时间之前就学习过一段时间的Memcached,但是一致没有整理,趁这次机会,整理一下Memcached相关的知识.</p>
-
-<h1>1.Memcached是什么</h1>
-
-<p>Memcached官方:<a href="http://memcached.org/">http://memcached.org/</a></p>
-
-<p>Memcached wiki:<a href="http://code.google.com/p/memcached/wiki/NewStart">http://code.google.com/p/memcached/wiki/NewStart</a></p>
-
-<p>Memcached是一个免费的开源的,高性能的,分布式的内存KV(key-value)缓存系统,一般通过缓解数据库压力来达到加速动态Web应用程序的目的.可以存储任意类型的小数据块,比如数据库查询结果,接口调用结果等.</p>
-
-<p>Memcached可以称之为简单高效.它简单的设计保证了快速发布,使用者开发简单,面临大量数据缓存的时候能够解决很多问题.同时提供了绝大多数流行语言的API接口.</p>
-
-<p>许多Web应用都将数据保存到RDBMS中，应用服务器从中读取数据并在浏览器中显示。 但随着数据量的增大、访问的集中，就会出现RDBMS的负担加重、数据库响应恶化、 网站显示延迟等重大影响。</p>
-
-<p>这时就该memcached大显身手了。一般的使用目的是，通过缓存数据库查询结果，减少数据库访问次数，以提高动态Web应用的速度、提高可扩展性。</p>
-
-<p><img src="/images/memcached/usage.png"></p>
-
-<h1>2.Memcached特性</h1>
-
-<p>memcached作为高速运行的分布式缓存服务器，具有以下的特点:
-1. 协议简单
-2. 基于libevent的事件处理
-3. 内置内存存储方式
-4. memcached不互相通信的分布式
-下面分别介绍.</p>
-
-<h3>2.1协议简单</h3>
-
-<p>Memcached使用简单的基于文本行的协议。因此，通过telnet 也能在memcached上保存数据、取得数据。如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
-</span><span class='line'>Trying 127.0.0.1...
-</span><span class='line'>Connected to 127.0.0.1.
-</span><span class='line'>Escape character is '^]'.
-</span><span class='line'>add myid 1 0 4
-</span><span class='line'>1234
-</span><span class='line'>STORED
-</span><span class='line'>get myid
-</span><span class='line'>VALUE myid 1 4
-</span><span class='line'>1234
-</span><span class='line'>END</span></code></pre></td></tr></table></div></figure>
-
-
-<p>协议文档位于memcached的源代码内,可以参考:
-<a href="https://github.com/memcached/memcached/blob/master/doc/protocol.txt">https://github.com/memcached/memcached/blob/master/doc/protocol.txt</a></p>
-
-<h3>2.2基于libevent的事件处理</h3>
-
-<p>libevent是个程序库，它将Linux的epoll、BSD类操作系统的kqueue等事件处理功能
-封装成统一的接口。即使对服务器的连接数增加，也能发挥O(1)的性能。 memcached使用这个libevent库，因此能在Linux、BSD、Solaris等操作系统上发挥其高性能。</p>
-
-<p>关于libevent参考:
-<a href="http://libevent.org/">http://libevent.org/</a>
-<a href="http://www.kegel.com/c10k.html">http://www.kegel.com/c10k.html</a></p>
-
-<h3>2.3内置内存存储方式</h3>
-
-<p>为了提高性能，memcached中保存的数据都存储在memcached内置的内存存储空间中。由于数据仅存在于内存中，因此重启memcached、重启操作系统会导致全部数据消失。另外，内容容量达到指定值之后，就基于LRU(Least Recently Used)算法自动删除不使用的缓存。</p>
-
-<p>memcached本身是为缓存而设计的服务器，因此并没有过多考虑数据的永久性问题。</p>
-
-<h3>2.4memcached不互相通信的分布式</h3>
-
-<p>memcached虽然号称“分布式”缓存服务器，但服务器端并没有分布式功能。
-各个memcached不会互相通信以共享信息。那么，怎样进行分布式呢？ 这完全取决于客户端的实现。</p>
-
-<p><img src="/images/memcached/client.png"></p>
-
-<h1>3.Memcached安装</h1>
-
-<p>所有可下载版本见:
-<a href="http://code.google.com/p/memcached/wiki/ReleaseNotes">http://code.google.com/p/memcached/wiki/ReleaseNotes</a></p>
-
-<p>直接按照官网安装就可以,下面直接安装最新的版本,需要已经安装了libevent:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>wget http://memcached.org/latest
-</span><span class='line'>tar -zxvf memcached-1.x.x.tar.gz
-</span><span class='line'>cd memcached-1.x.x
-</span><span class='line'>./configure && make && make test && sudo make install</span></code></pre></td></tr></table></div></figure>
-
-
-<p>memcached的命令参数见-h,从中也可以看出memcached的版本:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ memcached -h
-</span><span class='line'>memcached 1.4.14
-</span><span class='line'>-p &lt;num&gt;      TCP监听端口TCP(默认: 11211)
-</span><span class='line'>-U &lt;num&gt;      UDP监听端口TCP(默认: 11211, 0表示关闭)
-</span><span class='line'>-s &lt;file&gt;     用于监听的UNIX套接字路径（禁用网络支持）
-</span><span class='line'>-a &lt;mask&gt;     UNIX套接字访问掩码，八进制数字(default: 0700)
-</span><span class='line'>-l &lt;addr&gt;     监听的IP地址(默认：INADDR_ANY，所有地址), &lt;addr&gt; 形如host:port.
-</span><span class='line'>-d            以守护进程(daemon)形式运行
-</span><span class='line'>-r            最大核心文件(core file)限制
-</span><span class='line'>-u &lt;username&gt; 设定进程所属用户（只有root用户可以使用这个参数）
-</span><span class='line'>-m &lt;num&gt;      最大使用内存,单位MB(默认: 64 MB)
-</span><span class='line'>-M            当内存耗尽时候返回错误 (而不是移除过期项)
-</span><span class='line'>-c &lt;num&gt;      并发连接的最大数目(默认: 1024)
-</span><span class='line'>-k            锁定所有内存页。注意你可以锁定的内存是有上限的.
-</span><span class='line'>              试图分配更多内存会失败的，所以留意启动守护进程时所用的用户可分配的内存上限(不是前面的 -u &lt;username&gt; 参数；在sh下，使用命令"ulimit -S -l NUM_KB"来设置).
-</span><span class='line'>-v            提示信息（在事件循环中打印错误/警告信息）
-</span><span class='line'>-vv           详细信息（还打印客户端命令/响应）
-</span><span class='line'>-vvv          超详细信息（还打印内部状态的变化）
-</span><span class='line'>-h            帮助信息
-</span><span class='line'>-i            打印memcached版本和libevent版本
-</span><span class='line'>-P &lt;file&gt;     将进程id保存在文件中,只在-d选项下有效
-</span><span class='line'>-f &lt;factor&gt;   块大小增长因子(默认: 1.25)
-</span><span class='line'>-n &lt;bytes&gt;    chunk(key+value+flags)的最小空间 (默认: 48)
-</span><span class='line'>              (chunk数据结构本身需要消耗48个字节，所以一个chunk实际消耗的内存是n+48)
-</span><span class='line'>-L            尝试使用大内存页(如果可以的话). 增加内存页大小能够减少页表缓冲(TLB)
-</span><span class='line'>              丢失次数,提高效率.为了从操作系统获取大内存页,memcached会把全部数据项分配到一个大区块
-</span><span class='line'>-D &lt;char&gt;     使用 &lt;char&gt; 作为前缀和ID的分隔符.
-</span><span class='line'>              这个用于按前缀获得状态报告。默认是":"（冒号）.
-</span><span class='line'>              如果指定了这个参数，则状态收集会自动开启；如果没指定，则需要用命令"stats detail on"来开启。
-</span><span class='line'>-t &lt;num&gt;      使用的线程数目 (默认: 4)
-</span><span class='line'>-R            每个事件的最大请求数目,即每个连接处理的最大请求数目(默认: 20)
-</span><span class='line'>-C            禁用CAS
-</span><span class='line'>-b            设置积压队列(backlog queue)的最大限制(默认: 1024)
-</span><span class='line'>-B            绑定协议,可选值：ascii,binary,auto（默认）
-</span><span class='line'>-I            重写每个数据页尺寸。调整数据项最大尺寸(默认: 1mb, min: 1k, max: 128m)
-</span><span class='line'>-S            Turn on Sasl authentication
-</span><span class='line'>-o            Comma separated list of extended or experimental options
-</span><span class='line'>              - (EXPERIMENTAL) maxconns_fast: immediately close new
-</span><span class='line'>                connections if over maxconns limit
-</span><span class='line'>              - hashpower: An integer multiplier for how large the hash
-</span><span class='line'>                table should be. Can be grown at runtime if not big enough.
-</span><span class='line'>                Set this based on "STAT hash_power_level" before a 
-</span><span class='line'>                restart.</span></code></pre></td></tr></table></div></figure>
-
-
-<p>启动memcached时候可以带上这些选项,启动memcached:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ memcached -d</span></code></pre></td></tr></table></div></figure>
-
-
-<p>需要注意的是,还有一个memcached.conf文件存在(通过whereis memcached可以看得到),他是memcached默认的配置参数,其内容就是我们上面介绍的memcached启动参数,我的文件如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># memcached default config file
-</span><span class='line'># 2003 - Jay Bonci &lt;jaybonci@debian.org&gt;
-</span><span class='line'># This configuration file is read by the start-memcached script provided as
-</span><span class='line'># part of the Debian GNU/Linux distribution. 
-</span><span class='line'>
-</span><span class='line'># Run memcached as a daemon. This command is implied, and is not needed for the
-</span><span class='line'># daemon to run. See the README.Debian that comes with this package for more
-</span><span class='line'># information.
-</span><span class='line'># 以守护进程的形似运行
-</span><span class='line'>-d
-</span><span class='line'>
-</span><span class='line'># Log memcached's output to /var/log/memcached
-</span><span class='line'># 日志文件存放位置
-</span><span class='line'>logfile /var/log/memcached.log
-</span><span class='line'>
-</span><span class='line'># Be verbose
-</span><span class='line'># -v
-</span><span class='line'>
-</span><span class='line'># Be even more verbose (print client commands as well)
-</span><span class='line'># -vv
-</span><span class='line'>
-</span><span class='line'># Start with a cap of 64 megs of memory. It's reasonable, and the daemon default
-</span><span class='line'># Note that the daemon will grow to this size, but does not start out holding this much
-</span><span class='line'># memory
-</span><span class='line'># 分配给mencached的内存数目，单位是MB
-</span><span class='line'>-m 256
-</span><span class='line'>
-</span><span class='line'># Default connection port is 11211
-</span><span class='line'># Memcached的监听端口
-</span><span class='line'>-p 11211
-</span><span class='line'>
-</span><span class='line'># Run the daemon as root. The start-memcached will default to running as root if no
-</span><span class='line'># -u command is present in this config file
-</span><span class='line'># 允许memcached的用户
-</span><span class='line'>-u memcache
-</span><span class='line'>
-</span><span class='line'># Specify which IP address to listen on. The default is to listen on all IP addresses
-</span><span class='line'># This parameter is one of the only security measures that memcached has, so make sure
-</span><span class='line'># it's listening on a firewalled interface.
-</span><span class='line'># 监听的服务器IP地址
-</span><span class='line'>-l 127.0.0.1
-</span><span class='line'>
-</span><span class='line'># Limit the number of simultaneous incoming connections. The daemon default is 1024
-</span><span class='line'># -c 1024
-</span><span class='line'>
-</span><span class='line'># Lock down all paged memory. Consult with the README and homepage before you do this
-</span><span class='line'># -k
-</span><span class='line'>
-</span><span class='line'># Return error when memory is exhausted (rather than removing items)
-</span><span class='line'># -M
-</span><span class='line'>
-</span><span class='line'># Maximize core file limit
-</span><span class='line'># -r</span></code></pre></td></tr></table></div></figure>
-
-
-<p>我们启动memecached默认会带上这个文件的参数,可以通过ps命令看我们memcached启动的参数:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ ps -ef | grep memcached
-</span><span class='line'>memcache  1241     1  0 10:38 ?        00:00:00 /usr/bin/memcached -m 256 -p 11211 -u memcache -l 127.0.0.1</span></code></pre></td></tr></table></div></figure>
-
-
-<p>可以使用telnet连接上memcached,之后就可以输入memcached的命令了:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
-</span><span class='line'>Trying 127.0.0.1...
-</span><span class='line'>Connected to 127.0.0.1.
-</span><span class='line'>Escape character is '^]'.</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.Memcached命令</h1>
-
-<p>介绍Memcached的常用命令,不断补充中,官方文档参考:
-<a href="https://code.google.com/p/memcached/wiki/NewCommands">https://code.google.com/p/memcached/wiki/NewCommands</a>
-按照命令左右,简单分为存储,删除,自增自减,读取和状态四类命令</p>
-
-<h3>4.1存储命令</h3>
-
-<p>命令:add set replace
-格式:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;command name&gt; &lt;key&gt; &lt;flags&gt; &lt;exptime&gt; &lt;bytes&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;data block&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中参数command name指操作命令,即set/add/replace;key指缓存的键值;flags指客户机使用它存储关于键值对的额外信息,exptime缓存过期时间,单位为秒,0表示永远存储;bytes缓存值的字节数;data block指数据块.</p>
-
-<h5>(1).set:无论如何都添加或更新的命令(key不存在则添加,存在则更新)</h5>
-
-<p>下面的示例包含了key存在和不存在两种情况:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
-</span><span class='line'>Trying 127.0.0.1...
-</span><span class='line'>Connected to 127.0.0.1.
-</span><span class='line'>Escape character is '^]'.
-</span><span class='line'>set name 0 0 11
-</span><span class='line'>baoqiu.xiao
-</span><span class='line'>STORED
-</span><span class='line'>get name
-</span><span class='line'>VALUE name 0 11
-</span><span class='line'>baoqiu.xiao
-</span><span class='line'>END
-</span><span class='line'>set name 0 0 9 
-</span><span class='line'>memcached
-</span><span class='line'>STORED
-</span><span class='line'>get name
-</span><span class='line'>VALUE name 0 9
-</span><span class='line'>memcached
-</span><span class='line'>END</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>(2).add:只有数据不存在时添加值的add命令</h5>
-
-<p>已经存在的key是不能再add</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
-</span><span class='line'>Trying 127.0.0.1...
-</span><span class='line'>Connected to 127.0.0.1.
-</span><span class='line'>Escape character is '^]'.
-</span><span class='line'>add sex 0 0 1
-</span><span class='line'>f
-</span><span class='line'>STORED
-</span><span class='line'>add sex 0 0 1
-</span><span class='line'>m
-</span><span class='line'>NOT_STORED</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>(3).replace:只有数据存在时替换的replace命令</h5>
-
-<p>只有存在才能replace:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
-</span><span class='line'>Trying 127.0.0.1...
-</span><span class='line'>Connected to 127.0.0.1.
-</span><span class='line'>Escape character is '^]'.
-</span><span class='line'>replace host 0 0 9
-</span><span class='line'>localhost
-</span><span class='line'>NOT_STORED
-</span><span class='line'>add host 0 0 9
-</span><span class='line'>127.0.0.1
-</span><span class='line'>STORED
-</span><span class='line'>get host
-</span><span class='line'>VALUE host 0 9
-</span><span class='line'>127.0.0.1
-</span><span class='line'>END
-</span><span class='line'>replace host 0 0 9
-</span><span class='line'>localhost
-</span><span class='line'>STORED
-</span><span class='line'>get host 
-</span><span class='line'>VALUE host 0 9
-</span><span class='line'>localhost
-</span><span class='line'>END</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>4.2删除命令</h3>
-
-<h5>(1).delete:删除已经存在的数据</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
-</span><span class='line'>Trying 127.0.0.1...
-</span><span class='line'>Connected to 127.0.0.1.
-</span><span class='line'>Escape character is '^]'.
-</span><span class='line'>delete unknow
-</span><span class='line'>NOT_FOUND
-</span><span class='line'>add unknow 0 0 6
-</span><span class='line'>unknow
-</span><span class='line'>STORED
-</span><span class='line'>delete unknow
-</span><span class='line'>DELETED</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>4.3自增自减命令</h3>
-
-<p>incr和decr命令,注意只能在数字类型上进行自增自减操作</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
-</span><span class='line'>Trying 127.0.0.1...
-</span><span class='line'>Connected to 127.0.0.1.
-</span><span class='line'>Escape character is '^]'.
-</span><span class='line'>set age 2 0 2
-</span><span class='line'>25
-</span><span class='line'>STORED
-</span><span class='line'>incr age 1
-</span><span class='line'>26
-</span><span class='line'>incr age 3
-</span><span class='line'>29
-</span><span class='line'>decr age 2
-</span><span class='line'>27
-</span><span class='line'>set name 1 0 11
-</span><span class='line'>baoqiu.xiao
-</span><span class='line'>STORED
-</span><span class='line'>incr name 1
-</span><span class='line'>CLIENT_ERROR cannot increment or decrement non-numeric value</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>4.4读取命令</h3>
-
-<h5>(1).get:获取一条或者多条数据</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
-</span><span class='line'>Trying 127.0.0.1...
-</span><span class='line'>Connected to 127.0.0.1.
-</span><span class='line'>Escape character is '^]'.
-</span><span class='line'>add name 1 0 11
-</span><span class='line'>baoqiu.xiao
-</span><span class='line'>STORED
-</span><span class='line'>add age 2 0 2
-</span><span class='line'>25
-</span><span class='line'>STORED
-</span><span class='line'>get name age
-</span><span class='line'>VALUE name 1 11
-</span><span class='line'>baoqiu.xiao
-</span><span class='line'>VALUE age 2 2
-</span><span class='line'>25
-</span><span class='line'>END</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>(2).gets:获取一条或者多条数据</h5>
-
-<p>gets命令比get返回的值多一个数字(类似于版本号)用来判断数据是否发生过改变.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>gets name age
-</span><span class='line'>VALUE name 1 11 12
-</span><span class='line'>baoqiu.xiao
-</span><span class='line'>VALUE age 2 2 13
-</span><span class='line'>25
-</span><span class='line'>END</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>(3).cas:意思是check and set</h5>
-
-<p>只有当最后一个参数和gets获取的那个用来判断数据发生改变的那个值相同时才会存储成功，否则返回 exists.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
-</span><span class='line'>Trying 127.0.0.1...
-</span><span class='line'>Connected to 127.0.0.1.
-</span><span class='line'>Escape character is '^]'.
-</span><span class='line'>gets name
-</span><span class='line'>VALUE name 1 11 19
-</span><span class='line'>baoqiu.xiao
-</span><span class='line'>END
-</span><span class='line'>cas name 1 0 9 20
-</span><span class='line'>memcached
-</span><span class='line'>EXISTS
-</span><span class='line'>cas name 1 0 9 19
-</span><span class='line'>memcached
-</span><span class='line'>STORED</span></code></pre></td></tr></table></div></figure>
-
-
-<p>gets返回的版本参数为19,cas的最后一个参数必须为19才能设置成功.</p>
-
-<h3>4.5状态命令</h3>
-
-<h5>(1).stat:显示memcachd状态</h5>
-
-<p>包括使用的内存大小等关键信息,下面包含各个项的意义:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
-</span><span class='line'>Trying 127.0.0.1...
-</span><span class='line'>Connected to 127.0.0.1.
-</span><span class='line'>Escape character is '^]'.
-</span><span class='line'>stats
-</span><span class='line'>STAT pid 1241                   //memcached服务进程的进程ID
-</span><span class='line'>STAT uptime 24026               //memcached服务从启动到当前所经过的时间，单位是秒
-</span><span class='line'>STAT time 1411579124            //memcached服务器所在主机当前系统的时间，单位是秒
-</span><span class='line'>STAT version 1.4.14             //memcached组件的版本
-</span><span class='line'>STAT libevent 2.0.21-stable     //libevent版本
-</span><span class='line'>STAT pointer_size 64            //服务器所在主机操作系统的指针大小，一般为32或64
-</span><span class='line'>STAT rusage_user 0.404722       //进程累计使用用户时间
-</span><span class='line'>STAT rusage_system 0.313086     //进程累计使用系统时间
-</span><span class='line'>STAT curr_connections 5         //当前系统打开的连接数
-</span><span class='line'>STAT total_connections 21       //从memcached服务启动开始，系统打开过的连接总数
-</span><span class='line'>STAT connection_structures 6    //从memcached服务启动到现在，被服务器分配的连接结构数量
-</span><span class='line'>STAT reserved_fds 20            //
-</span><span class='line'>STAT cmd_get 15                 //累积get命令次数
-</span><span class='line'>STAT cmd_set 22                 //累积set命令次数
-</span><span class='line'>STAT cmd_flush 0                //累积flush命令次数
-</span><span class='line'>STAT cmd_touch 0                //
-</span><span class='line'>STAT get_hits 9                 //命中次数,即get成功的次数
-</span><span class='line'>STAT get_misses 6               //miss次数,即get失败的次数
-</span><span class='line'>STAT delete_misses 2            //delete miss次数
-</span><span class='line'>STAT delete_hits 5              //delete 命中次数
-</span><span class='line'>STAT incr_misses 0              //incr miss次数
-</span><span class='line'>STAT incr_hits 2                //incr 命中次数
-</span><span class='line'>STAT decr_misses 0              //decr miss次数
-</span><span class='line'>STAT decr_hits 1                //decr命中次数
-</span><span class='line'>STAT cas_misses 0               //cas命令miss的次数
-</span><span class='line'>STAT cas_hits 1                 //cas命令命中的次数
-</span><span class='line'>STAT cas_badval 1               //使用cas擦拭次数
-</span><span class='line'>STAT touch_hits 0
-</span><span class='line'>STAT touch_misses 0
-</span><span class='line'>STAT auth_cmds 0
-</span><span class='line'>STAT auth_errors 0
-</span><span class='line'>STAT bytes_read 968             //memcached服务器从网络读取的总的字节数
-</span><span class='line'>STAT bytes_written 706          //memcached服务器发送到网络的总的字节数
-</span><span class='line'>STAT limit_maxbytes 268435456   //memcached允许使用的最大字节,256M,见memcached.conf
-</span><span class='line'>STAT accepting_conns 1          //目前使用的连接数
-</span><span class='line'>STAT listen_disabled_num 0
-</span><span class='line'>STAT threads 4                  //工作线程的总数量
-</span><span class='line'>STAT conn_yields 0
-</span><span class='line'>STAT hash_power_level 16
-</span><span class='line'>STAT hash_bytes 524288
-</span><span class='line'>STAT hash_is_expanding 0
-</span><span class='line'>STAT expired_unfetched 0
-</span><span class='line'>STAT evicted_unfetched 0
-</span><span class='line'>STAT bytes 373                  //系统存储缓存对象所使用的存储空间，单位为字节
-</span><span class='line'>STAT curr_items 5               //当前缓存中存放的所有缓存对象的数量,不包括已删除的
-</span><span class='line'>STAT total_items 22             //自启动起所有缓存对象的数量,包括已删除的
-</span><span class='line'>STAT evictions 0                //从缓存移除的缓存对象数目,包括过期和空间不足时LRU移除
-</span><span class='line'>STAT reclaimed 0
-</span><span class='line'>END</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>5.Memcached客户端</h1>
-
-<p>许多语言都实现了连接memcached的客户端,见官网:
-<a href="https://code.google.com/p/memcached/wiki/Clients">https://code.google.com/p/memcached/wiki/Clients</a></p>
-
-<p>主流的语言基本都支持:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>C/C++, PHP, Java, Python, Ruby, Perl, .Net, Erlang, Lua等</span></code></pre></td></tr></table></div></figure>
-
-
-<p>这里以Java为例,典型的三种Client,其中spymemcached和Xmemcached:
-  (1).Memcached-Java-Client
-  <a href="https://github.com/gwhalin/Memcached-Java-Client">https://github.com/gwhalin/Memcached-Java-Client</a>
-  (2).spymemcached
-  <a href="http://code.google.com/p/spymemcached/">http://code.google.com/p/spymemcached/</a>
-  (3).Xmemcached
-  <a href="https://code.google.com/p/xmemcached/">https://code.google.com/p/xmemcached/</a></p>
-
-<h3>5.1性能比较</h3>
-
-<p>java memcached client官方发布的性能对比：<a href="https://github.com/gwhalin/Memcached-Java-Client/wiki/PERFORMANCE">https://github.com/gwhalin/Memcached-Java-Client/wiki/PERFORMANCE</a></p>
-
-<p>XMemcached官方发布的性能对比：<a href="http://xmemcached.googlecode.com/svn/trunk/benchmark/benchmark.html">http://xmemcached.googlecode.com/svn/trunk/benchmark/benchmark.html</a></p>
-
-<p>根据网络资料,Xmemcached是一个不错的选择,无论在低并发还是高并发访问的情况下，都可以保持一个比较优秀的性能表现.</p>
-
-<h3>5.2Xmemcache</h3>
-
-<p>maven支持:<a href="http://mvnrepository.com/artifact/com.googlecode.xmemcached/xmemcached">http://mvnrepository.com/artifact/com.googlecode.xmemcached/xmemcached</a></p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;dependency&gt;
-</span><span class='line'>  &lt;groupId&gt;com.googlecode.xmemcached&lt;/groupId&gt;
-</span><span class='line'>  &lt;artifactId&gt;xmemcached&lt;/artifactId&gt;
-</span><span class='line'>  &lt;version&gt;1.4.1&lt;/version&gt;
-</span><span class='line'>&lt;/dependency&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>简单使用:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>//memcached服务的IP及端口号
-</span><span class='line'>String addr="192.168.100.112:11211 192.168.100.113:11211"
-</span><span class='line'>MemcachedClientBuilder builder = new XMemcachedClientBuilder(AddrUtil.getAddresses(addr));
-</span><span class='line'>MemcachedClient client = builder.build();
-</span><span class='line'>
-</span><span class='line'>String cacheKey = buildCacheKey();        //key
-</span><span class='line'>Object cacheObject = buildCacheObject();  //value
-</span><span class='line'>cacheClient.set(cacheKey, exp, cacheObject);  //memcached set</span></code></pre></td></tr></table></div></figure>
-
-
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/7">&larr; Older</a>
@@ -7126,6 +6675,14 @@ Full?       Slab内是否含有空闲chunk
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/08/03/fan-she-de-xiao-lu/">反射的效率</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/08/03/fan-she-de-xiao-lu/">Fan She De Xiao Lu</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/08/01/mycli/">Mycli</a>
       </li>
     
@@ -7135,14 +6692,6 @@ Full?       Slab内是否含有空闲chunk
     
       <li class="post">
         <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a>
       </li>
     
   </ul>
@@ -7155,7 +6704,7 @@ Full?       Slab内是否含有空闲chunk
     <li><a class='list-group-item' href='/blog/categories/algorithm/'>algorithm (4)</a></li>
 <li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
-<li><a class='list-group-item' href='/blog/categories/java/'>java (21)</a></li>
+<li><a class='list-group-item' href='/blog/categories/java/'>java (22)</a></li>
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (11)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>

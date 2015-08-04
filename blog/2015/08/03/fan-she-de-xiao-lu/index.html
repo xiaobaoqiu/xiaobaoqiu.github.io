@@ -1,0 +1,503 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>反射的效率 - xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="1.toString实现 测试不同的toString实现方式的效率，目前包括的case： 1.String的+连接生成；
+2.StringBuilder生成；
+3.StringBuffer生成；
+4.Guava的ToStringHelper生成；
+5.Apache.commons. &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/08/03/fan-she-de-xiao-lu/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  
+  <link href="/stylesheets/data-table.css" media="screen, projection" rel="stylesheet" type="text/css" />
+  
+
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Keep Runnnnnnnnnning...</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss email">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+    <li><a href="xiaobaoqiu@163.com" rel="subscribe-email" title="subscribe via email">Email</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">首页</a></li>
+  <li><a href="/blog/archives">所有博文</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">反射的效率</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-08-03T20:54:57+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>8:54 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><h1>1.toString实现</h1>
+
+<p>测试不同的toString实现方式的效率，目前包括的case：</p>
+
+<pre><code>1.String的+连接生成；
+2.StringBuilder生成；
+3.StringBuffer生成；
+4.Guava的ToStringHelper生成；
+5.Apache.commons.lang3的lang3的ToStringBuilder生成;
+6.Apache.commons.lang3的ReflectionToStringBuilder生成;
+</code></pre>
+
+<p>toString的对象包含各种类型的属性：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private int age;
+</span><span class='line'>
+</span><span class='line'>private String name;
+</span><span class='line'>
+</span><span class='line'>private String address;
+</span><span class='line'>
+</span><span class='line'>private List&lt;String&gt; phone;
+</span><span class='line'>
+</span><span class='line'>private BigDecimal salary;
+</span><span class='line'>
+</span><span class='line'>private Map&lt;String, Object&gt; attrs;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>各个toString的实现版本：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 使用字符串+
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String concatToString() {
+</span><span class='line'>    return "Person{" +
+</span><span class='line'>            "age=" + age +
+</span><span class='line'>            ", name='" + name + '\'' +
+</span><span class='line'>            ", address='" + address + '\'' +
+</span><span class='line'>            ", phone=" + phone +
+</span><span class='line'>            ", salary=" + salary +
+</span><span class='line'>            ", attrs=" + attrs +
+</span><span class='line'>            '}';
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 使用StringBuilder
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String stringBuilderToString() {
+</span><span class='line'>    StringBuilder builder = new StringBuilder("Person{");
+</span><span class='line'>    builder.append("age=").append(age)
+</span><span class='line'>            .append(", name='").append(name).append("'")
+</span><span class='line'>            .append(", address='").append(address).append("'")
+</span><span class='line'>            .append(", phone=").append(phone)
+</span><span class='line'>            .append(", salary=").append(salary)
+</span><span class='line'>            .append(", attrs=").append(attrs)
+</span><span class='line'>            .append("}");
+</span><span class='line'>    return builder.toString();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 使用StringBuffer
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String stringBufferToString() {
+</span><span class='line'>    StringBuffer buffer = new StringBuffer("Person{");
+</span><span class='line'>    buffer.append("age=").append(age)
+</span><span class='line'>            .append(", name='").append(name).append("'")
+</span><span class='line'>            .append(", address='").append(address).append("'")
+</span><span class='line'>            .append(", phone=").append(phone)
+</span><span class='line'>            .append(", salary=").append(salary)
+</span><span class='line'>            .append(", attrs=").append(attrs)
+</span><span class='line'>            .append("}");
+</span><span class='line'>    return buffer.toString();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * Guava的Objects,即ToStringHelper
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String toStringHelperToString() {
+</span><span class='line'>    return Objects.toStringHelper(this)
+</span><span class='line'>            .add("age", age)
+</span><span class='line'>            .add("name", name)
+</span><span class='line'>            .add("address", address)
+</span><span class='line'>            .add("phone", phone)
+</span><span class='line'>            .add("salary", salary)
+</span><span class='line'>            .add("attrs", attrs)
+</span><span class='line'>            .toString();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * apache.commons.lang3的ToStringBuilder
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String toStringBuilderToString() {
+</span><span class='line'>    return new ToStringBuilder(this)
+</span><span class='line'>            .append("age", age)
+</span><span class='line'>            .append("name", name)
+</span><span class='line'>            .append("address", address)
+</span><span class='line'>            .append("phone", phone)
+</span><span class='line'>            .append("salary", salary)
+</span><span class='line'>            .append("attrs", attrs)
+</span><span class='line'>            .toString();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * apache.commons.lang3的ReflectionToStringBuilder
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String reflectionToStringBuilderToString() {
+</span><span class='line'>    return ReflectionToStringBuilder.reflectionToString(this, ToStringStyle.SIMPLE_STYLE);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>跑1000次，记录最大最小平均时间：</p>
+
+<table>
+<thead>
+<tr>
+<th style="text-align:left;">左对齐表头 </th>
+<th style="text-align:center;"> 中间对齐表头 </th>
+<th style="text-align:right;"> 右对齐表头</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">左对齐数据 </td>
+<td style="text-align:center;">中间对齐数据  </td>
+<td style="text-align:right;">右对齐数据</td>
+</tr>
+<tr>
+<td style="text-align:left;">第二行数据 </td>
+<td style="text-align:center;">也是第二行    </td>
+<td style="text-align:right;">还是第二行</td>
+</tr>
+<tr>
+<td style="text-align:left;">懒得写了&hellip;</td>
+<td style="text-align:center;">&hellip;..         </td>
+<td style="text-align:right;">&hellip;..</td>
+</tr>
+<tr>
+<td style="text-align:left;">长数据，以便看出表头的对齐</td>
+<td style="text-align:center;">长数据，以便看出表头的对齐</td>
+<td style="text-align:right;">长数据，以便看出表头的对齐</td>
+</tr>
+</tbody>
+</table>
+
+
+<h1>1.1 实现原理</h1>
+
+<p>简单分析一下各个toString方式的实现原理。</p>
+
+<p>首先看一个toString()</p>
+
+<h1>2.beanCopy</h1>
+
+<p>beanCopy由很多种方式，Spring和Apache都有实现版本，这里测试各个版本的性能.原因是前段时间项目上很简单的接口时间很慢，最后同事跟到的问题是使用Spring的beanCopy方式，因为接口涉及上百个bean的属性拷贝，因此比较明显的反应了各种beancopy实现方式的差异；</p>
+
+<h1>2.1 实现原理</h1>
+
+<p>简单分析一下各个bean copy方式的实现原理。</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">xiaobaoqiu</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2015-08-03T20:54:57+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>8:54 pm</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/java/'>java</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/08/03/fan-she-de-xiao-lu/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/08/03/fan-she-de-xiao-lu/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2015/08/03/fan-she-de-xiao-lu/" title="Previous Post: Fan She De Xiao Lu">&laquo; Fan She De Xiao Lu</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <div class="panel-heading">
+    <h1 class="panel-title">最新文章</h3>
+  </div>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2015/08/03/fan-she-de-xiao-lu/">反射的效率</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/08/03/fan-she-de-xiao-lu/">Fan She De Xiao Lu</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/08/01/mycli/">Mycli</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/17/fen-ci/">分词</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
+      </li>
+    
+  </ul>
+</section>
+<section class="panel panel-default">
+  <div  class="panel-heading">
+    <h1 class="panel-title">文章分类</h1>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <li><a class='list-group-item' href='/blog/categories/algorithm/'>algorithm (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/java/'>java (22)</a></li>
+<li><a class='list-group-item' href='/blog/categories/linux/'>linux (11)</a></li>
+<li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (9)</a></li>
+<li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/search/'>search (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
+<li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
+ 
+  </div>
+</section>
+<section class="panel panel-default">
+  <div  class="panel-heading">
+    <h1 class="panel-title">其他博客</h3>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <a class='list-group-item' href='http://www.baidu.com/p/Nicker_2010'>百度空间</a>
+  </div>
+</section>
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2015 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
