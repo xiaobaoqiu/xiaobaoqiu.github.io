@@ -9,7 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.什么是Selenium Selenium 是一种 Web 应用的自动测试工具，通过模拟用户对 Web 页面的各种操作，可以精确重现软件测试人员编写的 Test Cases 步骤。它所采用的原理是通过录制应用程序产生的线性脚本进行回放从而达到自动化测试的目的。其优点是简单， &hellip;">
+  <meta name="description" content="这里包括两种容器 ConcurrentSkipListMap
+ConcurrentSkipListSet 其中ConcurrentSkipListSet是通过ConcurrentSkipListMap实现的，它包含一个ConcurrentNavigableMap对象m， &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -69,6 +70,560 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/12/19/javabing-fa-rong-qi-zhi-skiplist/">Java并发容器之SkipList</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-12-19T05:56:59+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>19</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>5:56 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>这里包括两种容器</p>
+
+<pre><code>ConcurrentSkipListMap
+ConcurrentSkipListSet
+</code></pre>
+
+<p>其中ConcurrentSkipListSet是通过ConcurrentSkipListMap实现的，它包含一个ConcurrentNavigableMap对象m，而m对象实际上是ConcurrentNavigableMap的实现类ConcurrentSkipListMap的实例。</p>
+
+<p>ConcurrentSkipListMap中的元素是key-value键值对；而ConcurrentSkipListSet是集合，它只用到了ConcurrentSkipListMap中的key，其value是一个空的Object。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ConcurrentSkipListSet</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="kd">extends</span> <span class="n">AbstractSet</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="kd">implements</span> <span class="n">NavigableSet</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;,</span> <span class="n">Cloneable</span><span class="o">,</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">E</span><span class="o">,</span><span class="n">Object</span><span class="o">&gt;</span> <span class="n">m</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">ConcurrentSkipListSet</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">m</span> <span class="o">=</span> <span class="k">new</span> <span class="n">ConcurrentSkipListMap</span><span class="o">&lt;</span><span class="n">E</span><span class="o">,</span><span class="n">Object</span><span class="o">&gt;();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因此这里只分析ConcurrentSkipListMap的源代码。</p>
+
+<h1>1.ConcurrentSkipListMap</h1>
+
+<p>ConcurrentSkipListMap和TreeMap类似，它们虽然都是有序的哈希表。但是，第一，它们的线程安全机制不同，TreeMap是非线程安全的，而ConcurrentSkipListMap是线程安全的。第二，ConcurrentSkipListMap是通过跳表实现的，而TreeMap是通过红黑树实现的。</p>
+
+<p>ConcurrentSkipListMap的数据结构，如下图所示：</p>
+
+<p><img src="/images/concurrent/ConcurrentSkipListMap.png"></p>
+
+<p>跳表分为许多层(level)，每一层都可以看作是数据的索引，这些索引的意义就是加快跳表查找数据速度。每一层的数据都是有序的，上一层数据是下一层数据的子集，并且第一层(level 1)包含了全部的数据；层次越高，跳跃性越大，包含的数据越少。跳表包含一个表头，它查找数据时，是从上往下，从左往右进行查找。</p>
+
+<p>先以数据“7,14,21,32,37,71,85”序列为例，来对跳表进行简单说明。在跳表中查找“32”节点
+路径如下图所示：</p>
+
+<p><img src="/images/concurrent/SkipList_example.jpg"></p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ConcurrentSkipListMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">AbstractMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="kd">implements</span> <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;,</span>
+</span><span class='line'>               <span class="n">Cloneable</span><span class="o">,</span>
+</span><span class='line'>               <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
+</span><span class='line'>    <span class="c1">//head是跳表的表头</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">transient</span> <span class="kd">volatile</span> <span class="n">HeadIndex</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">head</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">static</span> <span class="kd">class</span> <span class="nc">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">node</span><span class="o">;</span>       <span class="c1">//哈希表节点node</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">down</span><span class="o">;</span>      <span class="c1">//下索引的指针</span>
+</span><span class='line'>    <span class="kd">volatile</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">right</span><span class="o">;</span>  <span class="c1">//右索引的指针</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">static</span> <span class="kd">final</span> <span class="kd">class</span> <span class="nc">HeadIndex</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="kt">int</span> <span class="n">level</span><span class="o">;</span>    <span class="c1">//节点所属层次</span>
+</span><span class='line'>    <span class="n">HeadIndex</span><span class="o">(</span><span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">node</span><span class="o">,</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">down</span><span class="o">,</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">right</span><span class="o">,</span> <span class="kt">int</span> <span class="n">level</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">super</span><span class="o">(</span><span class="n">node</span><span class="o">,</span> <span class="n">down</span><span class="o">,</span> <span class="n">right</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">level</span> <span class="o">=</span> <span class="n">level</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">static</span> <span class="kd">final</span> <span class="kd">class</span> <span class="nc">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">K</span> <span class="n">key</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">volatile</span> <span class="n">Object</span> <span class="n">value</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">volatile</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">next</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面从ConcurrentSkipListMap的添加(put)，删除(remove)，获取(get)这3个方面对它进行分析：</p>
+
+<h1>1.1 添加</h1>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">V</span> <span class="nf">put</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">value</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="k">throw</span> <span class="k">new</span> <span class="nf">NullPointerException</span><span class="o">();</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">doPut</span><span class="o">(</span><span class="n">key</span><span class="o">,</span> <span class="n">value</span><span class="o">,</span> <span class="kc">false</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">private</span> <span class="n">V</span> <span class="nf">doPut</span><span class="o">(</span><span class="n">K</span> <span class="n">kkey</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">onlyIfAbsent</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">kkey</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span> <span class="c1">//找到key的前继节点</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>   <span class="c1">//key的前继节点的后继节点，即 插入节点 的“后继节点”</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">n</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">f</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>                <span class="c1">//如果两次获得的b.next不是相同的Node，就跳转到外层循环，重新遍历。</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">n</span> <span class="o">!=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">)</span>               <span class="c1">// inconsistent read</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;;</span>
+</span><span class='line'>                <span class="n">Object</span> <span class="n">v</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">value</span><span class="o">;</span>
+</span><span class='line'>                <span class="c1">//当n的值为null(意味着其它线程删除了n)；此时删除b的下一个节点，然后跳转到”外层for循环“，重新遍历。</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">v</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>               <span class="c1">// n is deleted</span>
+</span><span class='line'>                    <span class="n">n</span><span class="o">.</span><span class="na">helpDelete</span><span class="o">(</span><span class="n">b</span><span class="o">,</span> <span class="n">f</span><span class="o">);</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="c1">// 如果其它线程删除了b；则跳转到”外层for循环“，重新获得b和n后再遍历。</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">v</span> <span class="o">==</span> <span class="n">n</span> <span class="o">||</span> <span class="n">b</span><span class="o">.</span><span class="na">value</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="c1">// b is deleted</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">n</span><span class="o">.</span><span class="na">key</span><span class="o">);</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">b</span> <span class="o">=</span> <span class="n">n</span><span class="o">;</span>
+</span><span class='line'>                    <span class="n">n</span> <span class="o">=</span> <span class="n">f</span><span class="o">;</span>
+</span><span class='line'>                    <span class="k">continue</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="k">if</span> <span class="o">(</span><span class="n">onlyIfAbsent</span> <span class="o">||</span> <span class="n">n</span><span class="o">.</span><span class="na">casValue</span><span class="o">(</span><span class="n">v</span><span class="o">,</span> <span class="n">value</span><span class="o">))</span>
+</span><span class='line'>                        <span class="k">return</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span><span class="o">;</span>
+</span><span class='line'>                    <span class="k">else</span>
+</span><span class='line'>                        <span class="k">break</span><span class="o">;</span> <span class="c1">// restart if lost race to replace value</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="c1">// else c &lt; 0; fall through</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="c1">// 新建节点(对应是“要插入的键值对”)</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">z</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;(</span><span class="n">kkey</span><span class="o">,</span> <span class="n">value</span><span class="o">,</span> <span class="n">n</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(!</span><span class="n">b</span><span class="o">.</span><span class="na">casNext</span><span class="o">(</span><span class="n">n</span><span class="o">,</span> <span class="n">z</span><span class="o">))</span>   <span class="c1">// 设置“b的后继节点”为z</span>
+</span><span class='line'>                <span class="k">break</span><span class="o">;</span>         <span class="c1">// restart if lost race to append to b，多线程情况下，break才可能发生(其它线程对b进行了操作)</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="c1">// 随机获取一个level，然后在“第1层”到“第level层”的链表中都插入新建节点</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">level</span> <span class="o">=</span> <span class="n">randomLevel</span><span class="o">();</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">level</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                <span class="n">insertIndex</span><span class="o">(</span><span class="n">z</span><span class="o">,</span> <span class="n">level</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>doPut()的作用就是将键值对添加到“跳表”中,其主干部分(即单纯的只考虑“单线程的情况下，将key-value添加到跳表中”，即忽略“多线程相关的内容”),它的流程如下：</p>
+
+<pre><code>第1步：找到“插入位置”。找到key的前去节点(b)和key的后继节点(n)；key是要插入节点的键;
+第2步：新建并插入节点。新建节点z(key对应的节点)，并将新节点z插入到“跳表”中(设置“b的后继节点为z”，“z的后继节点为n”);
+第3步：更新跳表。即随机获取一个level，然后在“跳表”的第1层～第level层之间，每一层都插入节点z；在第level层之上就不再插入节点了。若level数值大于“跳表的层次”，则新建一层;
+</code></pre>
+
+<p>主干代码大致如下：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="n">V</span> <span class="nf">doPut</span><span class="o">(</span><span class="n">K</span> <span class="n">kkey</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">onlyIfAbsent</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">kkey</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">// 找到key的前继节点</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>        <span class="c1">// 设置n为key的后继节点</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">// 新建节点(对应是“要被插入的键值对”)</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">z</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;(</span><span class="n">kkey</span><span class="o">,</span> <span class="n">value</span><span class="o">,</span> <span class="n">n</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// 设置“b的后继节点”为z</span>
+</span><span class='line'>            <span class="n">b</span><span class="o">.</span><span class="na">casNext</span><span class="o">(</span><span class="n">n</span><span class="o">,</span> <span class="n">z</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="c1">// 随机获取一个level，然后在“第1层”到“第level层”的链表中都插入新建节点</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">level</span> <span class="o">=</span> <span class="n">randomLevel</span><span class="o">();</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">level</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                <span class="n">insertIndex</span><span class="o">(</span><span class="n">z</span><span class="o">,</span> <span class="n">level</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>1.2 删除</h1>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">V</span> <span class="nf">remove</span><span class="o">(</span><span class="n">Object</span> <span class="n">key</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">doRemove</span><span class="o">(</span><span class="n">key</span><span class="o">,</span> <span class="kc">null</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">final</span> <span class="n">V</span> <span class="nf">doRemove</span><span class="o">(</span><span class="n">Object</span> <span class="n">okey</span><span class="o">,</span> <span class="n">Object</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">okey</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span> <span class="c1">//前置节点</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>            <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">n</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">f</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">n</span> <span class="o">!=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">)</span>                    <span class="c1">// inconsistent read</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">Object</span> <span class="n">v</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">value</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">v</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>                    <span class="c1">// n is deleted</span>
+</span><span class='line'>                    <span class="n">n</span><span class="o">.</span><span class="na">helpDelete</span><span class="o">(</span><span class="n">b</span><span class="o">,</span> <span class="n">f</span><span class="o">);</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">v</span> <span class="o">==</span> <span class="n">n</span> <span class="o">||</span> <span class="n">b</span><span class="o">.</span><span class="na">value</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>      <span class="c1">// b is deleted</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">n</span><span class="o">.</span><span class="na">key</span><span class="o">);</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">b</span> <span class="o">=</span> <span class="n">n</span><span class="o">;</span>
+</span><span class='line'>                    <span class="n">n</span> <span class="o">=</span> <span class="n">f</span><span class="o">;</span>
+</span><span class='line'>                    <span class="k">continue</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">value</span> <span class="o">!=</span> <span class="kc">null</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="n">value</span><span class="o">.</span><span class="na">equals</span><span class="o">(</span><span class="n">v</span><span class="o">))</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(!</span><span class="n">n</span><span class="o">.</span><span class="na">casValue</span><span class="o">(</span><span class="n">v</span><span class="o">,</span> <span class="kc">null</span><span class="o">))</span><span class="c1">// 设置b的后继节点为null</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(!</span><span class="n">n</span><span class="o">.</span><span class="na">appendMarker</span><span class="o">(</span><span class="n">f</span><span class="o">)</span> <span class="o">||</span> <span class="o">!</span><span class="n">b</span><span class="o">.</span><span class="na">casNext</span><span class="o">(</span><span class="n">n</span><span class="o">,</span> <span class="n">f</span><span class="o">))</span>
+</span><span class='line'>                    <span class="n">findNode</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>                  <span class="c1">// Retry via findNode</span>
+</span><span class='line'>                <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>           <span class="c1">// Clean index</span>
+</span><span class='line'>                    <span class="k">if</span> <span class="o">(</span><span class="n">head</span><span class="o">.</span><span class="na">right</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
+</span><span class='line'>                        <span class="n">tryReduceLevel</span><span class="o">();</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面是删除跳表中键值对的主干步骤：</p>
+
+<pre><code>第1步：找到被删除节点的位置;找到key的前继节点(b)，key所对应的节点(n)，n的后继节点f；key是要删除节点的键;
+第2步：删除节点;将key所对应的节点n从跳表中移除，将b的后继节点设为f;
+第3步：更新跳表;遍历跳表，删除每一层的key节点(如果存在的话)。删除导致某一层为空之后，需要删除这一层;
+</code></pre>
+
+<p>主干部分的doRemove()的代码大致如下：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">final</span> <span class="n">V</span> <span class="nf">doRemove</span><span class="o">(</span><span class="n">Object</span> <span class="n">okey</span><span class="o">,</span> <span class="n">Object</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">okey</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">// 找到key的前继节点b</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>        <span class="c1">// b--&gt;n,即n为b的后继节点，也即n节点为key的节点</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">// f是n的后继节点</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">f</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>            <span class="c1">// 设置n节点为null</span>
+</span><span class='line'>            <span class="n">n</span><span class="o">.</span><span class="na">casValue</span><span class="o">(</span><span class="n">v</span><span class="o">,</span> <span class="kc">null</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// 设置b的后继节点为f</span>
+</span><span class='line'>            <span class="n">b</span><span class="o">.</span><span class="na">casNext</span><span class="o">(</span><span class="n">n</span><span class="o">,</span> <span class="n">f</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// 清除跳表中每一层的key节点</span>
+</span><span class='line'>            <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// 如果“表头的右索引为空”，则将“跳表的层次”-1</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">head</span><span class="o">.</span><span class="na">right</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
+</span><span class='line'>                <span class="n">tryReduceLevel</span><span class="o">();</span>
+</span><span class='line'>            <span class="k">return</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>1.3 获取</h1>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">V</span> <span class="nf">get</span><span class="o">(</span><span class="n">Object</span> <span class="n">key</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">doGet</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">private</span> <span class="n">V</span> <span class="nf">doGet</span><span class="o">(</span><span class="n">Object</span> <span class="n">okey</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">okey</span><span class="o">);</span>
+</span><span class='line'>    <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">bound</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">q</span> <span class="o">=</span> <span class="n">head</span><span class="o">;</span>    <span class="c1">//待比较节点</span>
+</span><span class='line'>    <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">r</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="na">right</span><span class="o">;</span> <span class="c1">//待比较的右边节点</span>
+</span><span class='line'>    <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span><span class="o">;</span>
+</span><span class='line'>    <span class="n">K</span> <span class="n">k</span><span class="o">;</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">c</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">d</span><span class="o">;</span>
+</span><span class='line'>        <span class="c1">// 往右遍历</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">r</span> <span class="o">!=</span> <span class="kc">null</span> <span class="o">&amp;&amp;</span> <span class="o">(</span><span class="n">n</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="na">node</span><span class="o">)</span> <span class="o">!=</span> <span class="n">bound</span> <span class="o">&amp;&amp;</span> <span class="o">(</span><span class="n">k</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">key</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">((</span><span class="n">c</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">k</span><span class="o">))</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">q</span> <span class="o">=</span> <span class="n">r</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">r</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="na">right</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">continue</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">Object</span> <span class="n">v</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">value</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">(</span><span class="n">v</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)?</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span> <span class="o">:</span> <span class="n">getUsingFindNode</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span> <span class="k">else</span>
+</span><span class='line'>                <span class="n">bound</span> <span class="o">=</span> <span class="n">n</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">// 往下遍历</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">((</span><span class="n">d</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="na">down</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">q</span> <span class="o">=</span> <span class="n">d</span><span class="o">;</span>
+</span><span class='line'>            <span class="n">r</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="na">right</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">else</span>
+</span><span class='line'>            <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">// 同一层逐个往后便利</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(</span><span class="n">n</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="na">node</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>  <span class="n">n</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">next</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">((</span><span class="n">k</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">key</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">((</span><span class="n">c</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">k</span><span class="o">))</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">Object</span> <span class="n">v</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">value</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">(</span><span class="n">v</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)?</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span> <span class="o">:</span> <span class="n">getUsingFindNode</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.ShipList的简单实现</h1>
+
+<p>很早之前写过一个简单的SkipList，贴在百度空间：
+<a href="http://hi.baidu.com/nicker2010/item/be641424bb0963c8ef10f1dc">http://hi.baidu.com/nicker2010/item/be641424bb0963c8ef10f1dc</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -6101,514 +6656,6 @@ getSessionByHash的逻辑其实就是在Hash环上找第一个大于key对应has
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/10/15/memcachednei-cun-cun-chu/">Memcached内存存储</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-10-15T18:13:49+08:00'><span class='date'><span class='date-month'>Oct</span> <span class='date-day'>15</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>6:13 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>早就听说过Memcached独特的内存管理方式,写着篇文章的目的就是了解Memcached的内存管理,学习其源代码.</p>
-
-<h1>1.什么是Slab Allocator</h1>
-
-<p>memcached默认情况下采用了名为Slab Allocator的机制分配、管理内存，Slab Allocator的基本原理是按照预先规定的大小，将分配的内存分割成特定长度的块，以期望完全解决内存碎片问题。而且，slab allocator还有重复使用已分配的内存的目的。 也就是说，分配到的内存不会释放，而是重复利用。</p>
-
-<p><img src="/images/memcached/memcached-slab.png"></p>
-
-<h1>2.Slab Allocation的主要术语</h1>
-
-<pre><code>Page        分配给Slab的内存空间,默认是1MB,分配给Slab之后根据slab的大小切分成chunk
-Chunk       用于缓存记录的内存空间
-Slab Class  特定大小的chunk的组
-</code></pre>
-
-<p><img src="/images/memcached/memcached-slab-page.png"></p>
-
-<h1>3.Slab初始化</h1>
-
-<p>在Memcached启动时候会调用slab的初始化代码(详见memcached.c中main函数调用slabs_init函数).</p>
-
-<p>slabs_init函数声明:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/** Init the subsystem. 1st argument is the limit on no. of bytes to allocate,</span>
-</span><span class='line'><span class="cm">    0 if no limit. 2nd argument is the growth factor; each slab will use a chunk</span>
-</span><span class='line'><span class="cm">    size equal to the previous slab&#39;s chunk size times this factor.</span>
-</span><span class='line'><span class="cm">    3rd argument specifies if the slab allocator should allocate all memory</span>
-</span><span class='line'><span class="cm">    up front (if true), or allocate memory in chunks as it is needed (if false)</span>
-</span><span class='line'><span class="cm">*/</span>
-</span><span class='line'><span class="kt">void</span> <span class="nf">slabs_init</span><span class="p">(</span><span class="k">const</span> <span class="kt">size_t</span> <span class="n">limit</span><span class="p">,</span> <span class="k">const</span> <span class="kt">double</span> <span class="n">factor</span><span class="p">,</span> <span class="k">const</span> <span class="kt">bool</span> <span class="n">prealloc</span><span class="p">);</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中limit表示memcached最大使用内存;factor表示slab中chunk size的增长因子,slab中chunk size的大小等于前一个slab的chunk size乘以factor;</p>
-
-<p>memcached.c中main函数调用slabs_init函数:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">slabs_init</span><span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">maxbytes</span><span class="p">,</span> <span class="n">settings</span><span class="p">.</span><span class="n">factor</span><span class="p">,</span> <span class="n">preallocate</span><span class="p">);</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中settings.maxbytes默认值为64M,启动memcached使用选项-m设置;settings.factor默认为1.25,启动memcached时候使用-f设置;preallocate指的是启动memcached的时候默认为每种类型slab预先分配一个page的内存,默认是false;</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">settings</span><span class="p">.</span><span class="n">maxbytes</span> <span class="o">=</span> <span class="mi">64</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">;</span> <span class="cm">/* default is 64MB */</span>
-</span><span class='line'><span class="p">...</span>
-</span><span class='line'><span class="n">settings</span><span class="p">.</span><span class="n">factor</span> <span class="o">=</span> <span class="mf">1.25</span><span class="p">;</span>
-</span><span class='line'><span class="p">...</span>
-</span><span class='line'><span class="n">preallocate</span> <span class="o">=</span> <span class="nb">false</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>slabs_init函数实现:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/**</span>
-</span><span class='line'><span class="cm"> * Determines the chunk sizes and initializes the slab class descriptors</span>
-</span><span class='line'><span class="cm"> * accordingly.</span>
-</span><span class='line'><span class="cm"> */</span>
-</span><span class='line'><span class="kt">void</span> <span class="nf">slabs_init</span><span class="p">(</span><span class="k">const</span> <span class="kt">size_t</span> <span class="n">limit</span><span class="p">,</span> <span class="k">const</span> <span class="kt">double</span> <span class="n">factor</span><span class="p">,</span> <span class="k">const</span> <span class="kt">bool</span> <span class="n">prealloc</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="n">POWER_SMALLEST</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
-</span><span class='line'>    <span class="c1">//真实占用大小=对象大小+48</span>
-</span><span class='line'>    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">size</span> <span class="o">=</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="o">+</span> <span class="n">settings</span><span class="p">.</span><span class="n">chunk_size</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">mem_limit</span> <span class="o">=</span> <span class="n">limit</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//开启预分配,则首先将limit大小(默认64M)的内存全部申请</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">prealloc</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="cm">/* Allocate everything in a big chunk with malloc */</span>
-</span><span class='line'>        <span class="n">mem_base</span> <span class="o">=</span> <span class="n">malloc</span><span class="p">(</span><span class="n">mem_limit</span><span class="p">);</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">mem_base</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">mem_current</span> <span class="o">=</span> <span class="n">mem_base</span><span class="p">;</span>
-</span><span class='line'>            <span class="n">mem_avail</span> <span class="o">=</span> <span class="n">mem_limit</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Warning: Failed to allocate requested memory in&quot;</span>
-</span><span class='line'>                    <span class="s">&quot; one large chunk.</span><span class="se">\n</span><span class="s">Will allocate in smaller chunks</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//清空所有的slab</span>
-</span><span class='line'>    <span class="n">memset</span><span class="p">(</span><span class="n">slabclass</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">slabclass</span><span class="p">));</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">while</span> <span class="p">(</span><span class="o">++</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">POWER_LARGEST</span> <span class="o">&amp;&amp;</span> <span class="n">size</span> <span class="o">&lt;=</span> <span class="n">settings</span><span class="p">.</span><span class="n">item_size_max</span> <span class="o">/</span> <span class="n">factor</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="cm">/* Make sure items are always n-byte aligned */</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">size</span> <span class="o">%</span> <span class="n">CHUNK_ALIGN_BYTES</span><span class="p">)</span>
-</span><span class='line'>            <span class="n">size</span> <span class="o">+=</span> <span class="n">CHUNK_ALIGN_BYTES</span> <span class="o">-</span> <span class="p">(</span><span class="n">size</span> <span class="o">%</span> <span class="n">CHUNK_ALIGN_BYTES</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">size</span> <span class="o">=</span> <span class="n">size</span><span class="p">;</span>
-</span><span class='line'>        <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">perslab</span> <span class="o">=</span> <span class="n">settings</span><span class="p">.</span><span class="n">item_size_max</span> <span class="o">/</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">size</span><span class="p">;</span>
-</span><span class='line'>        <span class="n">size</span> <span class="o">*=</span> <span class="n">factor</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">verbose</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;slab class %3d: chunk size %9u perslab %7u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
-</span><span class='line'>                    <span class="n">i</span><span class="p">,</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">size</span><span class="p">,</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">perslab</span><span class="p">);</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//最大chunksize的一个slab,chunksize为settings.item_size_max(默认1M)</span>
-</span><span class='line'>    <span class="n">power_largest</span> <span class="o">=</span> <span class="n">i</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">slabclass</span><span class="p">[</span><span class="n">power_largest</span><span class="p">].</span><span class="n">size</span> <span class="o">=</span> <span class="n">settings</span><span class="p">.</span><span class="n">item_size_max</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">slabclass</span><span class="p">[</span><span class="n">power_largest</span><span class="p">].</span><span class="n">perslab</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">verbose</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;slab class %3d: chunk size %9u perslab %7u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
-</span><span class='line'>                <span class="n">i</span><span class="p">,</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">size</span><span class="p">,</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">perslab</span><span class="p">);</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//记录已分配的空间大小</span>
-</span><span class='line'>    <span class="cm">/* for the test suite:  faking of how much we&#39;ve already malloc&#39;d */</span>
-</span><span class='line'>    <span class="p">{</span>
-</span><span class='line'>        <span class="kt">char</span> <span class="o">*</span><span class="n">t_initial_malloc</span> <span class="o">=</span> <span class="n">getenv</span><span class="p">(</span><span class="s">&quot;T_MEMD_INITIAL_MALLOC&quot;</span><span class="p">);</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">t_initial_malloc</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">mem_malloced</span> <span class="o">=</span> <span class="p">(</span><span class="kt">size_t</span><span class="p">)</span><span class="n">atol</span><span class="p">(</span><span class="n">t_initial_malloc</span><span class="p">);</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//开启了预分配,则为每种slab都分配一个page的空间</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">prealloc</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">slabs_preallocate</span><span class="p">(</span><span class="n">power_largest</span><span class="p">);</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中settings.chunk_size默认为48:</p>
-
-<pre><code>settings.chunk_size = 48;         /* space for a modest key and value */
-</code></pre>
-
-<p>POWER_LARGEST指slab种类的最大值,默认只为200,在memcached.c中设置</p>
-
-<pre><code>#define POWER_LARGEST  200
-</code></pre>
-
-<p>settings.item_size_max就是每个page的大小,默认1M,在memcached.c中初始化:</p>
-
-<pre><code>settings.item_size_max = 1024 * 1024; /* The famous 1MB upper limit. */
-</code></pre>
-
-<p>默认不开启预分配,因为很多时候Memcached只存储一种类型的数据(即其大小相对比较固定),这时候其他类型的预分配的slab空间就会浪费.</p>
-
-<p>预分配的逻辑就是从最小的slab开始,为每类slab分配一个Page大小的空间(空间不足时停止分配):</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">slabs_preallocate</span> <span class="p">(</span><span class="k">const</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">maxslabs</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">i</span><span class="p">;</span>
-</span><span class='line'>    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">prealloc</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/* pre-allocate a 1MB slab in every size class so people don&#39;t get</span>
-</span><span class='line'><span class="cm">       confused by non-intuitive &quot;SERVER_ERROR out of memory&quot;</span>
-</span><span class='line'><span class="cm">       messages.  this is the most common question on the mailing</span>
-</span><span class='line'><span class="cm">       list.  if you really don&#39;t want this, you can rebuild without</span>
-</span><span class='line'><span class="cm">       these three lines.  */</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="n">POWER_SMALLEST</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;=</span> <span class="n">POWER_LARGEST</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="o">++</span><span class="n">prealloc</span> <span class="o">&gt;</span> <span class="n">maxslabs</span><span class="p">)</span>
-</span><span class='line'>            <span class="k">return</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">do_slabs_newslab</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Error while preallocating slab memory!</span><span class="se">\n</span><span class="s">&quot;</span>
-</span><span class='line'>                <span class="s">&quot;If using -L or other prealloc options, max memory must be &quot;</span>
-</span><span class='line'>                <span class="s">&quot;at least %d megabytes.</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">power_largest</span><span class="p">);</span>
-</span><span class='line'>            <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>do_slabs_newslab的工作就是为某一个slab分配空间,并将空间划分乘固定大小的chunk:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">do_slabs_newslab</span><span class="p">(</span><span class="k">const</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">id</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">slabclass_t</span> <span class="o">*</span><span class="n">p</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">slabclass</span><span class="p">[</span><span class="n">id</span><span class="p">];</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">len</span> <span class="o">=</span> <span class="n">settings</span><span class="p">.</span><span class="n">slab_reassign</span> <span class="o">?</span> <span class="n">settings</span><span class="p">.</span><span class="nl">item_size_max</span>
-</span><span class='line'>        <span class="p">:</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span> <span class="o">*</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">perslab</span><span class="p">;</span>
-</span><span class='line'>    <span class="kt">char</span> <span class="o">*</span><span class="n">ptr</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">if</span> <span class="p">((</span><span class="n">mem_limit</span> <span class="o">&amp;&amp;</span> <span class="n">mem_malloced</span> <span class="o">+</span> <span class="n">len</span> <span class="o">&gt;</span> <span class="n">mem_limit</span> <span class="o">&amp;&amp;</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">slabs</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">||</span>
-</span><span class='line'>        <span class="p">(</span><span class="n">grow_slab_list</span><span class="p">(</span><span class="n">id</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="o">||</span>
-</span><span class='line'>        <span class="p">((</span><span class="n">ptr</span> <span class="o">=</span> <span class="n">memory_allocate</span><span class="p">((</span><span class="kt">size_t</span><span class="p">)</span><span class="n">len</span><span class="p">))</span> <span class="o">==</span> <span class="mi">0</span><span class="p">))</span> <span class="p">{</span>  <span class="c1">//申请内存</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="n">MEMCACHED_SLABS_SLABCLASS_ALLOCATE_FAILED</span><span class="p">(</span><span class="n">id</span><span class="p">);</span>
-</span><span class='line'>        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">memset</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">(</span><span class="kt">size_t</span><span class="p">)</span><span class="n">len</span><span class="p">);</span>
-</span><span class='line'>    <span class="c1">//将内存划分乘chunk</span>
-</span><span class='line'>    <span class="n">split_slab_page_into_freelist</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">id</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//维护slab链表</span>
-</span><span class='line'>    <span class="n">p</span><span class="o">-&gt;</span><span class="n">slab_list</span><span class="p">[</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">slabs</span><span class="o">++</span><span class="p">]</span> <span class="o">=</span> <span class="n">ptr</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">mem_malloced</span> <span class="o">+=</span> <span class="n">len</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">MEMCACHED_SLABS_SLABCLASS_ALLOCATE</span><span class="p">(</span><span class="n">id</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>split_slab_page_into_freelist的主要控制就是Page划分乘chunk并清空:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">split_slab_page_into_freelist</span><span class="p">(</span><span class="kt">char</span> <span class="o">*</span><span class="n">ptr</span><span class="p">,</span> <span class="k">const</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">id</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">slabclass_t</span> <span class="o">*</span><span class="n">p</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">slabclass</span><span class="p">[</span><span class="n">id</span><span class="p">];</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">x</span><span class="p">;</span>
-</span><span class='line'>    <span class="k">for</span> <span class="p">(</span><span class="n">x</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">x</span> <span class="o">&lt;</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">perslab</span><span class="p">;</span> <span class="n">x</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">do_slabs_free</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">id</span><span class="p">);</span>
-</span><span class='line'>        <span class="n">ptr</span> <span class="o">+=</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">;</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>memcached的内存分配策略就是：按slab需求分配page,各slab按需使用chunk存储.</p>
-
-<p>按需分配的意思就是某一类slab没有对象可存,就不会分配(非preallocate模式),某类slab存储对象很多,就会分配多个slab形成链表.</p>
-
-<p>这里有几个特点要注意:</p>
-
-<pre><code>1.Memcached分配出去的page不会被回收或者重新分配;
-2.Memcached申请的内存不会被释放;
-3.slab空闲的chunk不会借给任何其他slab使用(新版本memcached有slab_reassign,slab_automove的功能);
-</code></pre>
-
-<p>slab内存结构图,二维数组链表:</p>
-
-<p><img src="/images/memcached/memcached_slab_alloct.jpg"></p>
-
-<h1>4.往Slab中缓存记录</h1>
-
-<p>memcached根据收到的数据的大小,选择最适合数据大小的slab.
-memcached中保存着slab内空闲chunk的列表,根据该列表选择chunk,
-然后将数据缓存于其中.</p>
-
-<p><img src="/images/memcached/memcached-slab-save.png"></p>
-
-<p>代码如下:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/*</span>
-</span><span class='line'><span class="cm"> * Figures out which slab class (chunk size) is required to store an item of</span>
-</span><span class='line'><span class="cm"> * a given size.</span>
-</span><span class='line'><span class="cm"> *</span>
-</span><span class='line'><span class="cm"> * Given object size, return id to use when allocating/freeing memory for object</span>
-</span><span class='line'><span class="cm"> * 0 means error: can&#39;t store such a large object</span>
-</span><span class='line'><span class="cm"> */</span>
-</span><span class='line'><span class="kt">unsigned</span> <span class="kt">int</span> <span class="nf">slabs_clsid</span><span class="p">(</span><span class="k">const</span> <span class="kt">size_t</span> <span class="n">size</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">res</span> <span class="o">=</span> <span class="n">POWER_SMALLEST</span><span class="p">;</span>   <span class="c1">//最小slab编号</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
-</span><span class='line'>        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>    <span class="k">while</span> <span class="p">(</span><span class="n">size</span> <span class="o">&gt;</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">res</span><span class="p">].</span><span class="n">size</span><span class="p">)</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">res</span><span class="o">++</span> <span class="o">==</span> <span class="n">power_largest</span><span class="p">)</span>     <span class="cm">/* won&#39;t fit in the biggest slab */</span>
-</span><span class='line'>            <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>    <span class="k">return</span> <span class="n">res</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参数是待存储对象的大小,根据这个大小,从最小的Chunk Size开始查找,找到第一个(即最小的)能放下size大小的对象的Chunk.找不到(size大于最大的Chunk Size)返回0(这就是为什么slab class从1开始而不是从0开始).</p>
-
-<p>如果某个Slab没有剩余的Chunk了，系统便会给这个Slab分配一个新的Page以供使用，如果没有Page可用，系统就会触发LRU机制，通过删除冷数据来为新数据腾出空间，这里有一点需要注意的是：LRU不是全局的，而是针对Slab而言的.</p>
-
-<p>slab内存分配示例:</p>
-
-<p><img src="/images/memcached/memcached_slab_ins.jpg"></p>
-
-<h1>5.Slab Allocator的缺点</h1>
-
-<p>由于Slab Allocator分配的是特定长度的内存，因此无法有效利用分配的内存。 例如，将100字节的数据缓存到128字节的chunk中，剩余的28字节就浪费了。</p>
-
-<p><img src="/images/memcached/memcached-slab-disadvantage.png"></p>
-
-<h1>6.Memcached减少内存浪费</h1>
-
-<h3>4.1:调整growth factor</h3>
-
-<pre><code>(1).估算我们item的大小
-key键长＋suffix+value值长＋结构大小(48字节)
-(2).逐步调整growth factor,使得某个slab的大小和我们的item大小接近(必须大于我们item的大小)
-</code></pre>
-
-<h1>7.过期数据</h1>
-
-<pre><code>(1).LRU过期策略;
-(2).在slab级别上执行LRU策略;
-(3).查看是否过去是在get的时候,即懒惰(lazy)检查;
-</code></pre>
-
-<h1>8.memcached-tool脚本</h1>
-
-<p>memcached-tool脚本可以方便地获得slab的使用情况 （它将memcached的返回值整理成容易阅读的格式）,可以从下面的地址获得脚本:
-<a href="http://www.netingcn.com/demo/memcached-tool.zip">http://www.netingcn.com/demo/memcached-tool.zip</a></p>
-
-<p>使用方法也极其简单：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="nl">server_ip</span><span class="p">:</span><span class="n">prot</span> <span class="n">option</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>比如:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="mf">10.0.0.5</span><span class="o">:</span><span class="mi">11211</span> <span class="n">display</span>    <span class="err">#</span> <span class="n">shows</span> <span class="n">slabs</span>
-</span><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="mf">10.0.0.5</span><span class="o">:</span><span class="mi">11211</span>            <span class="err">#</span> <span class="n">same</span><span class="p">.</span>  <span class="p">(</span><span class="k">default</span> <span class="n">is</span> <span class="n">display</span><span class="p">)</span>
-</span><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="mf">10.0.0.5</span><span class="o">:</span><span class="mi">11211</span> <span class="n">stats</span>      <span class="err">#</span> <span class="n">shows</span> <span class="n">general</span> <span class="n">stats</span>
-</span><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="mf">10.0.0.5</span><span class="o">:</span><span class="mi">11211</span> <span class="n">move</span> <span class="mi">7</span> <span class="mi">9</span>   <span class="err">#</span> <span class="n">takes</span> <span class="mi">1</span><span class="n">MB</span> <span class="n">slab</span> <span class="n">from</span> <span class="n">class</span> <span class="err">#</span><span class="mi">7</span>
-</span><span class='line'>                                              <span class="cp"># to class #9.</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>输出示例:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cp">#  Item_Size   Max_age  1MB_pages Count   Full?</span>
-</span><span class='line'> <span class="mi">1</span>     <span class="mi">104</span> <span class="n">B</span>  <span class="mi">1394292</span> <span class="n">s</span>    <span class="mi">1215</span> <span class="mi">12249628</span>    <span class="n">yes</span>
-</span><span class='line'> <span class="mi">2</span>     <span class="mi">136</span> <span class="n">B</span>  <span class="mi">1456795</span> <span class="n">s</span>      <span class="mi">52</span>  <span class="mi">400919</span>     <span class="n">yes</span>
-</span><span class='line'> <span class="p">...</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>各列的含义为：</p>
-
-<pre><code>#           slab class编号
-Item_Size   Chunk大小
-Max_age     LRU内最旧的记录的生存时间
-1MB_pages   分配给Slab的页数
-Count       Slab内的记录数
-Full?       Slab内是否含有空闲chunk
-</code></pre>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/7">&larr; Older</a>
@@ -6628,6 +6675,10 @@ Full?       Slab内是否含有空闲chunk
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/08/08/oomkiller/">Oomkiller</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/08/03/fan-she-de-xiao-lu/">反射的效率</a>
       </li>
     
@@ -6643,10 +6694,6 @@ Full?       Slab内是否含有空闲chunk
         <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -6658,7 +6705,7 @@ Full?       Slab内是否含有空闲chunk
 <li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/java/'>java (22)</a></li>
-<li><a class='list-group-item' href='/blog/categories/linux/'>linux (11)</a></li>
+<li><a class='list-group-item' href='/blog/categories/linux/'>linux (12)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>
 <li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (9)</a></li>

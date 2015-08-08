@@ -1,0 +1,344 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Oomkiller - xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer.其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用, &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/08/08/oomkiller/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  
+
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Keep Runnnnnnnnnning...</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss email">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+    <li><a href="xiaobaoqiu@163.com" rel="subscribe-email" title="subscribe via email">Email</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">首页</a></li>
+  <li><a href="/blog/archives">所有博文</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Oomkiller</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-08-08T12:33:53+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>8</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>12:33 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer.其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用,每个Tomcat至少要求了0.5G的内存,很多要求的是默认的2G的内存.</p>
+
+<p>这里主要简单介绍一下oomkiller是什么东西,原理是什么,以及对我们的影响.</p>
+
+<h1>1.oomkiller简介</h1>
+
+<p>简单的说,Linux 内核有个机制叫OOM killer(Out-Of-Memory killer)，该机制会监控那些占用内存过大，尤其是瞬间很快消耗大量内存的进程，为了防止内存耗尽而内核会把该进程杀掉,从而腾出内存留给系统用。</p>
+
+<p>现象就是相关的日志文件（/var/log/messages）里面会看到下面类似的 Out of memory: Kill process 信息(日志里面把机器host去掉了),还包括一些如pid，process name，cpu mask，trace等信息:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Aug  4 22:03:18  kernel: Out of memory: Kill process 21447 (java) score 81 or sacrifice child
+</span><span class='line'>Aug  4 22:03:18  kernel: Killed process 21447, UID 40001, (java) total-vm:4242176kB, anon-rss:711240kB, file-rss:1832kB
+</span><span class='line'>Aug  5 01:17:21  ntpd[1195]: synchronized to Xx.xx.xxx.xx, stratum 3
+</span><span class='line'>Aug  5 01:35:52  kernel: java invoked oom-killer: gfp_mask=0xd0, order=0, oom_adj=0, oom_score_adj=0
+</span><span class='line'>Aug  5 01:35:52  kernel: java cpuset=/ mems_allowed=0
+</span><span class='line'>Aug  5 01:35:52  kernel: Pid: 17391, comm: java Not tainted 2.6.32-358.23.2.el6.x86_64 #1</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.oomkiller原理</h1>
+
+<p>Linux 内核根据应用程序的要求分配内存，通常来说应用程序分配了内存但是并没有实际全部使用，为了提高性能，这部分没用的内存可以留作它用，这部分内存是属于每个进程的，内核直接回收利用的话比较麻烦，所以内核采用一种过度分配内存(over-commit memory)的办法来间接利用这部分 “空闲” 的内存，提高整体内存的使用效率。</p>
+
+<p>一般来说这样做没有问题，但当大多数应用程序都消耗完自己的内存的时候麻烦就来了，因为这些应用程序的内存需求加起来超出了物理内存(包括 swap)的容量，内核(OOM killer)必须杀掉一些进程才能腾出空间保障系统正常运行。</p>
+
+<p>用银行的例子来讲可能更容易懂一些，部分储户取钱的时候银行不怕，银行有足够的存款应付，当全国所以的储户(或者绝大多数储户)都取钱而且每个人都想把自己钱取完的时候银行的麻烦就来了，银行实际上是没有这么多钱给大家取的。</p>
+
+<h3>2.1 根据什么kill</h3>
+
+<p>内核检测到系统内存不足、挑选并杀掉某个进程的过程可以参考内核源代码 linux/mm/oom_kill.c，当系统内存不足的时候，out_of_memory() 被触发，然后调用 select_bad_process() 选择一个 “bad” 进程杀掉，如何判断和选择一个 “bad” 进程呢，总不能随机选吧？挑选的过程由 oom_badness() 决定，挑选的算法和想法都很简单很朴实：最 bad 的那个进程就是那个最占用内存的进程。</p>
+
+<p>每个进程的分数都由进程的oom_score记录:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$cat /proc/26893/oom_score
+</span><span class='line'>76
+</span><span class='line'>[baoqiu.xiao@Xxx ~]$ cat /proc/14969/oom_score
+</span><span class='line'>82</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外一个重要的参数就是进程的oom_adj,表示该pid进程被oom killer杀掉的权重，介于 [-17,15]之间，越高的权重，意味着更可能被oom killer选中，-17表示禁止被kill掉。默认为0.</p>
+
+<p>一些其他的细节:</p>
+
+<pre><code>1.子进程会继承父进程的oom_adj;
+2.OOM不适合于解决内存泄漏(Memory leak)的问题;
+3.有时free查看还有充足的内存，但还是会触发OOM，是因为该进程可能占用了特殊的内存地址空间;
+</code></pre>
+
+<h3>2.2 如何关闭oomkiller</h3>
+
+<p>有几种方法关闭oomkiller机制:</p>
+
+<ul>
+<li>1.调整oom_adj
+将进程的oom_adj设置为17即禁止了该进程被kill.</li>
+</ul>
+
+
+<p>比如系统的ssh一般是禁止oom的:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@ ~]$ ps aux | grep sshd
+</span><span class='line'>root      1208  0.0  0.0  64116   296 ?        Ss   May28   1:47 /usr/sbin/sshd
+</span><span class='line'>[baoqiu.xiao@ ~]$ cat /proc/1208/oom_adj 
+</span><span class='line'>-17</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其他需要禁用,可以如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>pgrep -f "sshd" | while read PID; do echo -17 &gt; /proc/$PID/oom_adj;done</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li><p>2.修改内核参数
+sysctl 下有2个可配置选项：</p>
+
+<p>  vm.panic_on_oom = 0                 #内存不够时内核是否直接panic,0表示开启
+  vm.oom_kill_allocating_task = 1         #oom-killer是否选择当前正在申请内存的进程进行kill</p></li>
+</ul>
+
+
+<p>只要设置/etc/sysctl.conf文件中vm.panic_on_oom=1就表示关闭oom-killer(线上环境一般不推荐):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># sysctl -w vm.panic_on_oom=1
+</span><span class='line'>vm.panic_on_oom = 1   //1表示关闭，默认为0表示开启OOM
+</span><span class='line'># sysctl -p</span></code></pre></td></tr></table></div></figure>
+
+
+<p>参考: <a href="http://lwn.net/Articles/317814/">http://lwn.net/Articles/317814/</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">xiaobaoqiu</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2015-08-08T12:33:53+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>8</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>12:33 pm</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/linux/'>linux</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/08/08/oomkiller/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/08/08/oomkiller/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2015/08/03/fan-she-de-xiao-lu/" title="Previous Post: 反射的效率">&laquo; 反射的效率</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <div class="panel-heading">
+    <h1 class="panel-title">最新文章</h3>
+  </div>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2015/08/08/oomkiller/">Oomkiller</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/08/03/fan-she-de-xiao-lu/">反射的效率</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/08/01/mycli/">Mycli</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/17/fen-ci/">分词</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
+      </li>
+    
+  </ul>
+</section>
+<section class="panel panel-default">
+  <div  class="panel-heading">
+    <h1 class="panel-title">文章分类</h1>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <li><a class='list-group-item' href='/blog/categories/algorithm/'>algorithm (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/java/'>java (22)</a></li>
+<li><a class='list-group-item' href='/blog/categories/linux/'>linux (12)</a></li>
+<li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (9)</a></li>
+<li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/search/'>search (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
+<li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
+ 
+  </div>
+</section>
+<section class="panel panel-default">
+  <div  class="panel-heading">
+    <h1 class="panel-title">其他博客</h3>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <a class='list-group-item' href='http://www.baidu.com/p/Nicker_2010'>百度空间</a>
+  </div>
+</section>
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2015 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

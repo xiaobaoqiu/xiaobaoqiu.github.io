@@ -9,7 +9,7 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近项目中的图片上传那块带来很大麻烦,原因是因为业务逻辑的问题,会导致统一张图片上传很多次(平均5次上传有4次是重复的),导致图片服务器压力很大. 直观想法是使用KV缓存,第一个想到的是Memcached. 其实很长时间之前就学习过一段时间的Memcached,但是一致没有整理,趁这次机会, &hellip;">
+  <meta name="description" content="早就听说过Memcached独特的内存管理方式,写着篇文章的目的就是了解Memcached的内存管理,学习其源代码. 1.什么是Slab Allocator memcached默认情况下采用了名为Slab Allocator的机制分配、管理内存，Slab &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -69,6 +69,514 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/10/15/memcachednei-cun-cun-chu/">Memcached内存存储</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-10-15T18:13:49+08:00'><span class='date'><span class='date-month'>Oct</span> <span class='date-day'>15</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>6:13 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>早就听说过Memcached独特的内存管理方式,写着篇文章的目的就是了解Memcached的内存管理,学习其源代码.</p>
+
+<h1>1.什么是Slab Allocator</h1>
+
+<p>memcached默认情况下采用了名为Slab Allocator的机制分配、管理内存，Slab Allocator的基本原理是按照预先规定的大小，将分配的内存分割成特定长度的块，以期望完全解决内存碎片问题。而且，slab allocator还有重复使用已分配的内存的目的。 也就是说，分配到的内存不会释放，而是重复利用。</p>
+
+<p><img src="/images/memcached/memcached-slab.png"></p>
+
+<h1>2.Slab Allocation的主要术语</h1>
+
+<pre><code>Page        分配给Slab的内存空间,默认是1MB,分配给Slab之后根据slab的大小切分成chunk
+Chunk       用于缓存记录的内存空间
+Slab Class  特定大小的chunk的组
+</code></pre>
+
+<p><img src="/images/memcached/memcached-slab-page.png"></p>
+
+<h1>3.Slab初始化</h1>
+
+<p>在Memcached启动时候会调用slab的初始化代码(详见memcached.c中main函数调用slabs_init函数).</p>
+
+<p>slabs_init函数声明:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/** Init the subsystem. 1st argument is the limit on no. of bytes to allocate,</span>
+</span><span class='line'><span class="cm">    0 if no limit. 2nd argument is the growth factor; each slab will use a chunk</span>
+</span><span class='line'><span class="cm">    size equal to the previous slab&#39;s chunk size times this factor.</span>
+</span><span class='line'><span class="cm">    3rd argument specifies if the slab allocator should allocate all memory</span>
+</span><span class='line'><span class="cm">    up front (if true), or allocate memory in chunks as it is needed (if false)</span>
+</span><span class='line'><span class="cm">*/</span>
+</span><span class='line'><span class="kt">void</span> <span class="nf">slabs_init</span><span class="p">(</span><span class="k">const</span> <span class="kt">size_t</span> <span class="n">limit</span><span class="p">,</span> <span class="k">const</span> <span class="kt">double</span> <span class="n">factor</span><span class="p">,</span> <span class="k">const</span> <span class="kt">bool</span> <span class="n">prealloc</span><span class="p">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中limit表示memcached最大使用内存;factor表示slab中chunk size的增长因子,slab中chunk size的大小等于前一个slab的chunk size乘以factor;</p>
+
+<p>memcached.c中main函数调用slabs_init函数:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">slabs_init</span><span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">maxbytes</span><span class="p">,</span> <span class="n">settings</span><span class="p">.</span><span class="n">factor</span><span class="p">,</span> <span class="n">preallocate</span><span class="p">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中settings.maxbytes默认值为64M,启动memcached使用选项-m设置;settings.factor默认为1.25,启动memcached时候使用-f设置;preallocate指的是启动memcached的时候默认为每种类型slab预先分配一个page的内存,默认是false;</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">settings</span><span class="p">.</span><span class="n">maxbytes</span> <span class="o">=</span> <span class="mi">64</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">;</span> <span class="cm">/* default is 64MB */</span>
+</span><span class='line'><span class="p">...</span>
+</span><span class='line'><span class="n">settings</span><span class="p">.</span><span class="n">factor</span> <span class="o">=</span> <span class="mf">1.25</span><span class="p">;</span>
+</span><span class='line'><span class="p">...</span>
+</span><span class='line'><span class="n">preallocate</span> <span class="o">=</span> <span class="nb">false</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>slabs_init函数实现:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/**</span>
+</span><span class='line'><span class="cm"> * Determines the chunk sizes and initializes the slab class descriptors</span>
+</span><span class='line'><span class="cm"> * accordingly.</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="kt">void</span> <span class="nf">slabs_init</span><span class="p">(</span><span class="k">const</span> <span class="kt">size_t</span> <span class="n">limit</span><span class="p">,</span> <span class="k">const</span> <span class="kt">double</span> <span class="n">factor</span><span class="p">,</span> <span class="k">const</span> <span class="kt">bool</span> <span class="n">prealloc</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="n">POWER_SMALLEST</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>    <span class="c1">//真实占用大小=对象大小+48</span>
+</span><span class='line'>    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">size</span> <span class="o">=</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="o">+</span> <span class="n">settings</span><span class="p">.</span><span class="n">chunk_size</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">mem_limit</span> <span class="o">=</span> <span class="n">limit</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">//开启预分配,则首先将limit大小(默认64M)的内存全部申请</span>
+</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">prealloc</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="cm">/* Allocate everything in a big chunk with malloc */</span>
+</span><span class='line'>        <span class="n">mem_base</span> <span class="o">=</span> <span class="n">malloc</span><span class="p">(</span><span class="n">mem_limit</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">mem_base</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">mem_current</span> <span class="o">=</span> <span class="n">mem_base</span><span class="p">;</span>
+</span><span class='line'>            <span class="n">mem_avail</span> <span class="o">=</span> <span class="n">mem_limit</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Warning: Failed to allocate requested memory in&quot;</span>
+</span><span class='line'>                    <span class="s">&quot; one large chunk.</span><span class="se">\n</span><span class="s">Will allocate in smaller chunks</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">//清空所有的slab</span>
+</span><span class='line'>    <span class="n">memset</span><span class="p">(</span><span class="n">slabclass</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">slabclass</span><span class="p">));</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">while</span> <span class="p">(</span><span class="o">++</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">POWER_LARGEST</span> <span class="o">&amp;&amp;</span> <span class="n">size</span> <span class="o">&lt;=</span> <span class="n">settings</span><span class="p">.</span><span class="n">item_size_max</span> <span class="o">/</span> <span class="n">factor</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="cm">/* Make sure items are always n-byte aligned */</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">size</span> <span class="o">%</span> <span class="n">CHUNK_ALIGN_BYTES</span><span class="p">)</span>
+</span><span class='line'>            <span class="n">size</span> <span class="o">+=</span> <span class="n">CHUNK_ALIGN_BYTES</span> <span class="o">-</span> <span class="p">(</span><span class="n">size</span> <span class="o">%</span> <span class="n">CHUNK_ALIGN_BYTES</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">size</span> <span class="o">=</span> <span class="n">size</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">perslab</span> <span class="o">=</span> <span class="n">settings</span><span class="p">.</span><span class="n">item_size_max</span> <span class="o">/</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">size</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">size</span> <span class="o">*=</span> <span class="n">factor</span><span class="p">;</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">verbose</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;slab class %3d: chunk size %9u perslab %7u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
+</span><span class='line'>                    <span class="n">i</span><span class="p">,</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">size</span><span class="p">,</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">perslab</span><span class="p">);</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">//最大chunksize的一个slab,chunksize为settings.item_size_max(默认1M)</span>
+</span><span class='line'>    <span class="n">power_largest</span> <span class="o">=</span> <span class="n">i</span><span class="p">;</span>
+</span><span class='line'>    <span class="n">slabclass</span><span class="p">[</span><span class="n">power_largest</span><span class="p">].</span><span class="n">size</span> <span class="o">=</span> <span class="n">settings</span><span class="p">.</span><span class="n">item_size_max</span><span class="p">;</span>
+</span><span class='line'>    <span class="n">slabclass</span><span class="p">[</span><span class="n">power_largest</span><span class="p">].</span><span class="n">perslab</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">verbose</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;slab class %3d: chunk size %9u perslab %7u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="n">i</span><span class="p">,</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">size</span><span class="p">,</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">perslab</span><span class="p">);</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">//记录已分配的空间大小</span>
+</span><span class='line'>    <span class="cm">/* for the test suite:  faking of how much we&#39;ve already malloc&#39;d */</span>
+</span><span class='line'>    <span class="p">{</span>
+</span><span class='line'>        <span class="kt">char</span> <span class="o">*</span><span class="n">t_initial_malloc</span> <span class="o">=</span> <span class="n">getenv</span><span class="p">(</span><span class="s">&quot;T_MEMD_INITIAL_MALLOC&quot;</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">t_initial_malloc</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">mem_malloced</span> <span class="o">=</span> <span class="p">(</span><span class="kt">size_t</span><span class="p">)</span><span class="n">atol</span><span class="p">(</span><span class="n">t_initial_malloc</span><span class="p">);</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">//开启了预分配,则为每种slab都分配一个page的空间</span>
+</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">prealloc</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">slabs_preallocate</span><span class="p">(</span><span class="n">power_largest</span><span class="p">);</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中settings.chunk_size默认为48:</p>
+
+<pre><code>settings.chunk_size = 48;         /* space for a modest key and value */
+</code></pre>
+
+<p>POWER_LARGEST指slab种类的最大值,默认只为200,在memcached.c中设置</p>
+
+<pre><code>#define POWER_LARGEST  200
+</code></pre>
+
+<p>settings.item_size_max就是每个page的大小,默认1M,在memcached.c中初始化:</p>
+
+<pre><code>settings.item_size_max = 1024 * 1024; /* The famous 1MB upper limit. */
+</code></pre>
+
+<p>默认不开启预分配,因为很多时候Memcached只存储一种类型的数据(即其大小相对比较固定),这时候其他类型的预分配的slab空间就会浪费.</p>
+
+<p>预分配的逻辑就是从最小的slab开始,为每类slab分配一个Page大小的空间(空间不足时停止分配):</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">slabs_preallocate</span> <span class="p">(</span><span class="k">const</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">maxslabs</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">i</span><span class="p">;</span>
+</span><span class='line'>    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">prealloc</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/* pre-allocate a 1MB slab in every size class so people don&#39;t get</span>
+</span><span class='line'><span class="cm">       confused by non-intuitive &quot;SERVER_ERROR out of memory&quot;</span>
+</span><span class='line'><span class="cm">       messages.  this is the most common question on the mailing</span>
+</span><span class='line'><span class="cm">       list.  if you really don&#39;t want this, you can rebuild without</span>
+</span><span class='line'><span class="cm">       these three lines.  */</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="n">POWER_SMALLEST</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;=</span> <span class="n">POWER_LARGEST</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="o">++</span><span class="n">prealloc</span> <span class="o">&gt;</span> <span class="n">maxslabs</span><span class="p">)</span>
+</span><span class='line'>            <span class="k">return</span><span class="p">;</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">do_slabs_newslab</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>            <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Error while preallocating slab memory!</span><span class="se">\n</span><span class="s">&quot;</span>
+</span><span class='line'>                <span class="s">&quot;If using -L or other prealloc options, max memory must be &quot;</span>
+</span><span class='line'>                <span class="s">&quot;at least %d megabytes.</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">power_largest</span><span class="p">);</span>
+</span><span class='line'>            <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>do_slabs_newslab的工作就是为某一个slab分配空间,并将空间划分乘固定大小的chunk:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">do_slabs_newslab</span><span class="p">(</span><span class="k">const</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">id</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kt">slabclass_t</span> <span class="o">*</span><span class="n">p</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">slabclass</span><span class="p">[</span><span class="n">id</span><span class="p">];</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">len</span> <span class="o">=</span> <span class="n">settings</span><span class="p">.</span><span class="n">slab_reassign</span> <span class="o">?</span> <span class="n">settings</span><span class="p">.</span><span class="nl">item_size_max</span>
+</span><span class='line'>        <span class="p">:</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span> <span class="o">*</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">perslab</span><span class="p">;</span>
+</span><span class='line'>    <span class="kt">char</span> <span class="o">*</span><span class="n">ptr</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">if</span> <span class="p">((</span><span class="n">mem_limit</span> <span class="o">&amp;&amp;</span> <span class="n">mem_malloced</span> <span class="o">+</span> <span class="n">len</span> <span class="o">&gt;</span> <span class="n">mem_limit</span> <span class="o">&amp;&amp;</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">slabs</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">||</span>
+</span><span class='line'>        <span class="p">(</span><span class="n">grow_slab_list</span><span class="p">(</span><span class="n">id</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="o">||</span>
+</span><span class='line'>        <span class="p">((</span><span class="n">ptr</span> <span class="o">=</span> <span class="n">memory_allocate</span><span class="p">((</span><span class="kt">size_t</span><span class="p">)</span><span class="n">len</span><span class="p">))</span> <span class="o">==</span> <span class="mi">0</span><span class="p">))</span> <span class="p">{</span>  <span class="c1">//申请内存</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">MEMCACHED_SLABS_SLABCLASS_ALLOCATE_FAILED</span><span class="p">(</span><span class="n">id</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">memset</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="p">(</span><span class="kt">size_t</span><span class="p">)</span><span class="n">len</span><span class="p">);</span>
+</span><span class='line'>    <span class="c1">//将内存划分乘chunk</span>
+</span><span class='line'>    <span class="n">split_slab_page_into_freelist</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">id</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">//维护slab链表</span>
+</span><span class='line'>    <span class="n">p</span><span class="o">-&gt;</span><span class="n">slab_list</span><span class="p">[</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">slabs</span><span class="o">++</span><span class="p">]</span> <span class="o">=</span> <span class="n">ptr</span><span class="p">;</span>
+</span><span class='line'>    <span class="n">mem_malloced</span> <span class="o">+=</span> <span class="n">len</span><span class="p">;</span>
+</span><span class='line'>    <span class="n">MEMCACHED_SLABS_SLABCLASS_ALLOCATE</span><span class="p">(</span><span class="n">id</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>split_slab_page_into_freelist的主要控制就是Page划分乘chunk并清空:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">split_slab_page_into_freelist</span><span class="p">(</span><span class="kt">char</span> <span class="o">*</span><span class="n">ptr</span><span class="p">,</span> <span class="k">const</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">id</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kt">slabclass_t</span> <span class="o">*</span><span class="n">p</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">slabclass</span><span class="p">[</span><span class="n">id</span><span class="p">];</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">x</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">for</span> <span class="p">(</span><span class="n">x</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">x</span> <span class="o">&lt;</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">perslab</span><span class="p">;</span> <span class="n">x</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>        <span class="n">do_slabs_free</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">id</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">ptr</span> <span class="o">+=</span> <span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">;</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>memcached的内存分配策略就是：按slab需求分配page,各slab按需使用chunk存储.</p>
+
+<p>按需分配的意思就是某一类slab没有对象可存,就不会分配(非preallocate模式),某类slab存储对象很多,就会分配多个slab形成链表.</p>
+
+<p>这里有几个特点要注意:</p>
+
+<pre><code>1.Memcached分配出去的page不会被回收或者重新分配;
+2.Memcached申请的内存不会被释放;
+3.slab空闲的chunk不会借给任何其他slab使用(新版本memcached有slab_reassign,slab_automove的功能);
+</code></pre>
+
+<p>slab内存结构图,二维数组链表:</p>
+
+<p><img src="/images/memcached/memcached_slab_alloct.jpg"></p>
+
+<h1>4.往Slab中缓存记录</h1>
+
+<p>memcached根据收到的数据的大小,选择最适合数据大小的slab.
+memcached中保存着slab内空闲chunk的列表,根据该列表选择chunk,
+然后将数据缓存于其中.</p>
+
+<p><img src="/images/memcached/memcached-slab-save.png"></p>
+
+<p>代码如下:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/*</span>
+</span><span class='line'><span class="cm"> * Figures out which slab class (chunk size) is required to store an item of</span>
+</span><span class='line'><span class="cm"> * a given size.</span>
+</span><span class='line'><span class="cm"> *</span>
+</span><span class='line'><span class="cm"> * Given object size, return id to use when allocating/freeing memory for object</span>
+</span><span class='line'><span class="cm"> * 0 means error: can&#39;t store such a large object</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="kt">unsigned</span> <span class="kt">int</span> <span class="nf">slabs_clsid</span><span class="p">(</span><span class="k">const</span> <span class="kt">size_t</span> <span class="n">size</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">res</span> <span class="o">=</span> <span class="n">POWER_SMALLEST</span><span class="p">;</span>   <span class="c1">//最小slab编号</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+</span><span class='line'>        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">while</span> <span class="p">(</span><span class="n">size</span> <span class="o">&gt;</span> <span class="n">slabclass</span><span class="p">[</span><span class="n">res</span><span class="p">].</span><span class="n">size</span><span class="p">)</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">res</span><span class="o">++</span> <span class="o">==</span> <span class="n">power_largest</span><span class="p">)</span>     <span class="cm">/* won&#39;t fit in the biggest slab */</span>
+</span><span class='line'>            <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>    <span class="k">return</span> <span class="n">res</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>参数是待存储对象的大小,根据这个大小,从最小的Chunk Size开始查找,找到第一个(即最小的)能放下size大小的对象的Chunk.找不到(size大于最大的Chunk Size)返回0(这就是为什么slab class从1开始而不是从0开始).</p>
+
+<p>如果某个Slab没有剩余的Chunk了，系统便会给这个Slab分配一个新的Page以供使用，如果没有Page可用，系统就会触发LRU机制，通过删除冷数据来为新数据腾出空间，这里有一点需要注意的是：LRU不是全局的，而是针对Slab而言的.</p>
+
+<p>slab内存分配示例:</p>
+
+<p><img src="/images/memcached/memcached_slab_ins.jpg"></p>
+
+<h1>5.Slab Allocator的缺点</h1>
+
+<p>由于Slab Allocator分配的是特定长度的内存，因此无法有效利用分配的内存。 例如，将100字节的数据缓存到128字节的chunk中，剩余的28字节就浪费了。</p>
+
+<p><img src="/images/memcached/memcached-slab-disadvantage.png"></p>
+
+<h1>6.Memcached减少内存浪费</h1>
+
+<h3>4.1:调整growth factor</h3>
+
+<pre><code>(1).估算我们item的大小
+key键长＋suffix+value值长＋结构大小(48字节)
+(2).逐步调整growth factor,使得某个slab的大小和我们的item大小接近(必须大于我们item的大小)
+</code></pre>
+
+<h1>7.过期数据</h1>
+
+<pre><code>(1).LRU过期策略;
+(2).在slab级别上执行LRU策略;
+(3).查看是否过去是在get的时候,即懒惰(lazy)检查;
+</code></pre>
+
+<h1>8.memcached-tool脚本</h1>
+
+<p>memcached-tool脚本可以方便地获得slab的使用情况 （它将memcached的返回值整理成容易阅读的格式）,可以从下面的地址获得脚本:
+<a href="http://www.netingcn.com/demo/memcached-tool.zip">http://www.netingcn.com/demo/memcached-tool.zip</a></p>
+
+<p>使用方法也极其简单：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="nl">server_ip</span><span class="p">:</span><span class="n">prot</span> <span class="n">option</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>比如:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="mf">10.0.0.5</span><span class="o">:</span><span class="mi">11211</span> <span class="n">display</span>    <span class="err">#</span> <span class="n">shows</span> <span class="n">slabs</span>
+</span><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="mf">10.0.0.5</span><span class="o">:</span><span class="mi">11211</span>            <span class="err">#</span> <span class="n">same</span><span class="p">.</span>  <span class="p">(</span><span class="k">default</span> <span class="n">is</span> <span class="n">display</span><span class="p">)</span>
+</span><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="mf">10.0.0.5</span><span class="o">:</span><span class="mi">11211</span> <span class="n">stats</span>      <span class="err">#</span> <span class="n">shows</span> <span class="n">general</span> <span class="n">stats</span>
+</span><span class='line'><span class="n">perl</span> <span class="n">memcached</span><span class="o">-</span><span class="n">tool</span> <span class="mf">10.0.0.5</span><span class="o">:</span><span class="mi">11211</span> <span class="n">move</span> <span class="mi">7</span> <span class="mi">9</span>   <span class="err">#</span> <span class="n">takes</span> <span class="mi">1</span><span class="n">MB</span> <span class="n">slab</span> <span class="n">from</span> <span class="n">class</span> <span class="err">#</span><span class="mi">7</span>
+</span><span class='line'>                                              <span class="cp"># to class #9.</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>输出示例:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cp">#  Item_Size   Max_age  1MB_pages Count   Full?</span>
+</span><span class='line'> <span class="mi">1</span>     <span class="mi">104</span> <span class="n">B</span>  <span class="mi">1394292</span> <span class="n">s</span>    <span class="mi">1215</span> <span class="mi">12249628</span>    <span class="n">yes</span>
+</span><span class='line'> <span class="mi">2</span>     <span class="mi">136</span> <span class="n">B</span>  <span class="mi">1456795</span> <span class="n">s</span>      <span class="mi">52</span>  <span class="mi">400919</span>     <span class="n">yes</span>
+</span><span class='line'> <span class="p">...</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>各列的含义为：</p>
+
+<pre><code>#           slab class编号
+Item_Size   Chunk大小
+Max_age     LRU内最旧的记录的生存时间
+1MB_pages   分配给Slab的页数
+Count       Slab内的记录数
+Full?       Slab内是否含有空闲chunk
+</code></pre>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -4544,208 +5052,6 @@ public int Find(int x) {
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/07/16/java-queue/">Java Queue</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-07-16T21:08:37+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>9:08 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h1>ArrayDeque</h1>
-
-<p>双端队列Deque的一个实现</p>
-
-<h3>数组实现</h3>
-
-<p>数组实现,用下标head和tail表示头尾.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ArrayDeque</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">AbstractCollection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
-</span><span class='line'>                           <span class="kd">implements</span> <span class="n">Deque</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;,</span> <span class="n">Cloneable</span><span class="o">,</span> <span class="n">Serializable</span>
-</span><span class='line'><span class="o">{</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">transient</span> <span class="n">E</span><span class="o">[]</span> <span class="n">elements</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">transient</span> <span class="kt">int</span> <span class="n">head</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">transient</span> <span class="kt">int</span> <span class="n">tail</span><span class="o">;</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>默认大小16</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="nf">ArrayDeque</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">elements</span> <span class="o">=</span> <span class="o">(</span><span class="n">E</span><span class="o">[])</span> <span class="k">new</span> <span class="n">Object</span><span class="o">[</span><span class="mi">16</span><span class="o">];</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>保证容量的策略,始终保证容量大小为2的幂次方.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="kt">void</span> <span class="nf">allocateElements</span><span class="o">(</span><span class="kt">int</span> <span class="n">numElements</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">initialCapacity</span> <span class="o">=</span> <span class="n">MIN_INITIAL_CAPACITY</span><span class="o">;</span> <span class="c1">//MIN_INITIAL_CAPACITY = 8</span>
-</span><span class='line'>        <span class="c1">// 能容纳numElements个元素的最小的2的幂次方</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">numElements</span> <span class="o">&gt;=</span> <span class="n">initialCapacity</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">initialCapacity</span> <span class="o">=</span> <span class="n">numElements</span><span class="o">;</span>
-</span><span class='line'>            <span class="n">initialCapacity</span> <span class="o">|=</span> <span class="o">(</span><span class="n">initialCapacity</span> <span class="o">&gt;&gt;&gt;</span>  <span class="mi">1</span><span class="o">);</span>
-</span><span class='line'>            <span class="n">initialCapacity</span> <span class="o">|=</span> <span class="o">(</span><span class="n">initialCapacity</span> <span class="o">&gt;&gt;&gt;</span>  <span class="mi">2</span><span class="o">);</span>
-</span><span class='line'>            <span class="n">initialCapacity</span> <span class="o">|=</span> <span class="o">(</span><span class="n">initialCapacity</span> <span class="o">&gt;&gt;&gt;</span>  <span class="mi">4</span><span class="o">);</span>
-</span><span class='line'>            <span class="n">initialCapacity</span> <span class="o">|=</span> <span class="o">(</span><span class="n">initialCapacity</span> <span class="o">&gt;&gt;&gt;</span>  <span class="mi">8</span><span class="o">);</span>
-</span><span class='line'>            <span class="n">initialCapacity</span> <span class="o">|=</span> <span class="o">(</span><span class="n">initialCapacity</span> <span class="o">&gt;&gt;&gt;</span> <span class="mi">16</span><span class="o">);</span>
-</span><span class='line'>            <span class="n">initialCapacity</span><span class="o">++;</span>
-</span><span class='line'>
-</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">initialCapacity</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>   <span class="c1">// Too many elements, must back off</span>
-</span><span class='line'>                <span class="n">initialCapacity</span> <span class="o">&gt;&gt;&gt;=</span> <span class="mi">1</span><span class="o">;</span><span class="c1">// Good luck allocating 2 ^ 30 elements</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>        <span class="n">elements</span> <span class="o">=</span> <span class="o">(</span><span class="n">E</span><span class="o">[])</span> <span class="k">new</span> <span class="n">Object</span><span class="o">[</span><span class="n">initialCapacity</span><span class="o">];</span>
-</span><span class='line'>    <span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>扩容策略</h3>
-
-<p>double扩容</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="kt">void</span> <span class="nf">doubleCapacity</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">assert</span> <span class="n">head</span> <span class="o">==</span> <span class="n">tail</span><span class="o">;</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">p</span> <span class="o">=</span> <span class="n">head</span><span class="o">;</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">n</span> <span class="o">=</span> <span class="n">elements</span><span class="o">.</span><span class="na">length</span><span class="o">;</span>    <span class="c1">// 当前容量大小</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">r</span> <span class="o">=</span> <span class="n">n</span> <span class="o">-</span> <span class="n">p</span><span class="o">;</span>              <span class="c1">// p右侧元素个数</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">newCapacity</span> <span class="o">=</span> <span class="n">n</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span><span class="o">;</span>   <span class="c1">// 新容量大小</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">newCapacity</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">IllegalStateException</span><span class="o">(</span><span class="s">&quot;Sorry, deque too big&quot;</span><span class="o">);</span>
-</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">a</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Object</span><span class="o">[</span><span class="n">newCapacity</span><span class="o">];</span>
-</span><span class='line'>        <span class="n">System</span><span class="o">.</span><span class="na">arraycopy</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="n">p</span><span class="o">,</span> <span class="n">a</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">r</span><span class="o">);</span> <span class="c1">// 数据拷贝</span>
-</span><span class='line'>        <span class="n">System</span><span class="o">.</span><span class="na">arraycopy</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">a</span><span class="o">,</span> <span class="n">r</span><span class="o">,</span> <span class="n">p</span><span class="o">);</span>
-</span><span class='line'>        <span class="n">elements</span> <span class="o">=</span> <span class="o">(</span><span class="n">E</span><span class="o">[])</span><span class="n">a</span><span class="o">;</span>
-</span><span class='line'>        <span class="n">head</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
-</span><span class='line'>        <span class="n">tail</span> <span class="o">=</span> <span class="n">n</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>PriorityQueue</h1>
-
-<p>优先级队列的一个实现
-数组实现,默认大小11,带比较器.优先级队列不允许 null 元素.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">PriorityQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">AbstractQueue</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
-</span><span class='line'>    <span class="kd">implements</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">transient</span> <span class="n">Object</span><span class="o">[]</span> <span class="n">queue</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Comparator</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">comparator</span><span class="o">;</span> <span class="c1">//比较器</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="nf">PriorityQueue</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">this</span><span class="o">(</span><span class="n">DEFAULT_INITIAL_CAPACITY</span><span class="o">,</span> <span class="kc">null</span><span class="o">);</span>   <span class="c1">//DEFAULT_INITIAL_CAPACITY = 11</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>实现原理</h3>
-
-<p>PriorityQueue使用的是二叉堆实现的,用数组实现很方便.这里的实现和&lt;算法导论>里面讲的基本一致.这里以小顶堆为例子.这个实现是非线程安全的.</p>
-
-<p>二叉堆保证孩子节点大于等于父亲节点.同时它又具有完全二叉树(除了底层,其他层是满的)的性质.如下:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'>    <span class="mi">1</span>
-</span><span class='line'>  <span class="o">/</span>   <span class="err">\</span>
-</span><span class='line'> <span class="mi">2</span>     <span class="mi">3</span>
-</span><span class='line'><span class="o">/</span> <span class="err">\</span>   <span class="o">/</span> <span class="err">\</span>
-</span><span class='line'>   <span class="mi">4</span>   <span class="mi">5</span>  <span class="mi">6</span>  <span class="mi">7</span>
-</span><span class='line'>  <span class="o">/</span> <span class="err">\</span> <span class="o">/</span> <span class="err">\</span>
-</span><span class='line'> <span class="mi">8</span>  <span class="mi">9</span> <span class="mi">10</span> <span class="mi">11</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>二叉堆是专门为取出最大或最小节点而设计点数据结构，这种数据结构在查找一般元素方面性能和一般数组是没有多大区别的。</p>
-
-<p>二叉堆在取出最大或最最小值的性能表现是O(1),取出操作完成之后，二叉堆需要一次整形操作，以便得到下一个最值，这个操作复杂度O(logn)。</p>
-
-<p>但是二叉堆也有一个缺点，就是二叉堆对存储在内存中的数据操作太过分散，这导致了二叉堆在cpu高速缓存的利用与内存击中率上面表现不是很好，这也是一个二叉堆理想操作时间所需要付出的代价。</p>
-
-<p>这里有我的一个二叉堆的简单<a href="http://xiaobaoqiu.github.io/blog/2014/07/18/er-cha-dui/">实现</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/8">&larr; Older</a>
@@ -4765,6 +5071,10 @@ public int Find(int x) {
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/08/08/oomkiller/">Oomkiller</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/08/03/fan-she-de-xiao-lu/">反射的效率</a>
       </li>
     
@@ -4780,10 +5090,6 @@ public int Find(int x) {
         <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -4795,7 +5101,7 @@ public int Find(int x) {
 <li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/java/'>java (22)</a></li>
-<li><a class='list-group-item' href='/blog/categories/linux/'>linux (11)</a></li>
+<li><a class='list-group-item' href='/blog/categories/linux/'>linux (12)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>
 <li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (9)</a></li>
