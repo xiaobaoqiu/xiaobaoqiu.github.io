@@ -9,7 +9,7 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer.其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用, &hellip;">
+  <meta name="description" content="最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer. 其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -91,7 +91,9 @@
   </header>
 
 
-  <div class="entry-content"><p>最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer.其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用,每个Tomcat至少要求了0.5G的内存,很多要求的是默认的2G的内存.</p>
+  <div class="entry-content"><p>最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer.</p>
+
+<p>其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用,每个Tomcat至少要求了0.5G的内存,很多要求的是默认的2G的内存.</p>
 
 <p>这里主要简单介绍一下oomkiller是什么东西,原理是什么,以及对我们的影响.</p>
 
@@ -99,7 +101,7 @@
 
 <p>简单的说,Linux 内核有个机制叫OOM killer(Out-Of-Memory killer)，该机制会监控那些占用内存过大，尤其是瞬间很快消耗大量内存的进程(为什么后面会讲到)，为了防止内存耗尽而内核会把该进程杀掉,从而腾出内存留给系统用。</p>
 
-<p>现象就是相关的日志文件（/var/log/messages）里面会看到下面类似的 Out of memory: Kill process 信息(日志里面把机器host去掉了),还包括一些如pid，process name，cpu mask，trace等信息:</p>
+<p>现象就是相关的日志文件(/var/log/messages)里面会看到下面类似的 Out of memory: Kill process 信息(日志里面把机器host去掉了),还包括一些如pid，process name，cpu mask，trace等信息:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -119,7 +121,7 @@
 
 <p>Linux 内核根据应用程序的要求分配内存，通常来说应用程序分配了内存但是并没有实际全部使用，为了提高性能，这部分没用的内存可以留作它用，这部分内存是属于每个进程的，内核直接回收利用的话比较麻烦，所以内核采用一种过度分配内存(over-commit memory)的办法来间接利用这部分 “空闲” 的内存，提高整体内存的使用效率。</p>
 
-<p>所谓的过度分配内存,可以理解为"打白条",进程A告诉系统我需要2G内存,系统只会答应不会拒绝,因为系统认为任何一个进程不可能每时每刻都全部占用其申请的内存.所以实际上系统并没有给进程A完整的2G内存,而是需要使用的时候才临时分配.这就好像银行的使用到的现金肯定远远小于所以储户的总值,因为不可能所以储户同一时间把所以的钱都取出来.</p>
+<p>所谓的过度分配内存,可以理解为"打白条",进程A告诉系统我需要2G内存,系统只会答应不会拒绝,因为系统认为任何一个进程不可能每时每刻都全部占用其申请的内存.所以实际上系统并没有给进程A完整的2G内存,而是需要使用的时候才临时分配.这就好像银行现金肯定远远小于所以储户的总值,因为银行认为不可能所以储户同一时间把所以的钱都取出来.</p>
 
 <p>一般来说这样做没有问题，但当大多数应用程序都消耗完自己的内存的时候麻烦就来了，因为这些应用程序的内存需求加起来超出了物理内存(包括 swap)的容量，内核(OOM killer)必须杀掉一些进程才能腾出空间保障系统正常运行。</p>
 
@@ -127,7 +129,7 @@
 
 <h3>2.1 根据什么kill</h3>
 
-<p>内核检测到系统内存不足、挑选并杀掉某个进程的过程可以参考内核源代码 linux/mm/oom_kill.c，当系统内存不足的时候，out_of_memory() 被触发，然后调用 select_bad_process() 选择一个 “bad” 进程杀掉，如何判断和选择一个 “bad” 进程呢，总不能随机选吧？挑选的过程由 oom_badness() 决定，挑选的算法和想法都很简单很朴实：最 bad 的那个进程就是那个最占用内存的进程。</p>
+<p>内核检测到系统内存不足,然后挑选并杀掉某个进程的过程可以参考内核源代码 linux/mm/oom_kill.c，当系统内存不足的时候，oom_kill被触发，然后选择一个进程杀掉，如何判断和选择一个进程呢，总不能随机选吧?系统会根据进程使用内存的情况给进程打分,选择进程kill的时候主要根据这个分数,打分的机制很朴素:最占用内存的进程。</p>
 
 <p>每个进程的分数都由进程的oom_score记录:</p>
 
