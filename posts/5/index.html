@@ -9,10 +9,7 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="简单熟悉Apache附带的压测工具ab，它非常容易使用，ab可以直接在Web服务器本地发起测试请求。 需要清楚的是，ab进行一切测试的本质都是基于HTTP，所以可以说它是对于Web服务器软件的黑盒性能测试，它获得的一切数据和计算结果，都可以通过HTTP来解释。 本文的ab版本信息： 1
-2
-3
-4 &hellip;">
+  <meta name="description" content="Java中有很多读写文件或者网络流的方法，特别是Java7中加入了AIO之后，可选择的方法更多，本文的目的是想比较一下各种方式的优劣。 本文基本是参考这篇英文：http://nadeausoftware.com/articles/2008/02/ &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -72,6 +69,795 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/01/16/how-to-read-files-quickly/">How to Read Files Quickly</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-01-16T01:00:42+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>1:00 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>Java中有很多读写文件或者网络流的方法，特别是Java7中加入了AIO之后，可选择的方法更多，本文的目的是想比较一下各种方式的优劣。</p>
+
+<p>本文基本是参考这篇英文：<a href="http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quikcly">http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quikcly</a></p>
+
+<h1>1.方法List</h1>
+
+<p>这里涉及的读文件的方法包括：</p>
+
+<h3>1.1 FileInputStreamOneByte</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>    long checkSum = 0L;
+</span><span class='line'>    FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>    int b;
+</span><span class='line'>    while ((b = fis.read()) != -1)
+</span><span class='line'>        checkSum += b;
+</span><span class='line'>    Closeables.close(fis, false);
+</span><span class='line'>    return checkSum;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.2 FileInputStreamBytes</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>    public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        byte[] array = new byte[BUF_SIZE];
+</span><span class='line'>        int nRead;
+</span><span class='line'>        while ((nRead = fis.read(array, 0, BUF_SIZE)) != -1) {
+</span><span class='line'>            for (int i = 0; i &lt; nRead; i++)
+</span><span class='line'>                checkSum += array[i];
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.3 BufferedInputStreamOneByte</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>    public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        BufferedInputStream bis = new BufferedInputStream(new FileInputStream(filePath), BUF_SIZE);
+</span><span class='line'>        int b;
+</span><span class='line'>        while ((b = bis.read()) != -1)
+</span><span class='line'>            checkSum += b;
+</span><span class='line'>        Closeables.close(bis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.4 BufferedInputStreamBytes</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>    public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        BufferedInputStream bis = new BufferedInputStream(new FileInputStream(filePath), BUF_SIZE);
+</span><span class='line'>        byte[] array = new byte[BUF_SIZE];
+</span><span class='line'>        int nRead;
+</span><span class='line'>        while ((nRead = bis.read(array, 0, BUF_SIZE)) != -1) {
+</span><span class='line'>            for (int i = 0; i &lt; nRead; i++)
+</span><span class='line'>                checkSum += array[i];
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(bis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.5 RandomAccessOneByte</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        RandomAccessFile raf = new RandomAccessFile(filePath, READ_MODE);
+</span><span class='line'>        int b;
+</span><span class='line'>        while ((b = raf.read()) != -1) {
+</span><span class='line'>            checkSum += b;
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(raf, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.6 RandomAccessBytes</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        RandomAccessFile raf = new RandomAccessFile(filePath, READ_MODE);
+</span><span class='line'>        byte[] array = new byte[BUF_SIZE];
+</span><span class='line'>        int nRead;
+</span><span class='line'>        while ((nRead = raf.read(array, 0, BUF_SIZE)) != -1) {
+</span><span class='line'>            for (int i = 0; i &lt; nRead; i++)
+</span><span class='line'>                checkSum += array[i];
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(raf, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.7 FileChannelByteBufferOneByte</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        ByteBuffer bb = ByteBuffer.allocate(BUF_SIZE);
+</span><span class='line'>        int nRead;
+</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
+</span><span class='line'>            if (nRead == 0)
+</span><span class='line'>                continue;
+</span><span class='line'>            bb.position(0);
+</span><span class='line'>            bb.limit(nRead);
+</span><span class='line'>            while (bb.hasRemaining())
+</span><span class='line'>                checkSum += bb.get(); // 从ByteBuffer读一个字节
+</span><span class='line'>            bb.clear();
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.8 FileChannelByteBufferBytes</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        ByteBuffer bb = ByteBuffer.allocate(BIG_BUF_SIZE);
+</span><span class='line'>        byte[] array = new byte[BUF_SIZE];
+</span><span class='line'>        int nRead, nGet;
+</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
+</span><span class='line'>            if (nRead == 0)
+</span><span class='line'>                continue;
+</span><span class='line'>            bb.position(0);
+</span><span class='line'>            bb.limit(nRead);
+</span><span class='line'>            while (bb.hasRemaining()) {
+</span><span class='line'>                nGet = Math.min(bb.remaining(), BUF_SIZE);
+</span><span class='line'>                bb.get(array, 0, nGet);
+</span><span class='line'>                for (int i = 0; i &lt; nGet; i++)
+</span><span class='line'>                    checkSum += array[i];
+</span><span class='line'>            }
+</span><span class='line'>            bb.clear();
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.9 FileChannelByteBufferWrap</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        byte[] barray = new byte[BUF_SIZE];
+</span><span class='line'>        ByteBuffer bb = ByteBuffer.wrap(barray); // ByteBuffer包装本地array
+</span><span class='line'>        int nRead;
+</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
+</span><span class='line'>            for (int i = 0; i &lt; nRead; i++)
+</span><span class='line'>                checkSum += barray[i];
+</span><span class='line'>            bb.clear();
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.10 FileChannelMappedByteBufferOneByte</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        MappedByteBuffer mb = ch.map(FileChannel.MapMode.READ_ONLY, 0L, ch.size());
+</span><span class='line'>        while (mb.hasRemaining())
+</span><span class='line'>            checkSum += mb.get();
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.11 FileChannelMappedByteBufferBytes</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        MappedByteBuffer mb = ch.map(FileChannel.MapMode.READ_ONLY, 0L, ch.size());
+</span><span class='line'>        byte[] barray = new byte[BUF_SIZE];
+</span><span class='line'>        int nGet;
+</span><span class='line'>        while (mb.hasRemaining()) {
+</span><span class='line'>            nGet = Math.min(mb.remaining(), BUF_SIZE);
+</span><span class='line'>            mb.get(barray, 0, nGet);
+</span><span class='line'>            for (int i = 0; i &lt; nGet; i++)
+</span><span class='line'>                checkSum += barray[i];
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.12 FileChannelDirectByteBufferOneByte</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        ByteBuffer bb = ByteBuffer.allocateDirect(BUF_SIZE);
+</span><span class='line'>        int nRead;
+</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
+</span><span class='line'>            bb.position(0);
+</span><span class='line'>            bb.limit(nRead);
+</span><span class='line'>            while (bb.hasRemaining())
+</span><span class='line'>                checkSum += bb.get();
+</span><span class='line'>            bb.clear();
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.13 FileChannelDirectByteBufferBytes</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
+</span><span class='line'>        long checkSum = 0L;
+</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>        FileChannel ch = fis.getChannel();
+</span><span class='line'>        ByteBuffer bb = ByteBuffer.allocateDirect(BIG_BUF_SIZE);
+</span><span class='line'>        byte[] barray = new byte[BUF_SIZE];
+</span><span class='line'>        int nRead, nGet;
+</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
+</span><span class='line'>            if (nRead == 0)
+</span><span class='line'>                continue;
+</span><span class='line'>            bb.position(0);
+</span><span class='line'>            bb.limit(nRead);
+</span><span class='line'>            while (bb.hasRemaining()) {
+</span><span class='line'>                nGet = Math.min(bb.remaining(), BUF_SIZE);
+</span><span class='line'>                bb.get(barray, 0, nGet);
+</span><span class='line'>                for (int i = 0; i &lt; nGet; i++)
+</span><span class='line'>                    checkSum += barray[i];
+</span><span class='line'>            }
+</span><span class='line'>            bb.clear();
+</span><span class='line'>        }
+</span><span class='line'>        Closeables.close(fis, false);
+</span><span class='line'>        return checkSum;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.测试</h1>
+
+<p>测试文件的大小为83M：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Documents/TestData$ ll -h BXBooks.sql
+</span><span class='line'>-rw------- 1 xiaobaoqiu xiaobaoqiu 83M 10月  8  2004 BXBooks.sql</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.结论</h1>
+
+<p>得到测试数据之后，为了直观展示代码的速度，用ECharts展示，对应的js代码如下(可以在<a href="http://echarts.baidu.com/doc/example/line1.html#helianthus%E4%B8%AD%E4%BD%BF%E7%94%A8">http://echarts.baidu.com/doc/example/line1.html#helianthus%E4%B8%AD%E4%BD%BF%E7%94%A8</a>)：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>option = {
+</span><span class='line'>    title : {
+</span><span class='line'>        text: 'how_to_read_file_quickly',
+</span><span class='line'>        subtext: 'baoqiu.xiao'
+</span><span class='line'>    },
+</span><span class='line'>    tooltip : {
+</span><span class='line'>        trigger: 'axis'
+</span><span class='line'>    },
+</span><span class='line'>    legend: {
+</span><span class='line'>        data:['FileInputStreamOneByte','FileInputStreamBytes','BufferedInputStreamOneByte','BufferedInputStreamBytes','RandomAccessOneByte','RandomAccessBytes','FileChannelByteBufferOneByte','FileChannelByteBufferBytes','FileChannelByteBufferWrap','FileChannelMappedByteBufferOneByte','FileChannelMappedByteBufferBytes','FileChannelDirectByteBufferOneByte','FileChannelDirectByteBufferBytes']
+</span><span class='line'>    },
+</span><span class='line'>    dataZoom : {
+</span><span class='line'>        show : true,
+</span><span class='line'>        realtime: true,
+</span><span class='line'>        start : 0,
+</span><span class='line'>        end : 30
+</span><span class='line'>    },
+</span><span class='line'>    toolbox: {
+</span><span class='line'>        show : true,
+</span><span class='line'>        feature : {
+</span><span class='line'>            saveAsImage : {show: true}
+</span><span class='line'>        }
+</span><span class='line'>    },
+</span><span class='line'>    calculable : true,
+</span><span class='line'>    xAxis : [
+</span><span class='line'>        {
+</span><span class='line'>            type : 'category',
+</span><span class='line'>            boundaryGap : false,
+</span><span class='line'>            data : ['1','2','4','8','16','32','64','128','256','512','1K','2K','4K','8K','16K','32K','64K','128K']
+</span><span class='line'>        }
+</span><span class='line'>    ],
+</span><span class='line'>    yAxis : [
+</span><span class='line'>        {
+</span><span class='line'>            type : 'value',
+</span><span class='line'>            axisLabel : {
+</span><span class='line'>                formatter: '{value} 毫秒'
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    ],
+</span><span class='line'>    series : [
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileInputStreamOneByte',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[29119,28353,27872,27950,32035,40377,34904,36804,36835,33177,32252,37362,32359,31892,32621,32312,32943,33369]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileInputStreamBytes',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[38182,20208,10194,4768,2616,1551,645,471,262,183,150,100,118,125,96,83,124,110]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'BufferedInputStreamOneByte',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[33404,16966,8613,4718,2525,1491,980,728,677,681,558,608,557,615,505,606,656,693]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'BufferedInputStreamBytes',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[33880,17333,8487,4851,2293,1632,627,358,242,147,129,113,89,92,107,88,100,95]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'RandomAccessOneByte',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[28430,27445,26794,27053,28929,28633,29509,28870,28195,27376,28236,27444,28061,28889,27423,28064,28481,28084]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'RandomAccessBytes',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[31497,16162,8135,4365,2131,1117,561,321,193,146,110,101,109,87,89,91,102,96]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelByteBufferOneByte',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[38778,18325,9447,5344,2430,1413,779,507,380,310,298,259,267,263,249,264,260,258]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelByteBufferBytes',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[19279,9823,5090,2605,1407,854,577,380,333,272,272,239,237,241,237,234,249,270]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelByteBufferWrap',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[38382,17636,9094,4608,2327,1198,646,355,249,151,108,100,92,90,88,103,85,92]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelMappedByteBufferOneByte',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[913,240,92,83,82,87,85,88,83,94,87,90,81,124,81,84,83,120]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelMappedByteBufferBytes',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[731,447,305,332,225,164,139,110,98,88,87,140,97,86,93,92,92,92]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelDirectByteBufferOneByte',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[31287,14473,7296,3815,1919,1001,547,319,200,135,109,98,84,77,80,82,77,86]
+</span><span class='line'>        },
+</span><span class='line'>        {
+</span><span class='line'>            name:'FileChannelDirectByteBufferBytes',
+</span><span class='line'>            type:'line',
+</span><span class='line'>            data:[14945,8060,4107,2174,1120,580,334,206,149,110,96,95,79,89,81,81,86,84]
+</span><span class='line'>        }       
+</span><span class='line'>    ]
+</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+
+
+<p>整体展示图如下：
+<img src="/images/iospeed/read_file_speed.png"></p>
+
+<h3>3.1 最快的三种方法</h3>
+
+<p>为了展示更细节的地方，设置了y区间范围，在yAxis上设置min和max属性：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>yAxis : [
+</span><span class='line'>        {
+</span><span class='line'>            type : 'value',
+</span><span class='line'>            min:0,
+</span><span class='line'>            max:200,
+</span><span class='line'>            axisLabel : {
+</span><span class='line'>                formatter: '{value} 毫秒'
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    ],</span></code></pre></td></tr></table></div></figure>
+
+
+<p>得到如下展示图：
+<img src="/images/iospeed/read_file_speed_small.png"></p>
+
+<p>从上面这个图可以大致看出，最快的三种方法（PS，这里只做了一次实验，不是多次实验的平均值，所有数据可能不一定准确）：</p>
+
+<pre><code>1.FileChannelMappedByteBufferBytes
+2.FileChannelMappedByteBufferOneByte
+3.FileChannelDirectByteBufferBytes
+</code></pre>
+
+<h1>4.解析</h1>
+
+<p>下面解析一下代码中之前接触较少的东东。</p>
+
+<h3>4.1 RandomAccessFile</h3>
+
+<p>支持对文件的随机读取和写入。随机存取文件的行为类似存储在文件系统中的一个大型字节数组。存在指向该隐含数组的光标或索引，称为文件指针。</p>
+
+<p>读取操作从文件指针开始读取字节，并随着对字节的读取而前移此文件指针。如果随机存取文件以读取/写入模式创建，则写入操作也可用；写入操作从文件指针开始写入字节，并随着对字节的写入而前移此文件指针。该文件指针可以通过 getFilePointer 方法读取，并通过 seek 方法设置。</p>
+
+<p>提供了boolean，byte，char, short, int, long, float, double这些基本类型的read和write方法。</p>
+
+<h3>4.2 FileChannel</h3>
+
+<p>FileChannel是一个连接到文件的通道。可以通过文件通道读写文件。FileChannel无法设置为非阻塞模式，它总是运行在阻塞模式下。</p>
+
+<p>在使用FileChannel之前，必须先打开它。但是，我们无法直接打开一个FileChannel，需要通过使用一个InputStream、OutputStream或RandomAccessFile来获取一个FileChannel实例。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>FileInputStream fis = new FileInputStream(filePath);
+</span><span class='line'>FileChannel ch = fis.getChannel();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>有时可能需要在FileChannel的某个特定位置进行数据的读/写操作。可以通过调用position()方法获取FileChannel的当前位置。也可以通过调用position(long pos)方法设置FileChannel的当前位置。</p>
+
+<p>FileChannel实例的size()方法将返回该实例所关联文件的大小。</p>
+
+<p>FileChannel.force()方法将通道里尚未写入磁盘的数据强制写到磁盘上。出于性能方面的考虑，操作系统会将数据缓存在内存中，所以无法保证写入到FileChannel里的数据一定会即时写到磁盘上。要保证这一点，需要调用force()方法。</p>
+
+<h3>4.3 ByteBuffer</h3>
+
+<p>ByteBuffer知识下一次单独讲。</p>
+
+<h1>5.BufferedInputStream的defaultBufferSize</h1>
+
+<p>BufferedInputStream默认buffer大小为8K：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class BufferedInputStream extends FilterInputStream {
+</span><span class='line'>    private static int defaultBufferSize = 8192;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个从图上也可以比较直观的看到，在缓存为8K左右的时候，性能最好：
+<img src="/images/iospeed/BufferedInputStream_buffer.png"></p>
+
+<h1>5.参考：</h1>
+
+<p><a href="http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quickly">http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quickly</a></p>
+
+<p><a href="http://colobu.com/2014/10/20/java-buffer-basic/">http://colobu.com/2014/10/20/java-buffer-basic/</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2384,554 +3170,6 @@ ConcurrentNavigableMap
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/12/23/javabing-fa-rong-qi-zhi-copyonwrite/">Java并发容器之CopyOnWrite</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-12-23T04:22:29+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2014</span></span> <span class='time'>4:22 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>这里包括两种容器:</p>
-
-<pre><code>CopyOnWriteArrayList
-CopyOnWriteArraySet
-</code></pre>
-
-<h1>1.CopyOnWriteArrayList</h1>
-
-<p>CopyOnWriteArrayList类是一个线程安全的List接口的实现，在该类的内部进行元素的写操作时，底层的数组将被完整的复制，这对于读操作远远多于写操作的应用非常适合。在CopyOnWriteArrayList上进行操作时，读操作不需要加锁，而写操作类实现中对其进行了加锁。</p>
-
-<p>底层也是用数组实现：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">CopyOnWriteArrayList</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">implements</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;,</span> <span class="n">RandomAccess</span><span class="o">,</span> <span class="n">Cloneable</span><span class="o">,</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">serialVersionUID</span> <span class="o">=</span> <span class="mi">8673264195747942595L</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">transient</span> <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">ReentrantLock</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">volatile</span> <span class="kd">transient</span> <span class="n">Object</span><span class="o">[]</span> <span class="n">array</span><span class="o">;</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>读操作是不加锁的：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">E</span> <span class="nf">get</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">return</span> <span class="o">(</span><span class="n">E</span><span class="o">)(</span><span class="n">getArray</span><span class="o">()[</span><span class="n">index</span><span class="o">]);</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="kd">public</span> <span class="kt">int</span> <span class="nf">indexOf</span><span class="o">(</span><span class="n">E</span> <span class="n">e</span><span class="o">,</span> <span class="kt">int</span> <span class="n">index</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="n">Object</span><span class="o">[]</span> <span class="n">elements</span> <span class="o">=</span> <span class="n">getArray</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">return</span> <span class="nf">indexOf</span><span class="o">(</span><span class="n">e</span><span class="o">,</span> <span class="n">elements</span><span class="o">,</span> <span class="n">index</span><span class="o">,</span> <span class="n">elements</span><span class="o">.</span><span class="na">length</span><span class="o">);</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>写操作加锁，写包括add，remove等操作。</p>
-
-<h3>1.1 add操作</h3>
-
-<p>增加元素的时候，会首先加锁，将底层数组复制一份，将待新增的元素增加到新的数组中，再将新的数组设置为新的底层数组：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">add</span><span class="o">(</span><span class="n">E</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>    <span class="c1">//加锁，排他锁，所有的其他读写操作都被阻塞</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">elements</span> <span class="o">=</span> <span class="n">getArray</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">len</span> <span class="o">=</span> <span class="n">elements</span><span class="o">.</span><span class="na">length</span><span class="o">;</span>
-</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">newElements</span> <span class="o">=</span> <span class="n">Arrays</span><span class="o">.</span><span class="na">copyOf</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="n">len</span> <span class="o">+</span> <span class="mi">1</span><span class="o">);</span>    <span class="c1">//复制</span>
-</span><span class='line'>        <span class="n">newElements</span><span class="o">[</span><span class="n">len</span><span class="o">]</span> <span class="o">=</span> <span class="n">e</span><span class="o">;</span>
-</span><span class='line'>        <span class="n">setArray</span><span class="o">(</span><span class="n">newElements</span><span class="o">);</span>
-</span><span class='line'>        <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>另外一个指定下标的位置add操作，需要将index位置空出来，因此需要分两次arraycopy：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kt">void</span> <span class="nf">add</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">,</span> <span class="n">E</span> <span class="n">element</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">elements</span> <span class="o">=</span> <span class="n">getArray</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">len</span> <span class="o">=</span> <span class="n">elements</span><span class="o">.</span><span class="na">length</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">index</span> <span class="o">&gt;</span> <span class="n">len</span> <span class="o">||</span> <span class="n">index</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>        <span class="k">throw</span> <span class="k">new</span> <span class="nf">IndexOutOfBoundsException</span><span class="o">(</span><span class="s">&quot;Index: &quot;</span><span class="o">+</span><span class="n">index</span><span class="o">+</span>
-</span><span class='line'>                            <span class="s">&quot;, Size: &quot;</span><span class="o">+</span><span class="n">len</span><span class="o">);</span>
-</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">newElements</span><span class="o">;</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">numMoved</span> <span class="o">=</span> <span class="n">len</span> <span class="o">-</span> <span class="n">index</span><span class="o">;</span> <span class="c1">//待移动部分，即index之后的元素</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">numMoved</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>            <span class="n">newElements</span> <span class="o">=</span> <span class="n">Arrays</span><span class="o">.</span><span class="na">copyOf</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="n">len</span> <span class="o">+</span> <span class="mi">1</span><span class="o">);</span>
-</span><span class='line'>        <span class="k">else</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">newElements</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Object</span><span class="o">[</span><span class="n">len</span> <span class="o">+</span> <span class="mi">1</span><span class="o">];</span>
-</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">arraycopy</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">newElements</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">index</span><span class="o">);</span>
-</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">arraycopy</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="n">index</span><span class="o">,</span> <span class="n">newElements</span><span class="o">,</span> <span class="n">index</span> <span class="o">+</span> <span class="mi">1</span><span class="o">,</span>
-</span><span class='line'>                 <span class="n">numMoved</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>        <span class="n">newElements</span><span class="o">[</span><span class="n">index</span><span class="o">]</span> <span class="o">=</span> <span class="n">element</span><span class="o">;</span>
-</span><span class='line'>        <span class="n">setArray</span><span class="o">(</span><span class="n">newElements</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>CopyOnWriteArrayList还提供了两个addIfAbsent函数，即不存在这个元素才会增加，这两个函数是CopyOnWriteArraySet实现的基础：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">addIfAbsent</span><span class="o">(</span><span class="n">E</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">elements</span> <span class="o">=</span> <span class="n">getArray</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">len</span> <span class="o">=</span> <span class="n">elements</span><span class="o">.</span><span class="na">length</span><span class="o">;</span>
-</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">newElements</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Object</span><span class="o">[</span><span class="n">len</span> <span class="o">+</span> <span class="mi">1</span><span class="o">];</span>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">len</span><span class="o">;</span> <span class="o">++</span><span class="n">i</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">eq</span><span class="o">(</span><span class="n">e</span><span class="o">,</span> <span class="n">elements</span><span class="o">[</span><span class="n">i</span><span class="o">]))</span> <span class="c1">//存在，则不添加</span>
-</span><span class='line'>            <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">else</span>
-</span><span class='line'>            <span class="n">newElements</span><span class="o">[</span><span class="n">i</span><span class="o">]</span> <span class="o">=</span> <span class="n">elements</span><span class="o">[</span><span class="n">i</span><span class="o">];</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>        <span class="n">newElements</span><span class="o">[</span><span class="n">len</span><span class="o">]</span> <span class="o">=</span> <span class="n">e</span><span class="o">;</span>
-</span><span class='line'>        <span class="n">setArray</span><span class="o">(</span><span class="n">newElements</span><span class="o">);</span>
-</span><span class='line'>        <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="kd">public</span> <span class="kt">int</span> <span class="nf">addAllAbsent</span><span class="o">(</span><span class="n">Collection</span><span class="o">&lt;?</span> <span class="kd">extends</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">c</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="n">Object</span><span class="o">[]</span> <span class="n">cs</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="na">toArray</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">cs</span><span class="o">.</span><span class="na">length</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>        <span class="k">return</span> <span class="mi">0</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">Object</span><span class="o">[]</span> <span class="n">uniq</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Object</span><span class="o">[</span><span class="n">cs</span><span class="o">.</span><span class="na">length</span><span class="o">];</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">elements</span> <span class="o">=</span> <span class="n">getArray</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">len</span> <span class="o">=</span> <span class="n">elements</span><span class="o">.</span><span class="na">length</span><span class="o">;</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">added</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">cs</span><span class="o">.</span><span class="na">length</span><span class="o">;</span> <span class="o">++</span><span class="n">i</span><span class="o">)</span> <span class="o">{</span> <span class="c1">// scan for duplicates</span>
-</span><span class='line'>            <span class="n">Object</span> <span class="n">e</span> <span class="o">=</span> <span class="n">cs</span><span class="o">[</span><span class="n">i</span><span class="o">];</span>
-</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">indexOf</span><span class="o">(</span><span class="n">e</span><span class="o">,</span> <span class="n">elements</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">len</span><span class="o">)</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="n">indexOf</span><span class="o">(</span><span class="n">e</span><span class="o">,</span> <span class="n">uniq</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">added</span><span class="o">)</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>                <span class="n">uniq</span><span class="o">[</span><span class="n">added</span><span class="o">++]</span> <span class="o">=</span> <span class="n">e</span><span class="o">;</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">added</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">Object</span><span class="o">[]</span> <span class="n">newElements</span> <span class="o">=</span> <span class="n">Arrays</span><span class="o">.</span><span class="na">copyOf</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="n">len</span> <span class="o">+</span> <span class="n">added</span><span class="o">);</span>
-</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">arraycopy</span><span class="o">(</span><span class="n">uniq</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">newElements</span><span class="o">,</span> <span class="n">len</span><span class="o">,</span> <span class="n">added</span><span class="o">);</span>
-</span><span class='line'>            <span class="n">setArray</span><span class="o">(</span><span class="n">newElements</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">added</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.2 remove操作</h3>
-
-<p>删除，需要复制待删除元素前后两段数组元素：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-<span class='line-number'>108</span>
-<span class='line-number'>109</span>
-<span class='line-number'>110</span>
-<span class='line-number'>111</span>
-<span class='line-number'>112</span>
-<span class='line-number'>113</span>
-<span class='line-number'>114</span>
-<span class='line-number'>115</span>
-<span class='line-number'>116</span>
-<span class='line-number'>117</span>
-<span class='line-number'>118</span>
-<span class='line-number'>119</span>
-<span class='line-number'>120</span>
-<span class='line-number'>121</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="c1">// 通过下标remove</span>
-</span><span class='line'><span class="kd">public</span> <span class="n">E</span> <span class="nf">remove</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">elements</span> <span class="o">=</span> <span class="n">getArray</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">len</span> <span class="o">=</span> <span class="n">elements</span><span class="o">.</span><span class="na">length</span><span class="o">;</span>
-</span><span class='line'>        <span class="n">Object</span> <span class="n">oldValue</span> <span class="o">=</span> <span class="n">elements</span><span class="o">[</span><span class="n">index</span><span class="o">];</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">numMoved</span> <span class="o">=</span> <span class="n">len</span> <span class="o">-</span> <span class="n">index</span> <span class="o">-</span> <span class="mi">1</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">numMoved</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>            <span class="n">setArray</span><span class="o">(</span><span class="n">Arrays</span><span class="o">.</span><span class="na">copyOf</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="n">len</span> <span class="o">-</span> <span class="mi">1</span><span class="o">));</span>
-</span><span class='line'>        <span class="k">else</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">Object</span><span class="o">[]</span> <span class="n">newElements</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Object</span><span class="o">[</span><span class="n">len</span> <span class="o">-</span> <span class="mi">1</span><span class="o">];</span>
-</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">arraycopy</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">newElements</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">index</span><span class="o">);</span>
-</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">arraycopy</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="n">index</span> <span class="o">+</span> <span class="mi">1</span><span class="o">,</span> <span class="n">newElements</span><span class="o">,</span> <span class="n">index</span><span class="o">,</span>
-</span><span class='line'>                 <span class="n">numMoved</span><span class="o">);</span>
-</span><span class='line'>            <span class="n">setArray</span><span class="o">(</span><span class="n">newElements</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>        <span class="k">return</span> <span class="o">(</span><span class="n">E</span><span class="o">)</span><span class="n">oldValue</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="c1">//通过值remove，先拷贝在查找并</span>
-</span><span class='line'><span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">remove</span><span class="o">(</span><span class="n">Object</span> <span class="n">o</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">elements</span> <span class="o">=</span> <span class="n">getArray</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">len</span> <span class="o">=</span> <span class="n">elements</span><span class="o">.</span><span class="na">length</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">len</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="c1">// Copy while searching for element to remove</span>
-</span><span class='line'>            <span class="c1">// This wins in the normal case of element being present</span>
-</span><span class='line'>            <span class="kt">int</span> <span class="n">newlen</span> <span class="o">=</span> <span class="n">len</span> <span class="o">-</span> <span class="mi">1</span><span class="o">;</span>
-</span><span class='line'>            <span class="n">Object</span><span class="o">[]</span> <span class="n">newElements</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Object</span><span class="o">[</span><span class="n">newlen</span><span class="o">];</span>
-</span><span class='line'>
-</span><span class='line'>            <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">newlen</span><span class="o">;</span> <span class="o">++</span><span class="n">i</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">eq</span><span class="o">(</span><span class="n">o</span><span class="o">,</span> <span class="n">elements</span><span class="o">[</span><span class="n">i</span><span class="o">]))</span> <span class="o">{</span>
-</span><span class='line'>                    <span class="c1">//找到了，将余下的拷贝并返回</span>
-</span><span class='line'>                    <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">k</span> <span class="o">=</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="o">;</span> <span class="n">k</span> <span class="o">&lt;</span> <span class="n">len</span><span class="o">;</span> <span class="o">++</span><span class="n">k</span><span class="o">)</span>
-</span><span class='line'>                        <span class="n">newElements</span><span class="o">[</span><span class="n">k</span><span class="o">-</span><span class="mi">1</span><span class="o">]</span> <span class="o">=</span> <span class="n">elements</span><span class="o">[</span><span class="n">k</span><span class="o">];</span>
-</span><span class='line'>                    <span class="n">setArray</span><span class="o">(</span><span class="n">newElements</span><span class="o">);</span>
-</span><span class='line'>                    <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
-</span><span class='line'>                <span class="o">}</span> <span class="k">else</span>
-</span><span class='line'>                    <span class="n">newElements</span><span class="o">[</span><span class="n">i</span><span class="o">]</span> <span class="o">=</span> <span class="n">elements</span><span class="o">[</span><span class="n">i</span><span class="o">];</span>   <span class="c1">//逐个拷贝</span>
-</span><span class='line'>            <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>            <span class="c1">//最后一个元素</span>
-</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">eq</span><span class="o">(</span><span class="n">o</span><span class="o">,</span> <span class="n">elements</span><span class="o">[</span><span class="n">newlen</span><span class="o">]))</span> <span class="o">{</span>
-</span><span class='line'>                <span class="n">setArray</span><span class="o">(</span><span class="n">newElements</span><span class="o">);</span>
-</span><span class='line'>                <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
-</span><span class='line'>            <span class="o">}</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>        <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'><span class="c1">//删除下标范围在[fromIndexs, toIndex)之前的元素</span>
-</span><span class='line'><span class="kd">private</span> <span class="kt">void</span> <span class="nf">removeRange</span><span class="o">(</span><span class="kt">int</span> <span class="n">fromIndex</span><span class="o">,</span> <span class="kt">int</span> <span class="n">toIndex</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">elements</span> <span class="o">=</span> <span class="n">getArray</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">len</span> <span class="o">=</span> <span class="n">elements</span><span class="o">.</span><span class="na">length</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">fromIndex</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">fromIndex</span> <span class="o">&gt;=</span> <span class="n">len</span> <span class="o">||</span> <span class="n">toIndex</span> <span class="o">&gt;</span> <span class="n">len</span> <span class="o">||</span> <span class="n">toIndex</span> <span class="o">&lt;</span> <span class="n">fromIndex</span><span class="o">)</span>
-</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">IndexOutOfBoundsException</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">newlen</span> <span class="o">=</span> <span class="n">len</span> <span class="o">-</span> <span class="o">(</span><span class="n">toIndex</span> <span class="o">-</span> <span class="n">fromIndex</span><span class="o">);</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">numMoved</span> <span class="o">=</span> <span class="n">len</span> <span class="o">-</span> <span class="n">toIndex</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">numMoved</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>            <span class="n">setArray</span><span class="o">(</span><span class="n">Arrays</span><span class="o">.</span><span class="na">copyOf</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="n">newlen</span><span class="o">));</span>
-</span><span class='line'>        <span class="k">else</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">Object</span><span class="o">[]</span> <span class="n">newElements</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Object</span><span class="o">[</span><span class="n">newlen</span><span class="o">];</span>
-</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">arraycopy</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">newElements</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">fromIndex</span><span class="o">);</span>
-</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">arraycopy</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="n">toIndex</span><span class="o">,</span> <span class="n">newElements</span><span class="o">,</span>
-</span><span class='line'>                 <span class="n">fromIndex</span><span class="o">,</span> <span class="n">numMoved</span><span class="o">);</span>
-</span><span class='line'>            <span class="n">setArray</span><span class="o">(</span><span class="n">newElements</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">removeAll</span><span class="o">(</span><span class="n">Collection</span><span class="o">&lt;?&gt;</span> <span class="n">c</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">elements</span> <span class="o">=</span> <span class="n">getArray</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">len</span> <span class="o">=</span> <span class="n">elements</span><span class="o">.</span><span class="na">length</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">len</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="c1">// temp array holds those elements we know we want to keep</span>
-</span><span class='line'>            <span class="kt">int</span> <span class="n">newlen</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
-</span><span class='line'>            <span class="n">Object</span><span class="o">[]</span> <span class="n">temp</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Object</span><span class="o">[</span><span class="n">len</span><span class="o">];</span>
-</span><span class='line'>            <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">len</span><span class="o">;</span> <span class="o">++</span><span class="n">i</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>                <span class="n">Object</span> <span class="n">element</span> <span class="o">=</span> <span class="n">elements</span><span class="o">[</span><span class="n">i</span><span class="o">];</span>
-</span><span class='line'>                <span class="k">if</span> <span class="o">(!</span><span class="n">c</span><span class="o">.</span><span class="na">contains</span><span class="o">(</span><span class="n">element</span><span class="o">))</span>
-</span><span class='line'>                    <span class="n">temp</span><span class="o">[</span><span class="n">newlen</span><span class="o">++]</span> <span class="o">=</span> <span class="n">element</span><span class="o">;</span>
-</span><span class='line'>            <span class="o">}</span>
-</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">newlen</span> <span class="o">!=</span> <span class="n">len</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>                <span class="n">setArray</span><span class="o">(</span><span class="n">Arrays</span><span class="o">.</span><span class="na">copyOf</span><span class="o">(</span><span class="n">temp</span><span class="o">,</span> <span class="n">newlen</span><span class="o">));</span>
-</span><span class='line'>                <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
-</span><span class='line'>            <span class="o">}</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>        <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="c1">//清空</span>
-</span><span class='line'><span class="kd">public</span> <span class="kt">void</span> <span class="nf">clear</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">setArray</span><span class="o">(</span><span class="k">new</span> <span class="n">Object</span><span class="o">[</span><span class="mi">0</span><span class="o">]);</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.CopyOnWriteArraySet</h1>
-
-<p>CopyOnWriteArraySet是在CopyOnWriteArrayList的基础上实现的，只是保证元素不重复，因此会在add的时候判断，调用CopyOnWriteArrayList的addIfAbsent函数实现：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">CopyOnWriteArraySet</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">AbstractSet</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
-</span><span class='line'>        <span class="kd">implements</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">CopyOnWriteArrayList</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">al</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">add</span><span class="o">(</span><span class="n">E</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">al</span><span class="o">.</span><span class="na">addIfAbsent</span><span class="o">(</span><span class="n">e</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">addAll</span><span class="o">(</span><span class="n">Collection</span><span class="o">&lt;?</span> <span class="kd">extends</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">c</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">al</span><span class="o">.</span><span class="na">addAllAbsent</span><span class="o">(</span><span class="n">c</span><span class="o">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/6">&larr; Older</a>
@@ -2951,6 +3189,10 @@ CopyOnWriteArraySet
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/08/12/mysql-packettoobigexception/">Mysql PacketTooBigException</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/08/08/oomkiller/">Oomkiller</a>
       </li>
     
@@ -2964,10 +3206,6 @@ CopyOnWriteArraySet
     
       <li class="post">
         <a href="/blog/2015/07/17/fen-ci/">分词</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
       </li>
     
   </ul>
@@ -2984,7 +3222,7 @@ CopyOnWriteArraySet
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (12)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>
-<li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (9)</a></li>
+<li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (10)</a></li>
 <li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>

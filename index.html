@@ -9,7 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer. 其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用, &hellip;">
+  <meta name="description" content="最近做一个同步线上数据导dev或者beta环境的小工具.今天遇到一个小异常: 1
+Caused by: com.mysql.jdbc.PacketTooBigException: Packet for query is too large (17610152 &gt; 16777216). You &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -69,6 +70,76 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/08/12/mysql-packettoobigexception/">Mysql PacketTooBigException</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-08-12T16:44:38+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>12</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:44 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近做一个同步线上数据导dev或者beta环境的小工具.今天遇到一个小异常:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Caused by: com.mysql.jdbc.PacketTooBigException: Packet for query is too large (17610152 &gt; 16777216). You can change this value on the server by setting the max_allowed_packet' variable.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>原因就是一次插入的数据太大了.Mysql存在数据包最大大小的配置,默认是1M,这里我们的dev环境是16M,但是我这里出现了大于16M的数据packet:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show VARIABLES like '%max_allowed_packet%';
+</span><span class='line'>+--------------------------+------------+
+</span><span class='line'>| Variable_name            | Value      |
+</span><span class='line'>+--------------------------+------------+
+</span><span class='line'>| max_allowed_packet       | 16777216   |
+</span><span class='line'>| slave_max_allowed_packet | 1073741824 |
+</span><span class='line'>+--------------------------+------------+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>修改max_allowed_packet:</p>
+
+<ul>
+<li>1.set global max_allowed_packet = 2<em>1024</em>1024*10</li>
+<li>2.修改my.conf文件(windows为my.ini)</li>
+</ul>
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>max_allowed_packet      = 16M</span></code></pre></td></tr></table></div></figure>
+
+
+<p>注意点:</p>
+
+<ul>
+<li>1.保证Master和Slave的max_allowed_packet参数一致(一般都要求所以参数一致);</li>
+</ul>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -3081,174 +3152,6 @@ WHAT: 用户当前正在使用的命令
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/06/23/linux-swap/">Linux Swap</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-06-23T19:35:55+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>7:35 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近一台机器出现swap报警,从监控图上也看到swap的使用一直存在.</p>
-
-<p>服务器上只有一个Tomcat应用和一些定时任务.</p>
-
-<h1>1.什么是swap</h1>
-
-<p>inux操作系统将物理内存分为多个小的内存块，称之为页(pages). 当应用请求的物理内存不够分配时，操作系统会将一段时间之内不用的内存页交换至swap分区，从而为应用释放内存空间。</p>
-
-<p>Swap对于系统过来说非常重要：</p>
-
-<pre><code>1.首先，当主内存不够用时，操作系统可以swap out一部分内存页，迅速为当前急需内存的应用或者进程分配内存；
-2.其次，某些内存页只在应用初始化阶段用到，之后可能就不再使用了，操作系统可以将这些内存页swap out，从而为应用或者磁盘cache腾出更多的内存空间;
-</code></pre>
-
-<h1>2.swap会带来哪些问题</h1>
-
-<p>我们知道，计算机磁盘I/O通常是系统的瓶颈所在。主内存的读写速度是纳秒级别，而磁盘读写速度是毫秒级别，两者相差3、4个数量级。然而，即使是当前广泛使用的SSD，读写速度相比主内存或者CPU cache也相差2、3个数量级。系统发生swap交换越多，那么系统自然也越慢。</p>
-
-<p>特别对于web服务器来说，都是面对用户的交互式应用，因此响应速度尤其重要。如果系统经常因为swap交换而变得响应迟钝，那么用户体验效果可想而知。</p>
-
-<p>总结成一句话：swap分区要有，在关键时刻不至于让你的应用因为内存不够用而被操作系统OOM KILLER干掉；但是不到关键时刻不要进行swap交换，因为这些操作会影响系统的响应速度。</p>
-
-<p>关于swap的swap in和swap out可以从vmstat命令查看(si表示swap in, so表示swap out).参考:
-<a href="http://xiaobaoqiu.github.io/blog/2015/01/26/vmstatgong-ju/">http://xiaobaoqiu.github.io/blog/2015/01/26/vmstatgong-ju/</a></p>
-
-<h1>3.查看swap占用</h1>
-
-<p>free命令, 参考:
-<a href="http://xiaobaoqiu.github.io/blog/2014/09/04/linux-memory-usage/">http://xiaobaoqiu.github.io/blog/2014/09/04/linux-memory-usage/</a></p>
-
-<h1>4.找到swap占用元凶</h1>
-
-<p>Linux系统中有一个文件smaps文件，记录了当前进程所对应的内存映像信息，路径为/proc/$pid/smaps.以本机的一个线程为例子:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo cat /proc/3555/smaps | head -16
-</span><span class='line'>00400000-00401000 r-xp 00000000 08:13 3444936                            /usr/local/jdk1.7.0_72/bin/java
-</span><span class='line'>Size:                  4 kB
-</span><span class='line'>Rss:                   4 kB
-</span><span class='line'>Pss:                   4 kB
-</span><span class='line'>Shared_Clean:          0 kB
-</span><span class='line'>Shared_Dirty:          0 kB
-</span><span class='line'>Private_Clean:         4 kB
-</span><span class='line'>Private_Dirty:         0 kB
-</span><span class='line'>Referenced:            4 kB
-</span><span class='line'>Anonymous:             0 kB
-</span><span class='line'>AnonHugePages:         0 kB
-</span><span class='line'>Swap:                  0 kB
-</span><span class='line'>KernelPageSize:        4 kB
-</span><span class='line'>MMUPageSize:           4 kB
-</span><span class='line'>Locked:                0 kB
-</span><span class='line'>VmFlags: rd ex mr mw me dw</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中Swap表示这个线程占有Swap的情况.</p>
-
-<p>查看swap的占有情况的脚本,按照占用swap的占用多少从高到底排序:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
-</span><span class='line'>
-</span><span class='line'>function getswap {
-</span><span class='line'>SUM=0
-</span><span class='line'>OVERALL=0
-</span><span class='line'>for DIR in `find /proc/ -maxdepth 1 -type d | egrep "^/proc/[0-9]"` ; do
-</span><span class='line'>PID=`echo $DIR | cut -d / -f 3`
-</span><span class='line'>PROGNAME=`ps -p $PID -o comm --no-headers`
-</span><span class='line'>for SWAP in `grep Swap $DIR/smaps 2&gt;/dev/null| awk '{ print $2 }'`
-</span><span class='line'>do
-</span><span class='line'>let SUM=$SUM+$SWAP
-</span><span class='line'>done
-</span><span class='line'>echo "PID=$PID    Swap used(KB): $SUM    ($PROGNAME )"
-</span><span class='line'>let OVERALL=$OVERALL+$SUM
-</span><span class='line'>SUM=0
-</span><span class='line'>
-</span><span class='line'>done
-</span><span class='line'>echo "Overall swap used: $OVERALL"
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>getswap|sort -k4nr</span></code></pre></td></tr></table></div></figure>
-
-
-<p>然后运行:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>sudo ~/check_swap.sh</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>5.清除被占用的swap</h1>
-
-<p>在我们明确知道哪些进程吃swap以后，接下来的问题就是我们如何释放这些swap，释放swap的意思就是把交换到swap中的数据swap in到物理内存页中。</p>
-
-<pre><code>1.重启吃swap的服务，比如重启一下我们的java进程;
-2.swapoff + swapon
-这个方法的好处是，不用重启服务，但是需要确保现在有足够的物理内存可以容下从swap中释放出来的数据。下面给出了swapoff和swapon的具体做法，注意看swapoff后和swapon后，free的输出有什么异同;
-
-sudo /sbin/swapoff -a
-sudo /sbin/swapon -a
-
-swapoff后，free的输出里，swap分区的大小变为0，占用变为0,也就是说swap分区中的数据已经释放到物理内存中，同时swap分区被禁用。swapon后，free的输出里，swap分区的容量又恢复了
-，也就是说swap分区重新被启用了。当然我们可以把这两个命令写到一起：
-
-sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
-</code></pre>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/2">&larr; Older</a>
@@ -3266,6 +3169,10 @@ sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/08/12/mysql-packettoobigexception/">Mysql PacketTooBigException</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/08/08/oomkiller/">Oomkiller</a>
       </li>
     
@@ -3279,10 +3186,6 @@ sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
     
       <li class="post">
         <a href="/blog/2015/07/17/fen-ci/">分词</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a>
       </li>
     
   </ul>
@@ -3299,7 +3202,7 @@ sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (12)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>
-<li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (9)</a></li>
+<li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (10)</a></li>
 <li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
