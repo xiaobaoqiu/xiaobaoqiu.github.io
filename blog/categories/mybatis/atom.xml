@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Mybatis | xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/blog/categories/mybatis/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2015-08-22T13:29:23+08:00</updated>
+  <updated>2015-08-22T13:37:32+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -20,9 +20,13 @@
     <id>http://xiaobaoqiu.github.io/blog/2015/08/22/mybatiskong-wherelan-jie-qi</id>
     <content type="html"><![CDATA[<p>最近项目中出现了至少两次因为Mybatis的动态where条件不满足导致实际sql语句的where条件为空,进而查询全表,当数据量比较大的时候,导致OOM的情况.</p>
 
-<p>如何禁止这种情况,个人觉得三种措施:
-* 1.在逻辑层面加充分的参数有效性检查;
-* 2.在where条件中如果索引条件都不满足,加上1=2这种必然失败的条件;</p>
+<p>如何禁止这种情况,个人觉得三种措施:</p>
+
+<ul>
+<li>1.在逻辑层面加充分的参数有效性检查;</li>
+<li>2.在where条件中如果索引条件都不满足,加上1=2这种必然失败的条件;</li>
+</ul>
+
 
 <pre><code>&lt;where&gt;
     &lt;choose&gt;
@@ -112,6 +116,97 @@ public class EmptyWhereInterceptor implements Interceptor {
     private String getCommandType(StatementHandler handler) {
         MappedStatement mappedStatement = (MappedStatement) ReflectUtil.getFieldValue(handler, "mappedStatement");
         return mappedStatement.getSqlCommandType().toString().toLowerCase();
+    }
+}
+</code></pre>
+
+<p>包括一个简单反射工具的实现:</p>
+
+<pre><code>/**
+ * 反射工具
+ *
+ * @author: xiaobaoqiu  Date: 15-8-22 Time: 上午11:52
+ */
+public class ReflectUtil {
+    public ReflectUtil() {
+    }
+
+    /**
+     * 改变 Accessible,便于访问private等属性
+     * @param field
+     */
+    private static void makeAccessible(Field field) {
+        if(!Modifier.isPublic(field.getModifiers())) {
+            field.setAccessible(true);
+        }
+    }
+
+    /**
+     * 获取 object 的字段,字段名称为filedName,获取不到返回null
+     * @param object
+     * @param filedName
+     * @return
+     */
+    private static Field getDeclaredField(Object object, String filedName) {
+        Class superClass = object.getClass();
+
+        while(superClass != Object.class) {
+            try {
+                return superClass.getDeclaredField(filedName);
+            } catch (NoSuchFieldException var4) {
+                superClass = superClass.getSuperclass();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 获取object字段fieldName的值,如果字段不存在直接抛异常
+     *
+     * @param object
+     * @param fieldName
+     * @return
+     */
+    public static Object getFieldValue(Object object, String fieldName) {
+        Field field = getDeclaredField(object, fieldName);
+        if(field == null) {
+            throw new IllegalArgumentException("Could not find field [" + fieldName + "] on target [" + object + "]");
+        } else {
+            makeAccessible(field);
+            Object result = null;
+
+            try {
+                result = field.get(object);
+            } catch (IllegalAccessException var5) {
+                var5.printStackTrace();
+            }
+
+            return result;
+        }
+    }
+
+    /**
+     * 设置object字段fieldName的值,如果字段不存在直接抛异常
+     *
+     * @param object
+     * @param fieldName
+     * @param value
+     */
+    public static void setFieldValue(Object object, String fieldName, Object value) {
+        Field field = getDeclaredField(object, fieldName);
+        if(field == null) {
+            throw new IllegalArgumentException("Could not find field [" + fieldName + "] on target [" + object + "]");
+        } else {
+            makeAccessible(field);
+
+            try {
+                field.set(object, value);
+            } catch (IllegalAccessException var5) {
+                var5.printStackTrace();
+            }
+
+        }
     }
 }
 </code></pre>
