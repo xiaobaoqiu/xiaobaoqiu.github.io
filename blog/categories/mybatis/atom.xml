@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Mybatis | xiaobaoqiu Blog]]></title>
+  <link href="http://xiaobaoqiu.github.io/blog/categories/mybatis/atom.xml" rel="self"/>
+  <link href="http://xiaobaoqiu.github.io/"/>
+  <updated>2015-08-22T13:29:23+08:00</updated>
+  <id>http://xiaobaoqiu.github.io/</id>
+  <author>
+    <name><![CDATA[xiaobaoqiu]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[MyBatis空where拦截器]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/08/22/mybatiskong-wherelan-jie-qi/"/>
+    <updated>2015-08-22T12:37:48+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/08/22/mybatiskong-wherelan-jie-qi</id>
+    <content type="html"><![CDATA[<p>最近项目中出现了至少两次因为Mybatis的动态where条件不满足导致实际sql语句的where条件为空,进而查询全表,当数据量比较大的时候,导致OOM的情况.</p>
+
+<p>如何禁止这种情况,个人觉得三种措施:
+* 1.在逻辑层面加充分的参数有效性检查;
+* 2.在where条件中如果索引条件都不满足,加上1=2这种必然失败的条件;</p>
+
+<pre><code>&lt;where&gt;
+    &lt;choose&gt;
+        &lt;when test="id != null"&gt;
+            ...
+        &lt;/when&gt;
+        ...
+        &lt;otherwise&gt;
+        and 1=2
+        &lt;/otherwise&gt;
+    &lt;/choose&gt;
+&lt;/where&gt;
+</code></pre>
+
+<ul>
+<li>3.Mybatis拦截器;</li>
+</ul>
+
+
+<p>前两种措施都是依赖人,从这个层面讲,是不靠谱的,即一个策略不是强制的,就是不靠谱的.相对而言,第三种是不依赖程序员的自觉性,是最靠谱的.乘周六有时间,实现一个简单的Mybatis拦截器来拦截where条件为空的SQL语句.</p>
+
+<h1>1.实现</h1>
+
+<p>先上代码,这里拦截了SqlCommandType为select,update,delete这三种类型.出现情况目前只是打日志.</p>
+
+<pre><code>/**
+ * Mybatis拦截器, 拦截:
+ *      select语句where条件为空
+ *      update语句where条件为空
+ *      delete语句where条件为空
+ *
+ * 处理: 目前只是打warning日志,因为项目中存在数据量很少的表读全表的情况(比如加载数据进缓存)
+ *      TODO:后续考虑设置拦截器的白名单,不在白名单的触发where条件为空的直接抛出异常.
+ *
+ * @author: xiaobaoqiu  Date: 15-8-22 Time: 上午10:26
+ */
+@Intercepts({ @Signature(
+        type = StatementHandler.class,
+        method = "prepare",
+        args = { Connection.class }) })
+public class EmptyWhereInterceptor implements Interceptor {
+
+    private static final Logger logger = LoggerFactory.getLogger(EmptyWhereInterceptor.class);
+
+    /**
+     * 拦截的 COMMAND 类型
+     */
+    private static final Set&lt;String&gt; INTERCEPTOR_COMMAND = Sets.newHashSet("select", "update", "delete");
+
+    @Override
+    public Object intercept(Invocation invocation) throws Throwable {
+        StatementHandler handler = (StatementHandler) invocation.getTarget();
+
+        //获取实际的StatementHandler
+        if (handler instanceof RoutingStatementHandler) {
+            handler = (BaseStatementHandler) ReflectUtil.getFieldValue(handler, "delegate");
+        }
+
+        //获取SqlCommandType
+        String commandType = getCommandType(handler);
+
+        if (INTERCEPTOR_COMMAND.contains(commandType)) {
+            String originSql = handler.getBoundSql().getSql().toLowerCase();  //获取sql
+            if (!originSql.contains("where")) {
+                logger.warn("禁止使用不带where条件的SQL语句.原始SQL={}", originSql);
+            }
+        }
+
+        return invocation.proceed();
+    }
+
+    @Override
+    public Object plugin(Object target) {
+        return Plugin.wrap(target, this);
+    }
+
+    @Override
+    public void setProperties(Properties properties) {
+    }
+
+    /**
+     * 获取Command类型,小写化返回
+     *
+     * @param handler
+     * @return
+     */
+    private String getCommandType(StatementHandler handler) {
+        MappedStatement mappedStatement = (MappedStatement) ReflectUtil.getFieldValue(handler, "mappedStatement");
+        return mappedStatement.getSqlCommandType().toString().toLowerCase();
+    }
+}
+</code></pre>
+
+<h1>2.Mybatis的Interceptor原理</h1>
+
+<p><a href="http://www.tuicool.com/articles/RbyUfu">这篇文章</a>很好的解释了Mybatis的Interceptor机制.</p>
+
+<p>mybatis读取配置再xml文件中Interceptor,通过反射构造其实例，将所有的Interceptor保存到InterceptorChain中。</p>
+
+<p>mybatis的拦截器只能代理指定的四个类：ParameterHandler、ResultSetHandler、StatementHandler以及Executor。</p>
+
+<p>参考:</p>
+
+<p><a href="http://www.tuicool.com/articles/RbyUfu">http://www.tuicool.com/articles/RbyUfu</a></p>
+
+<p><a href="http://blog.csdn.net/hupanfeng/article/details/9247379">http://blog.csdn.net/hupanfeng/article/details/9247379</a></p>
+]]></content>
+  </entry>
+  
+</feed>

@@ -9,7 +9,15 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="Java中有很多读写文件或者网络流的方法，特别是Java7中加入了AIO之后，可选择的方法更多，本文的目的是想比较一下各种方式的优劣。 本文基本是参考这篇英文：http://nadeausoftware.com/articles/2008/02/ &hellip;">
+  <meta name="description" content="最近项目的图片服务器从公司的服务器下载图片做裁剪等操作的时候，老是存在超时的问题 1
+2
+3
+4
+5
+6
+7
+8
+java.net.SocketTimeoutException: Read timed out at java.net.SocketInputStream.socketRead0( &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -69,6 +77,203 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/01/16/linuxwang-qia-su-du/">Linux网卡速度</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-01-16T18:58:54+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:58 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近项目的图片服务器从公司的服务器下载图片做裁剪等操作的时候，老是存在超时的问题</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>java.net.SocketTimeoutException: Read timed out
+</span><span class='line'>    at java.net.SocketInputStream.socketRead0(Native Method) ~[na:1.7.0_51]
+</span><span class='line'>    at java.net.SocketInputStream.read(SocketInputStream.java:152) ~[na:1.7.0_51]
+</span><span class='line'>    at java.net.SocketInputStream.read(SocketInputStream.java:122) ~[na:1.7.0_51]
+</span><span class='line'>    at java.io.BufferedInputStream.read1(BufferedInputStream.java:273) ~[na:1.7.0_51]
+</span><span class='line'>    at java.io.BufferedInputStream.read(BufferedInputStream.java:334) ~[na:1.7.0_51]
+</span><span class='line'>    at sun.net.www.MeteredStream.read(MeteredStream.java:134) ~[na:1.7.0_51]
+</span><span class='line'>    at java.io.FilterInputStream.read(FilterInputStream.java:133) ~[na:1.7.0_51]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>手动wget图片一切正常，但是速度还不如本地机器，于是想看一下服务器的网卡信息。下面用本机作为示例：</p>
+
+<h1>1.使用ifconfig找到网卡：</h1>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>eth0      Link encap:以太网  硬件地址 f0:1f:af:27:58:8d  
+</span><span class='line'>          inet 地址:192.168.138.99  广播:192.168.139.255  掩码:255.255.254.0
+</span><span class='line'>          inet6 地址: fe80::f21f:afff:fe27:588d/64 Scope:Link
+</span><span class='line'>          UP BROADCAST RUNNING MULTICAST  MTU:1500  跃点数:1
+</span><span class='line'>          接收数据包:696848 错误:0 丢弃:0 过载:0 帧数:0
+</span><span class='line'>          发送数据包:334077 错误:0 丢弃:0 过载:0 载波:0
+</span><span class='line'>          碰撞:0 发送队列长度:1000 
+</span><span class='line'>          接收字节:486532283 (486.5 MB)  发送字节:49164276 (49.1 MB)
+</span><span class='line'>          中断:18 
+</span><span class='line'>
+</span><span class='line'>lo        Link encap:本地环回  
+</span><span class='line'>          inet 地址:127.0.0.1  掩码:255.0.0.0
+</span><span class='line'>          inet6 地址: ::1/128 Scope:Host
+</span><span class='line'>          UP LOOPBACK RUNNING  MTU:65536  跃点数:1
+</span><span class='line'>          接收数据包:14772 错误:0 丢弃:0 过载:0 帧数:0
+</span><span class='line'>          发送数据包:14772 错误:0 丢弃:0 过载:0 载波:0
+</span><span class='line'>          碰撞:0 发送队列长度:0 
+</span><span class='line'>          接收字节:1329005 (1.3 MB)  发送字节:1329005 (1.3 MB)</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.查看网卡是否被识别及型号</h1>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ lspci | grep Ethernet
+</span><span class='line'>0c:00.0 Ethernet controller: Broadcom Corporation NetXtreme BCM5761 Gigabit Ethernet PCIe (rev 10)</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.使用ethtool工具查看网卡的详细信息：</h1>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo ethtool eth0
+</span><span class='line'>[sudo] password for xiaobaoqiu: 
+</span><span class='line'>Settings for eth0:
+</span><span class='line'>    Supported ports: [ TP ]
+</span><span class='line'>    Supported link modes:   10baseT/Half 10baseT/Full 
+</span><span class='line'>                            100baseT/Half 100baseT/Full 
+</span><span class='line'>                            1000baseT/Half 1000baseT/Full 
+</span><span class='line'>    Supported pause frame use: No
+</span><span class='line'>    Supports auto-negotiation: Yes
+</span><span class='line'>    Advertised link modes:  10baseT/Half 10baseT/Full 
+</span><span class='line'>                            100baseT/Half 100baseT/Full 
+</span><span class='line'>                            1000baseT/Half 1000baseT/Full 
+</span><span class='line'>    Advertised pause frame use: Symmetric
+</span><span class='line'>    Advertised auto-negotiation: Yes
+</span><span class='line'>    Link partner advertised link modes:  10baseT/Half 10baseT/Full 
+</span><span class='line'>                                         100baseT/Half 100baseT/Full 
+</span><span class='line'>    Link partner advertised pause frame use: No
+</span><span class='line'>    Link partner advertised auto-negotiation: Yes
+</span><span class='line'>    Speed: 100Mb/s      #网卡速度
+</span><span class='line'>    Duplex: Full        #全双工
+</span><span class='line'>    Port: Twisted Pair  #网络类型-双绞线
+</span><span class='line'>    PHYAD: 1
+</span><span class='line'>    Transceiver: internal
+</span><span class='line'>    Auto-negotiation: on
+</span><span class='line'>    MDI-X: on
+</span><span class='line'>    Supports Wake-on: g
+</span><span class='line'>    Wake-on: g          #唤醒起用（远程关机开机需设置）
+</span><span class='line'>    Current message level: 0x000000ff (255)
+</span><span class='line'>                   drv probe link timer ifdown ifup rx_err tx_err
+</span><span class='line'>    Link detected: yes  #链路检测</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.查看网卡的连接状态</h1>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo mii-tool eth0
+</span><span class='line'>eth0: negotiated 100baseTx-FD, link ok</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>5.网卡数据包收发统计</h1>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo ethtool -S eth0
+</span><span class='line'>NIC statistics:
+</span><span class='line'>     rx_octets: 494545915
+</span><span class='line'>     rx_fragments: 0
+</span><span class='line'>     rx_ucast_packets: 437748
+</span><span class='line'>     rx_mcast_packets: 147474
+</span><span class='line'>     rx_bcast_packets: 128799
+</span><span class='line'>     rx_fcs_errors: 0
+</span><span class='line'>     rx_align_errors: 0
+</span><span class='line'>     rx_xon_pause_rcvd: 0
+</span><span class='line'>     rx_xoff_pause_rcvd: 0
+</span><span class='line'>     ...</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2760,416 +2965,6 @@ private static final int HOPS = 1;
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/12/23/javabing-fa-rong-qi-zhi-concurrent/">Java并发容器之Concurrent</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-12-23T05:56:45+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2014</span></span> <span class='time'>5:56 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>包括四种容器：</p>
-
-<pre><code>ConcurrentHashMap
-ConcurrentLinkedQueue
-ConcurrentMap
-ConcurrentNavigableMap
-</code></pre>
-
-<p>其中ConcurrentLinkedQueue是并发环境下非阻塞算法的典型实现。</p>
-
-<h1>1.ConcurrentMap</h1>
-
-<p>ConcurrentMap是继承Map的一种interface，定义了一下几个api接口：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">interface</span> <span class="nc">ConcurrentMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span> <span class="n">V</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">Map</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span> <span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
-</span><span class='line'>    <span class="n">V</span> <span class="nf">putIfAbsent</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">);</span>
-</span><span class='line'>    <span class="kt">boolean</span> <span class="nf">remove</span><span class="o">(</span><span class="n">Object</span> <span class="n">key</span><span class="o">,</span> <span class="n">Object</span> <span class="n">value</span><span class="o">);</span>
-</span><span class='line'>    <span class="kt">boolean</span> <span class="nf">replace</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">,</span> <span class="n">V</span> <span class="n">oldValue</span><span class="o">,</span> <span class="n">V</span> <span class="n">newValue</span><span class="o">);</span>
-</span><span class='line'>    <span class="n">V</span> <span class="nf">replace</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">);</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.ConcurrentNavigableMap</h1>
-
-<p>ConcurrentNavigableMap是继承ConcurrentMap的一种interface。</p>
-
-<p>我们从SortedMap接口开始锁说，因为ConcurrentNavigableMap继承自NavigableMap，而NavigableMap继承自SortedMap。</p>
-
-<h3>2.1 SortedMap</h3>
-
-<p>实现SortedMap接口的类有排序功能，SortedMap相比普通Map提供了几个特殊的接口：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">interface</span> <span class="nc">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">Map</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回key在 [fromKey, toKey)之间的子map的视图</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">subMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="n">K</span> <span class="n">toKey</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回key严格小于toKey的子map视图</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">headMap</span><span class="o">(</span><span class="n">K</span> <span class="n">toKey</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回key大于等于fromKey的子map视图</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">tailMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回map中第一个key</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">K</span> <span class="nf">firstKey</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回map中最后一个key</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">K</span> <span class="nf">lastKey</span><span class="o">();</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.2 NavigableMap</h3>
-
-<p>NavigableMap扩展的 SortedMap，具有了针对给定搜索目标返回最接近匹配项的导航方法。方法 lowerEntry、floorEntry、ceilingEntry 和 higherEntry 分别返回与小于、小于等于、大于等于、大于给定键的键关联的 Map.Entry 对象，如果不存在这样的键，则返回 null。类似地，方法 lowerKey、floorKey、ceilingKey 和 higherKey 只返回关联的键。</p>
-
-<p>可以按照键的升序或降序访问和遍历 NavigableMap。descendingMap 方法返回映射的一个视图，该视图表示的所有关系方法和方向方法都是逆向的。升序操作和视图的性能很可能比降序操作和视图的性能要好。</p>
-
-<p>此接口还定义了 firstEntry、pollFirstEntry、lastEntry 和 pollLastEntry 方法，它们返回和/或移除最小和最大的映射关系（如果存在），否则返回 null。</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">interface</span> <span class="nc">NavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回Map中严格小于给定key的最大的Entry，不存在则返回null</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">lowerEntry</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回Map中严格小于给定key的最大的key，不存在则返回null</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">K</span> <span class="nf">lowerKey</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回Map中小于等于给定key的最大的Entry，不存在则返回null</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">floorEntry</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回Map中小于等于给定key的最大key，不存在则返回null</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">K</span> <span class="nf">floorKey</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回大于等于给定key的最小的Entry，不存在返回null</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">ceilingEntry</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回大于等于给定key的最小的key，不存在返回null</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">K</span> <span class="nf">ceilingKey</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回严格大于给定key的最小的Entry，不存在返回null</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">higherEntry</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回严格大于给定key的最小的key，不存在返回null</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">K</span> <span class="nf">higherKey</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回Map中key最小的Entry，不存在则返回null</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">firstEntry</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回Map中key最大的Entry，不存在则返回null</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">lastEntry</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 删除并返回Map中key最小的Entry</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">pollFirstEntry</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 删除并返回Map中key最大的Entry</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">pollLastEntry</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回当前Map的降序的视图</span>
-</span><span class='line'><span class="cm">     * 注意，降序Map依靠当前Map实现，因此改变当前Map或者这个降序Map都会反映在彼此上</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">NavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">descendingMap</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回当前Map的Key集合的试图</span>
-</span><span class='line'><span class="cm">     * 改变当前Map或者这个Set都会影响彼此</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">NavigableSet</span><span class="o">&lt;</span><span class="n">K</span><span class="o">&gt;</span> <span class="nf">navigableKeySet</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回当前Map的降序顺序的Key集合的试图</span>
-</span><span class='line'><span class="cm">     * 和navigableKeySet一样，改变当前Map或者这个降序Set都会影响彼此</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">NavigableSet</span><span class="o">&lt;</span><span class="n">K</span><span class="o">&gt;</span> <span class="nf">descendingKeySet</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回key在[fromKey, toKey]之间的试图，如果fromInclusive为true，结果中包含fromKey</span>
-</span><span class='line'><span class="cm">     * 对应Entity，如果toInclusive为跳入额， 则结果中包含了toKey对应Entity</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">NavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">subMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">fromInclusive</span><span class="o">,</span>
-</span><span class='line'>                             <span class="n">K</span> <span class="n">toKey</span><span class="o">,</span>   <span class="kt">boolean</span> <span class="n">toInclusive</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回key小于(如果inclusive为true，则包括等于)toKey的视图</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">NavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">headMap</span><span class="o">(</span><span class="n">K</span> <span class="n">toKey</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">inclusive</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 返回key大于(如果inclusive为true，则包括等于)fromKey的视图</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">NavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">tailMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">inclusive</span><span class="o">);</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>同时NavigableMap也包含了三个返回SortedMap的接口</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">subMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="n">K</span> <span class="n">toKey</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'><span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">headMap</span><span class="o">(</span><span class="n">K</span> <span class="n">toKey</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'><span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">tailMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">);</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.3 ConcurrentNavigableMap</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">ConcurrentNavigableMap继承了ConcurrentMap和NavigableMap两个接口</span><span class="err">：</span>
-</span><span class='line'><span class="kd">public</span> <span class="kd">interface</span> <span class="nc">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span>
-</span><span class='line'>    <span class="kd">extends</span> <span class="n">ConcurrentMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;,</span> <span class="n">NavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span>
-</span><span class='line'><span class="o">{</span>
-</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">subMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">fromInclusive</span><span class="o">,</span>
-</span><span class='line'>                                       <span class="n">K</span> <span class="n">toKey</span><span class="o">,</span>   <span class="kt">boolean</span> <span class="n">toInclusive</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">headMap</span><span class="o">(</span><span class="n">K</span> <span class="n">toKey</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">inclusive</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">tailMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">inclusive</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">subMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="n">K</span> <span class="n">toKey</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">headMap</span><span class="o">(</span><span class="n">K</span> <span class="n">toKey</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">tailMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">descendingMap</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="n">NavigableSet</span><span class="o">&lt;</span><span class="n">K</span><span class="o">&gt;</span> <span class="nf">navigableKeySet</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">NavigableSet</span><span class="o">&lt;</span><span class="n">K</span><span class="o">&gt;</span> <span class="nf">keySet</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="n">NavigableSet</span><span class="o">&lt;</span><span class="n">K</span><span class="o">&gt;</span> <span class="nf">descendingKeySet</span><span class="o">();</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.ConcurrentLinkedQueue</h1>
-
-<p>ConcurrentLinkedQueue是非阻塞算法的典型实现，因此单独写了一篇。</p>
-
-<p><a href="http://xiaobaoqiu.github.io/blog/2014/12/24/concurrentlinkedqueue/">http://xiaobaoqiu.github.io/blog/2014/12/24/concurrentlinkedqueue/</a></p>
-
-<h1>4.ConcurrentHashMap</h1>
-
-<p>ConcurrentHashMap值得研究，也单独写了一篇。</p>
-
-<p><a href="http://xiaobaoqiu.github.io/blog/2014/12/24/concurrenthashmap/">http://xiaobaoqiu.github.io/blog/2014/12/24/concurrenthashmap/</a></p>
-
-<h1>5.参考</h1>
-
-<p><a href="https://www.ibm.com/developerworks/cn/java/j-lo-concurrent/">https://www.ibm.com/developerworks/cn/java/j-lo-concurrent/</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/6">&larr; Older</a>
@@ -3189,6 +2984,10 @@ ConcurrentNavigableMap
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/08/22/mybatiskong-wherelan-jie-qi/">MyBatis空where拦截器</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/08/12/mysql-packettoobigexception/">Mysql PacketTooBigException</a>
       </li>
     
@@ -3202,10 +3001,6 @@ ConcurrentNavigableMap
     
       <li class="post">
         <a href="/blog/2015/08/01/mycli/">Mycli</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/07/17/fen-ci/">分词</a>
       </li>
     
   </ul>
@@ -3222,6 +3017,7 @@ ConcurrentNavigableMap
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (12)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/mybatis/'>mybatis (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (10)</a></li>
 <li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>

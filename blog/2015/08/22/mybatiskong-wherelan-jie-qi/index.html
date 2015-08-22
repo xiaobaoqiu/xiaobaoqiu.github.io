@@ -5,14 +5,13 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>Enum反序列化问题 - xiaobaoqiu Blog</title>
+  <title>MyBatis空where拦截器 - xiaobaoqiu Blog</title>
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.Enum原理 定义一个Enum，通过编译之后的字节码，我们可以发现其实现原理： 1
-2
-3
-public enum FruitEnum { APPLE, ORAGE } 编译器是在为我们创建一个类，这个类继承自 java.lang.Enum，有两个公共的、静态的、被声明成final的属性， &hellip;">
+  <meta name="description" content="最近项目中出现了至少两次因为Mybatis的动态where条件不满足导致实际sql语句的where条件为空,进而查询全表,当数据量比较大的时候,导致OOM的情况. 如何禁止这种情况,个人觉得三种措施:
+* 1.在逻辑层面加充分的参数有效性检查;
+* 2.在where条件中如果索引条件都不满足, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -21,7 +20,7 @@ public enum FruitEnum { APPLE, ORAGE } 编译器是在为我们创建一个类�
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   
-  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/04/01/enumfan-xu-lie-hua-wen-ti/">
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/08/22/mybatiskong-wherelan-jie-qi/">
   <link href="/favicon.png" rel="icon">
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
   
@@ -75,7 +74,7 @@ public enum FruitEnum { APPLE, ORAGE } 编译器是在为我们创建一个类�
   
   <header>
     
-      <h1 class="entry-title">Enum反序列化问题</h1>
+      <h1 class="entry-title">MyBatis空where拦截器</h1>
     
     
       <p class="meta">
@@ -84,50 +83,53 @@ public enum FruitEnum { APPLE, ORAGE } 编译器是在为我们创建一个类�
 
 
 
-<time class='entry-date' datetime='2015-04-01T23:01:25+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>1</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>11:01 pm</span></time>
+<time class='entry-date' datetime='2015-08-22T12:37:48+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>22</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>12:37 pm</span></time>
         
       </p>
     
   </header>
 
 
-<div class="entry-content"><h1>1.Enum原理</h1>
+<div class="entry-content"><p>最近项目中出现了至少两次因为Mybatis的动态where条件不满足导致实际sql语句的where条件为空,进而查询全表,当数据量比较大的时候,导致OOM的情况.</p>
 
-<p>定义一个Enum，通过编译之后的字节码，我们可以发现其实现原理：</p>
+<p>如何禁止这种情况,个人觉得三种措施:
+* 1.在逻辑层面加充分的参数有效性检查;
+* 2.在where条件中如果索引条件都不满足,加上1=2这种必然失败的条件;</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public enum FruitEnum {  
-</span><span class='line'>    APPLE, ORAGE  
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;where&gt;
+</span><span class='line'>    &lt;choose&gt;
+</span><span class='line'>        &lt;when test="id != null"&gt;
+</span><span class='line'>            ...
+</span><span class='line'>        &lt;/when&gt;
+</span><span class='line'>        ...
+</span><span class='line'>        &lt;otherwise&gt;
+</span><span class='line'>        and 1=2
+</span><span class='line'>        &lt;/otherwise&gt;
+</span><span class='line'>    &lt;/choose&gt;
+</span><span class='line'>&lt;/where&gt;</span></code></pre></td></tr></table></div></figure>
 
 
-<p>编译器是在为我们创建一个类，这个类继承自 java.lang.Enum，有两个公共的、静态的、被声明成final的属性，它们的类型就是我们定义的FruitEnum。</p>
+<ul>
+<li>3.Mybatis拦截器;</li>
+</ul>
 
-<p>编译器还生成了一个静态初始话器，就是字节码中static{};这一行下面的代码，其中的字节码创建了两个FruitEnum对象，同时分别赋值给APPLE和ORANGE这两个属性，调用的构造函数是定义在java.lang.Enum中的protected Enum(String name, int ordinal)方法。</p>
 
-<p>在创建完成两个FruitEnum对象并且分别赋值给APPLE和ORIGIN之后，还创建了一个名叫ENUM$VALUES的数组，然后把APPLE和ORIGIN按照定义的顺序放如这个数组中。</p>
+<p>前两种措施都是依赖人,从这个层面讲,是不靠谱的,即一个策略不是强制的,就是不靠谱的.相对而言,第三种是不依赖程序员的自觉性,是最靠谱的.乘周六有时间,实现一个简单的Mybatis拦截器来拦截where条件为空的SQL语句.</p>
 
-<p>除了这个静态初始化器之外，编译器还为我们生成了两个静态方法，values()和 valueOf(java.lang.String)方法。其中values()方法将ENUM$VALUES数组拷贝一份然后返回，而valueOf(java.lang.String)方法则会调用java.lang.Enum类中的valueOf方法，其作用是根据参数名找到对应的具体的枚举对象，如果找不到的话会抛出一个IllegalArgumentException异常。</p>
+<h1>1.实现</h1>
 
-<h1>2.Enum序列化反序列化原理及问题</h1>
-
-<h3>2.1原理</h3>
-
-<p>序列化的时候Java仅仅是将枚举对象的name属性输出到结果中，反序列化的时候则是通过java.lang.Enum的valueOf方法来根据名字查找枚举对象。</p>
-
-<p>同时，编译器是不允许任何对这种序列化机制的定制的，因此禁用了writeObject、readObject、readObjectNoData、writeReplace和readResolve等方法。</p>
-
-<h3>2.2问题</h3>
-
-<p>在系统或者类库升级时，对其中定义的枚举类型多加注意，为了保持代码上的兼容性，如果我们定义的枚举类型有可能会被序列化保存(放到文件中、保存到数据库中，进入分布式内存缓存中)，那么我们是不能够删除原来枚举类型中定义的任何枚举对象的，否则程序在运行过程中，JVM就会抱怨找不到与某个名字对应的枚举对象了。</p>
-
-<p>另外，在远程方法调用过程中，如果我们发布的客户端接口返回值中使用了枚举类型，那么服务端在升级过程中就需要特别注意。如果在接口的返回结果的枚举类型中添加了新的枚举值，那就会导致仍然在使用老的客户端的那些应用出现调用失败的情况。</p>
-
-<h1>3.Enum序列化反序列化问题解决</h1>
-
-<p>使用class代替Enum,原来的枚举使用static对象替换，valueOf()方法使用一个Map实现，示例代码如下：</p>
+<p>先上代码,这里拦截了SqlCommandType为select,update,delete这三种类型.出现情况目前只是打日志.</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -171,51 +173,111 @@ public enum FruitEnum { APPLE, ORAGE } 编译器是在为我们创建一个类�
 <span class='line-number'>40</span>
 <span class='line-number'>41</span>
 <span class='line-number'>42</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public final class FruitEnum implements Serializable {
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Mybatis拦截器, 拦截:
+</span><span class='line'> *      select语句where条件为空
+</span><span class='line'> *      update语句where条件为空
+</span><span class='line'> *      delete语句where条件为空
+</span><span class='line'> *
+</span><span class='line'> * 处理: 目前只是打warning日志,因为项目中存在数据量很少的表读全表的情况(比如加载数据进缓存)
+</span><span class='line'> *      TODO:后续考虑设置拦截器的白名单,不在白名单的触发where条件为空的直接抛出异常.
+</span><span class='line'> *
+</span><span class='line'> * @author: xiaobaoqiu  Date: 15-8-22 Time: 上午10:26
+</span><span class='line'> */
+</span><span class='line'>@Intercepts({ @Signature(
+</span><span class='line'>        type = StatementHandler.class,
+</span><span class='line'>        method = "prepare",
+</span><span class='line'>        args = { Connection.class }) })
+</span><span class='line'>public class EmptyWhereInterceptor implements Interceptor {
 </span><span class='line'>
-</span><span class='line'>    private static final long serialVersionUID = -7230925342774763449L;
+</span><span class='line'>    private static final Logger logger = LoggerFactory.getLogger(EmptyWhereInterceptor.class);
 </span><span class='line'>
-</span><span class='line'>    private static final Map&lt;Integer, FruitEnum&gt; MAP = new HashMap&lt;Integer, FruitEnum&gt;();
+</span><span class='line'>    /**
+</span><span class='line'>     * 拦截的 COMMAND 类型
+</span><span class='line'>     */
+</span><span class='line'>    private static final Set&lt;String&gt; INTERCEPTOR_COMMAND = Sets.newHashSet("select", "update", "delete");
 </span><span class='line'>
-</span><span class='line'>    public static final FruitEnum APPLE = new FruitEnum("Apple", 0);
-</span><span class='line'>    public static final FruitEnum ORAGE = new FruitEnum("Orige", 1);
+</span><span class='line'>    @Override
+</span><span class='line'>    public Object intercept(Invocation invocation) throws Throwable {
+</span><span class='line'>        StatementHandler handler = (StatementHandler) invocation.getTarget();
 </span><span class='line'>
-</span><span class='line'>    private String text;
-</span><span class='line'>    private int code;
+</span><span class='line'>        //获取实际的StatementHandler
+</span><span class='line'>        if (handler instanceof RoutingStatementHandler) {
+</span><span class='line'>            handler = (BaseStatementHandler) ReflectUtil.getFieldValue(handler, "delegate");
+</span><span class='line'>        }
 </span><span class='line'>
-</span><span class='line'>    private FruitEnum(String text, int code) {
-</span><span class='line'>        this.text = text;
-</span><span class='line'>        this.code = code;
+</span><span class='line'>        //获取SqlCommandType
+</span><span class='line'>        String commandType = getCommandType(handler);
 </span><span class='line'>
-</span><span class='line'>        MAP.put(code, this);
-</span><span class='line'>    }
+</span><span class='line'>        if (INTERCEPTOR_COMMAND.contains(commandType)) {
+</span><span class='line'>            String originSql = handler.getBoundSql().getSql().toLowerCase();  //获取sql
+</span><span class='line'>            if (!originSql.contains("where")) {
+</span><span class='line'>                logger.warn("禁止使用不带where条件的SQL语句.原始SQL={}", originSql);
+</span><span class='line'>            }
+</span><span class='line'>        }
 </span><span class='line'>
-</span><span class='line'>    public String getText() {
-</span><span class='line'>        return text;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setText(String text) {
-</span><span class='line'>        this.text = text;
+</span><span class='line'>        return invocation.proceed();
 </span><span class='line'>    }
 </span><span class='line'>
 </span><span class='line'>    @Override
-</span><span class='line'>    public int getCode() {
-</span><span class='line'>        return code;
+</span><span class='line'>    public Object plugin(Object target) {
+</span><span class='line'>        return Plugin.wrap(target, this);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public void setProperties(Properties properties) {
 </span><span class='line'>    }
 </span><span class='line'>
 </span><span class='line'>    /**
-</span><span class='line'>     * 根据code获取FruitEnum
+</span><span class='line'>     * 获取Command类型,小写化返回
 </span><span class='line'>     *
-</span><span class='line'>     * @param code
+</span><span class='line'>     * @param handler
 </span><span class='line'>     * @return
 </span><span class='line'>     */
-</span><span class='line'>    public static FruitEnum valueOf(int code) {
-</span><span class='line'>        return MAP.get(code);
+</span><span class='line'>    private String getCommandType(StatementHandler handler) {
+</span><span class='line'>        MappedStatement mappedStatement = (MappedStatement) ReflectUtil.getFieldValue(handler, "mappedStatement");
+</span><span class='line'>        return mappedStatement.getSqlCommandType().toString().toLowerCase();
 </span><span class='line'>    }
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<p>参考：<a href="http://mysun.iteye.com/blog/1581119">http://mysun.iteye.com/blog/1581119</a></p>
+<h1>2.Mybatis的Interceptor原理</h1>
+
+<p><a href="http://www.tuicool.com/articles/RbyUfu">这篇文章</a>很好的解释了Mybatis的Interceptor机制.</p>
+
+<p>mybatis读取配置再xml文件中Interceptor,通过反射构造其实例，将所有的Interceptor保存到InterceptorChain中。</p>
+
+<p>mybatis的拦截器只能代理指定的四个类：ParameterHandler、ResultSetHandler、StatementHandler以及Executor。</p>
+
+<p>参考:</p>
+
+<p><a href="http://www.tuicool.com/articles/RbyUfu">http://www.tuicool.com/articles/RbyUfu</a></p>
+
+<p><a href="http://blog.csdn.net/hupanfeng/article/details/9247379">http://blog.csdn.net/hupanfeng/article/details/9247379</a></p>
 </div>
 
 
@@ -231,12 +293,12 @@ public enum FruitEnum { APPLE, ORAGE } 编译器是在为我们创建一个类�
 
 
 
-<time class='entry-date' datetime='2015-04-01T23:01:25+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>1</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>11:01 pm</span></time>
+<time class='entry-date' datetime='2015-08-22T12:37:48+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>22</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>12:37 pm</span></time>
       
 
 <span class="categories">
   
-    <a class='category' href='/blog/categories/java/'>java</a>
+    <a class='category' href='/blog/categories/mybatis/'>mybatis</a>
   
 </span>
 
@@ -245,7 +307,7 @@ public enum FruitEnum { APPLE, ORAGE } 编译器是在为我们创建一个类�
     
       <div class="sharing">
   
-  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/04/01/enumfan-xu-lie-hua-wen-ti/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/04/01/enumfan-xu-lie-hua-wen-ti/" >Tweet</a>
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/08/22/mybatiskong-wherelan-jie-qi/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/08/22/mybatiskong-wherelan-jie-qi/" >Tweet</a>
   
   
   
@@ -254,10 +316,8 @@ public enum FruitEnum { APPLE, ORAGE } 编译器是在为我们创建一个类�
     
     <p class="meta">
       
-        <a class="basic-alignment left" href="/blog/2015/03/18/tomcatjia-gou/" title="Previous Post: Tomcat架构">&laquo; Tomcat架构</a>
+        <a class="basic-alignment left" href="/blog/2015/08/12/mysql-packettoobigexception/" title="Previous Post: mysql PacketTooBigException">&laquo; mysql PacketTooBigException</a>
       
-      
-        <a class="basic-alignment right" href="/blog/2015/04/02/dubbo-thread-pool-exhausted/" title="Next Post: dubbo Thread pool exhausted">dubbo Thread pool exhausted &raquo;</a>
       
     </p>
   </footer>
