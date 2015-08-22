@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Druid | xiaobaoqiu Blog]]></title>
+  <link href="http://xiaobaoqiu.github.io/blog/categories/druid/atom.xml" rel="self"/>
+  <link href="http://xiaobaoqiu.github.io/"/>
+  <updated>2015-08-22T14:56:12+08:00</updated>
+  <id>http://xiaobaoqiu.github.io/</id>
+  <author>
+    <name><![CDATA[xiaobaoqiu]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[处理sql超时]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/08/22/chu-li-sqlchao-shi/"/>
+    <updated>2015-08-22T14:18:23+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/08/22/chu-li-sqlchao-shi</id>
+    <content type="html"><![CDATA[<p>最近组内又出现一次因为SQL慢查询导致业务整体雪崩的情况.很惭愧的是,那个满查询SQL是我大概一年之前写的(一个统计的SQL,数据量又比较大),那时还很稚嫩.</p>
+
+<p>之前组内出现这种情况一般是让DBA上一个慢查询脚本,直接暴力kill那些满查询.</p>
+
+<p>其实各个JDBC driver实现java.sql.Statement的时候都需要实现setQueryTimeout这个函数,其左右就是设置SQL的执行超时时间,当SQL超时会直接被取消掉并且抛出QLTimeoutException异常.</p>
+
+<pre><code>/**
+     * Sets the number of seconds the driver will wait for a
+     * &lt;code&gt;Statement&lt;/code&gt; object to execute to the given number of seconds.
+     *By default there is no limit on the amount of time allowed for a running
+     * statement to complete. If the limit is exceeded, an
+     * &lt;code&gt;SQLTimeoutException&lt;/code&gt; is thrown.
+     * A JDBC driver must apply this limit to the &lt;code&gt;execute&lt;/code&gt;,
+     * &lt;code&gt;executeQuery&lt;/code&gt; and &lt;code&gt;executeUpdate&lt;/code&gt; methods.
+     * &lt;p&gt;
+     * &lt;strong&gt;Note:&lt;/strong&gt; JDBC driver implementations may also apply this
+     * limit to {@code ResultSet} methods
+     * (consult your driver vendor documentation for details).
+     * &lt;p&gt;
+     * &lt;strong&gt;Note:&lt;/strong&gt; In the case of {@code Statement} batching, it is
+     * implementation defined as to whether the time-out is applied to
+     * individual SQL commands added via the {@code addBatch} method or to
+     * the entire batch of SQL commands invoked by the {@code executeBatch}
+     * method (consult your driver vendor documentation for details).
+     *
+     * @param seconds the new query timeout limit in seconds; zero means
+     *        there is no limit
+     * @exception SQLException if a database access error occurs,
+     * this method is called on a closed &lt;code&gt;Statement&lt;/code&gt;
+     *            or the condition seconds &gt;= 0 is not satisfied
+     * @see #getQueryTimeout
+     */
+    void setQueryTimeout(int seconds) throws SQLException;
+</code></pre>
+
+<p>默认情况下都不设置超时时间(即默认值0).即永远不超时.Druid的Filter机制很容易的让我们设置这个查询超时时间.</p>
+
+<h2>1.SQL超时时间Filter实现</h2>
+
+<pre><code>/**
+ * 设置SQL执行时间
+ * 如果超时,查询被cancel,并抛出SQLTimeoutException异常
+ *
+ * @author: xiaobaoqiu  Date: 15-8-22 Time: 下午1:55
+ */
+public class SqlTimeOutFilter extends FilterEventAdapter {
+
+    /**
+     * 默认超时时间,单位秒
+     * 注意不要设置太小
+     */
+    private static final int QUERY_TIMEOUT_THRESHOLD_SECOND = 100;
+
+    /**
+     * 超时时间,默认为QUERY_TIMEOUT_THRESHOLD_SECOND
+     */
+    private int timeoutThreshold = QUERY_TIMEOUT_THRESHOLD_SECOND;
+
+    @Override
+    protected void statementExecuteBefore(StatementProxy statement, String sql) {
+        setQueryTimeout(statement);
+        super.statementExecuteBefore(statement, sql);
+    }
+
+    @Override
+    protected void statementExecuteBatchBefore(StatementProxy statement) {
+        setQueryTimeout(statement);
+        super.statementExecuteBatchBefore(statement);
+    }
+
+    @Override
+    protected void statementExecuteUpdateBefore(StatementProxy statement, String sql) {
+        setQueryTimeout(statement);
+        super.statementExecuteUpdateBefore(statement, sql);
+    }
+
+    @Override
+    protected void statementExecuteQueryBefore(StatementProxy statement, String sql) {
+        setQueryTimeout(statement);
+        super.statementExecuteQueryBefore(statement, sql);
+    }
+
+    /**
+     * 设置Statement超时时间,
+     * statement.setQueryTimeout单位是秒,0表示没有限制.这个函数可能会抛出SQLException异常,场景:
+     *      1.数据库访问错误
+     *      2.在一个已经关闭的Statement上调用这个方法
+     *      3.超时时间不满足seconds &gt;= 0的条件
+     *
+     * @param statement
+     */
+    private void setQueryTimeout(StatementProxy statement) {
+        try {
+            statement.setQueryTimeout(timeoutThreshold);
+        }catch (SQLException se) {
+            //TODO: do something
+        }
+    }
+
+    public int getTimeoutThreshold() {
+        return timeoutThreshold;
+    }
+
+    public void setTimeoutThreshold(int timeoutThreshold) {
+        this.timeoutThreshold = timeoutThreshold;
+    }
+}
+</code></pre>
+
+<h2>2.SQL超时时间Filter使用</h2>
+
+<p>默认的DruidDataSource就支持设置设置Filter:</p>
+
+<pre><code>public void setProxyFilters(List&lt;Filter&gt; filters) {
+        if (filters != null) {
+            this.filters.addAll(filters);
+        }
+    }
+</code></pre>
+
+<p>我们可以实现DataSourceFactory(参考默认实现DefaultDataSourceFactory),在创建DataSource的时候调用setProxyFilters加上我们自己写的Filter:</p>
+
+<pre><code>public class DruidDataSourceFactory implements DataSourceFactory {
+
+    @Override
+    public DataSource create(String host, int port, String username, String password, String dbName, int corePoolSize,
+                             int maxPoolSize, String jdbcUrlOption, boolean autoCommit) throws ResourceException {
+        DruidDataSource dataSource = new DruidDataSource();//使用默认实现DruidDataSource
+        //设置dataSource参数, username等
+
+        //设置dataSource的Filter
+        List&lt;Filter&gt; filters = Lists.newArrayList();
+        SqlTimeOutFilter timeOutFilter = new SqlTimeOutFilter();
+        filters.add(timeOutFilter);
+        dataSource.setProxyFilters(filters);
+
+        //dataSource初始化等操作
+        ...
+
+        return dataSource;
+    }
+}
+</code></pre>
+]]></content>
+  </entry>
+  
+</feed>
