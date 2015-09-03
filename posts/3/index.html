@@ -9,15 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近项目中的beta环境,多个应用(10+个)连接数据库,使用的是连接池管理数据库连接. 最近应用中经常抛出数据库连接异常(我们使用的连接池是druid),简单的就是说无法获取Mysql的连接,创建连接失败(create connection error): 1
-2
-3
-4
-5
-6
-7
-8
-9 &hellip;">
+  <meta name="description" content="历经一个月的项目,使用Crate提升搜索速度终于要上线.先交代一下背景,我们使用的crate相关的依赖的版本: 1.crate-client 0.47.8
+2.crate-jdbc 1.5.1 发布之后,验证阶段一切正常,等把流量入口打开,一段时间之后, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -77,6 +70,153 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/05/20/crate-jdbccha-xun-si-xun-huan-bug/">Crate Jdbc查询死循环bug</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-05-20T05:41:17+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>20</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:41 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>历经一个月的项目,使用Crate提升搜索速度终于要上线.先交代一下背景,我们使用的crate相关的依赖的版本:</p>
+
+<pre><code>1.crate-client  0.47.8
+2.crate-jdbc    1.5.1
+</code></pre>
+
+<p>发布之后,验证阶段一切正常,等把流量入口打开,一段时间之后,猛然发现crate的一个查询服务所在的机器load飙到20往上,机器是4核CPU,4G内存的虚拟机.</p>
+
+<p>top -H发现有大量的tomcat线程(10+),每个线程占用的CPU都达到20%,并且这种线程有增多的趋势.</p>
+
+<p>vmstat命令发现r数字特别高,即正在等待CPU的线程非常多.</p>
+
+<p>jstack的结果发现runnable的线程多达300多.</p>
+
+<p>看现象,感觉问题是线程池分配没有回收,但是定位不到问题在哪.</p>
+
+<p>最终定位的问题是在特定场景下存在死循环,并且直接才crate服务器执行相同的查询逻辑正常返回,因此基本定位在crate-jdbc中.</p>
+
+<h1>1.死循环场景</h1>
+
+<pre><code>1.crate中数据为空,这是很从crate中查询数据;
+2.crate中存在满足查询条件数据,我们分页查询,假设总数据量为10页,我们因为代码问题,直接查询第11页的内容(实际上肯定不存在);
+</code></pre>
+
+<h1>2.原因</h1>
+
+<p>原因是这个版本crate-jdbc和mybatis一起存在死循环,如下,我们对crate的查询首先经过mybatis,从</p>
+
+<pre><code>1.MapperProxy.invoke
+2.MapperMethod.execute
+3.SqlSessionTemplate.selectList, SqlSessionTemplate.invoke
+4.DefaultSqlSession.selectList
+5.BaseExecutor.query, BaseExecutor.queryFromDatabase
+6.ReuseExecutor.doQuery
+7.RoutingStatementHandler.query
+8.PreparedStatementHandler.query
+9.CratePreparedStatement.execute()
+10.DefaultResultSetHandler.handleResultSets, DefaultResultSetHandler.getFirstResultSet
+</code></pre>
+
+<p>问题的代码就在DefaultResultSetHandler.getFirstResultSet中:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private ResultSetWrapper getFirstResultSet(Statement stmt) throws SQLException {
+</span><span class='line'>    ResultSet rs = stmt.getResultSet();
+</span><span class='line'>    while (rs == null) {
+</span><span class='line'>        // move forward to get the first resultset in case the driver
+</span><span class='line'>        // doesn't return the resultset as the first result (HSQLDB 2.1)
+</span><span class='line'>        if (stmt.getMoreResults()) {
+</span><span class='line'>            rs = stmt.getResultSet();
+</span><span class='line'>        } else {
+</span><span class='line'>            if (stmt.getUpdateCount() == -1) {
+</span><span class='line'>                // no more results. Must be no resultset
+</span><span class='line'>                break;
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>    return rs != null ? new ResultSetWrapper(rs, configuration) : null;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中stmt为CratePreparedStatement,其getMoreResults()实现:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>public boolean getMoreResults() throws SQLException {
+</span><span class='line'>    return false;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因此逻辑进入到else中,stmt.getUpdateCount()的实现:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>public int getUpdateCount() throws SQLException {
+</span><span class='line'>    checkClosed();  //check connection是否被关闭
+</span><span class='line'>    if (resultSet == null && sqlResponse != null) {
+</span><span class='line'>        return (int) sqlResponse.rowCount();
+</span><span class='line'>    }
+</span><span class='line'>    return -1;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中CratePreparedStatement的resultSet为null,并且sqlResponse不为空,sqlResponse的rowCount为0,因此getUpdateCount()返回值为0.因此getFirstResultSet中继续在while循环中,无法跳出.</p>
+
+<p><img src="/images/crate/crate_jdbc_bug_code.png"></p>
+
+<h1>3.绕过</h1>
+
+<p>归结起来产生问题的很简单,就是查询的结果集为空的时候,就会产生死循环,针对两种死循环场景,我们都可以绕过:</p>
+
+<pre><code>1.查询之前,先执行count查询,当count为0,即crate中没有满足我们查询条件的数据,则直接返回空数据集;
+2.分页查询的时候,先执行count查询,当分页的offset大于等于count,则值额节返回空数据集;
+</code></pre>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2927,55 +3067,6 @@ html://wiki.corp.qunar.com/download/attachments/63242976/%E5%91%A8%E5%BD%A6%E4%B
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/04/02/dubbo-thread-pool-exhausted/">Dubbo Thread Pool Exhausted</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-04-02T20:13:22+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>2</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>8:13 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>今天出现一次dubbo的Thread pool exhausted导致服务不可用。根本原因是Mysql的慢查询。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Caused by: java.util.concurrent.RejectedExecutionException: Thread pool is EXHAUSTED! Thread Name...</span></code></pre></td></tr></table></div></figure>
-
-
-<p>RejectedExecutionException表示线程池已经达到最大值，并且没有空闲连，拒绝执行了一些任务。
-Thread pool exhausted通常是min和max不一样大时，表示当前已创建的连接用完，进行了一次扩充，创建了新线程，但不影响运行。</p>
-
-<p>原因可能是连接池不够用，可以在provider的配置文件中设置threads参数：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;dubbo:provider port="20920" timeout="20000" threads="200"/&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>如果线程池已经有200，还不够，通常是业务处理占用线程时间过长，
-需优化业务，可通过jstack查看进程的状态，分析当前大多数线程都在干什么，从而分析出哪个地方是瓶颈，
-比如，如果大部分线程都在处理SQL，可能是数据库连接不够，或数据源配置错误，或SQL没走索引等。</p>
-
-<p>参考：
-<a href="http://alibaba.github.io/dubbo-doc-static/FAQ-focusedCommentId=9633823.htm#FAQ-9.%E5%87%BA%E7%8E%B0java.util.concurrent.RejectedExecutionException%E6%88%96%E8%80%85Threadpoolexhausted%E6%80%8E%E4%B9%88%E5%8A%9E%EF%BC%9F">http://alibaba.github.io/dubbo-doc-static/FAQ-focusedCommentId=9633823.htm#FAQ-9.%E5%87%BA%E7%8E%B0java.util.concurrent.RejectedExecutionException%E6%88%96%E8%80%85Threadpoolexhausted%E6%80%8E%E4%B9%88%E5%8A%9E%EF%BC%9F</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/4">&larr; Older</a>
@@ -2999,6 +3090,10 @@ Thread pool exhausted通常是min和max不一样大时，表示当前已创建�
       </li>
     
       <li class="post">
+        <a href="/blog/2015/08/27/zai-xian-zhen-duan-gong-ju/">在线诊断工具</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/08/22/chu-li-sqlchao-shi/">处理sql超时</a>
       </li>
     
@@ -3008,10 +3103,6 @@ Thread pool exhausted通常是min和max不一样大时，表示当前已创建�
     
       <li class="post">
         <a href="/blog/2015/08/12/mysql-packettoobigexception/">Mysql PacketTooBigException</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/08/08/oomkiller/">Oomkiller</a>
       </li>
     
   </ul>
@@ -3025,7 +3116,7 @@ Thread pool exhausted通常是min和max不一样大时，表示当前已创建�
 <li><a class='list-group-item' href='/blog/categories/druid/'>druid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
-<li><a class='list-group-item' href='/blog/categories/java/'>java (22)</a></li>
+<li><a class='list-group-item' href='/blog/categories/java/'>java (23)</a></li>
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (12)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>
