@@ -9,8 +9,10 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="主要整理Tomcat的整体架构.分析各个主要模块的功能. 1.整体结构 Tomcat基本结构图如下所示: 简单介绍: 1.一个serve包括多个service;
-2.一个service包含两个核心部件:一个容器(Container)和多个连接器(Connector), &hellip;">
+  <meta name="description" content="1.Enum原理 定义一个Enum，通过编译之后的字节码，我们可以发现其实现原理： 1
+2
+3
+public enum FruitEnum { APPLE, ORAGE } 编译器是在为我们创建一个类，这个类继承自 java.lang.Enum，有两个公共的、静态的、被声明成final的属性， &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -70,6 +72,159 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/04/01/enumfan-xu-lie-hua-wen-ti/">Enum反序列化问题</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-04-01T23:01:25+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>1</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>11:01 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><h1>1.Enum原理</h1>
+
+<p>定义一个Enum，通过编译之后的字节码，我们可以发现其实现原理：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public enum FruitEnum {  
+</span><span class='line'>    APPLE, ORAGE  
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>编译器是在为我们创建一个类，这个类继承自 java.lang.Enum，有两个公共的、静态的、被声明成final的属性，它们的类型就是我们定义的FruitEnum。</p>
+
+<p>编译器还生成了一个静态初始话器，就是字节码中static{};这一行下面的代码，其中的字节码创建了两个FruitEnum对象，同时分别赋值给APPLE和ORANGE这两个属性，调用的构造函数是定义在java.lang.Enum中的protected Enum(String name, int ordinal)方法。</p>
+
+<p>在创建完成两个FruitEnum对象并且分别赋值给APPLE和ORIGIN之后，还创建了一个名叫ENUM$VALUES的数组，然后把APPLE和ORIGIN按照定义的顺序放如这个数组中。</p>
+
+<p>除了这个静态初始化器之外，编译器还为我们生成了两个静态方法，values()和 valueOf(java.lang.String)方法。其中values()方法将ENUM$VALUES数组拷贝一份然后返回，而valueOf(java.lang.String)方法则会调用java.lang.Enum类中的valueOf方法，其作用是根据参数名找到对应的具体的枚举对象，如果找不到的话会抛出一个IllegalArgumentException异常。</p>
+
+<h1>2.Enum序列化反序列化原理及问题</h1>
+
+<h3>2.1原理</h3>
+
+<p>序列化的时候Java仅仅是将枚举对象的name属性输出到结果中，反序列化的时候则是通过java.lang.Enum的valueOf方法来根据名字查找枚举对象。</p>
+
+<p>同时，编译器是不允许任何对这种序列化机制的定制的，因此禁用了writeObject、readObject、readObjectNoData、writeReplace和readResolve等方法。</p>
+
+<h3>2.2问题</h3>
+
+<p>在系统或者类库升级时，对其中定义的枚举类型多加注意，为了保持代码上的兼容性，如果我们定义的枚举类型有可能会被序列化保存(放到文件中、保存到数据库中，进入分布式内存缓存中)，那么我们是不能够删除原来枚举类型中定义的任何枚举对象的，否则程序在运行过程中，JVM就会抱怨找不到与某个名字对应的枚举对象了。</p>
+
+<p>另外，在远程方法调用过程中，如果我们发布的客户端接口返回值中使用了枚举类型，那么服务端在升级过程中就需要特别注意。如果在接口的返回结果的枚举类型中添加了新的枚举值，那就会导致仍然在使用老的客户端的那些应用出现调用失败的情况。</p>
+
+<h1>3.Enum序列化反序列化问题解决</h1>
+
+<p>使用class代替Enum,原来的枚举使用static对象替换，valueOf()方法使用一个Map实现，示例代码如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public final class FruitEnum implements Serializable {
+</span><span class='line'>
+</span><span class='line'>    private static final long serialVersionUID = -7230925342774763449L;
+</span><span class='line'>
+</span><span class='line'>    private static final Map&lt;Integer, FruitEnum&gt; MAP = new HashMap&lt;Integer, FruitEnum&gt;();
+</span><span class='line'>
+</span><span class='line'>    public static final FruitEnum APPLE = new FruitEnum("Apple", 0);
+</span><span class='line'>    public static final FruitEnum ORAGE = new FruitEnum("Orige", 1);
+</span><span class='line'>
+</span><span class='line'>    private String text;
+</span><span class='line'>    private int code;
+</span><span class='line'>
+</span><span class='line'>    private FruitEnum(String text, int code) {
+</span><span class='line'>        this.text = text;
+</span><span class='line'>        this.code = code;
+</span><span class='line'>
+</span><span class='line'>        MAP.put(code, this);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public String getText() {
+</span><span class='line'>        return text;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public void setText(String text) {
+</span><span class='line'>        this.text = text;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public int getCode() {
+</span><span class='line'>        return code;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 根据code获取FruitEnum
+</span><span class='line'>     *
+</span><span class='line'>     * @param code
+</span><span class='line'>     * @return
+</span><span class='line'>     */
+</span><span class='line'>    public static FruitEnum valueOf(int code) {
+</span><span class='line'>        return MAP.get(code);
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>参考：<a href="http://mysun.iteye.com/blog/1581119">http://mysun.iteye.com/blog/1581119</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1614,127 +1769,6 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/01/27/vmstatgong-ju/">Vmstat工具</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-01-27T06:16:56+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>27</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:16 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>vmstat命令是最常见的Linux/Unix监控工具，可以展现给定时间间隔的服务器的状态值,包括服务器的CPU使用率，内存使用，虚拟内存交换情况,IO读写情况。</p>
-
-<h1>1.常用参数</h1>
-
-<p>一般vmstat工具的使用是通过两个数字参数来完成的，第一个参数是采样的时间间隔数，单位是秒，第二个参数是采样的次数</p>
-
-<p>参数1表示每隔1秒打印一条信息</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/hotel/CRM/fs$ vmstat 1
-</span><span class='line'>procs -----------memory---------- ---swap-- -----io---- -system-- ----cpu----
-</span><span class='line'> r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa
-</span><span class='line'> 2  0 299304 236692   8592 1589160    1    4   109   168  193   38 34 23 42  1
-</span><span class='line'> 0  0 299304 236892   8592 1589028    0    0     4     0 8159 10012 17 15 69  0
-</span><span class='line'> 0  0 299304 236324   8600 1589076    0    0     0   100 7979 8996  8 14 77  1
-</span><span class='line'> 0  0 299304 236412   8600 1589124    0    0     0     0 8269 10878 17 14 69  0
-</span><span class='line'> 2  0 299304 236656   8600 1589124    0    0     0     0 7900 9927 16 14 70  0
-</span><span class='line'> 0  0 299304 236744   8600 1589084    0    0     0    36 8152 9840 15 16 69  0
-</span><span class='line'> 0  0 299304 236480   8600 1589120    0    0     4     0 7903 10060 15 16 69  0</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.结果意义</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Procs
-</span><span class='line'>r: 等待CPU的线程数目
-</span><span class='line'>b: 等待IO而被Blocked的线程数目
-</span><span class='line'>
-</span><span class='line'>Memory
-</span><span class='line'>swpd: 虚拟内存的使用(Swap空间的使用),如果大于0，表示你的机器物理内存不足了
-</span><span class='line'>free: 空闲内存
-</span><span class='line'>buff: 用作buffer的空间
-</span><span class='line'>cache: 用作cache的空间
-</span><span class='line'>
-</span><span class='line'>Swap
-</span><span class='line'>si: 每秒从磁盘读入虚拟内存的大小,如果这个值大于0,表示物理内存不够用或者内存泄露了,要查找耗内存进程解决掉
-</span><span class='line'>so: 每秒虚拟内存写入磁盘的大小，如果这个值大于0，同上
-</span><span class='line'>
-</span><span class='line'>IO
-</span><span class='line'>bi: 块设备每秒接收的块数量，这里的块设备是指系统上的磁盘等块设备
-</span><span class='line'>bo: 块设备每秒发送的块数量，例如我们读取文件，bo就要大于0
-</span><span class='line'>
-</span><span class='line'>System
-</span><span class='line'>in: 每秒CPU的中断次数，包括时钟中断
-</span><span class='line'>cs: 每秒上下文切换次数，这个值要越小越好，太大了，要考虑调低线程或者进程的数目
-</span><span class='line'>
-</span><span class='line'>CPU
-</span><span class='line'>These are percentages of total CPU time.
-</span><span class='line'>us: 用户CPU时间
-</span><span class='line'>sy: 系统CPU时间，如果太高，表示系统调用时间长，例如是IO操作频繁
-</span><span class='line'>id: 空闲CPU时间
-</span><span class='line'>wa: 等待IO的CPU时间</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.参考</h1>
-
-<p><a href="http://www.thomas-krenn.com/en/wiki/Linux_Performance_Measurements_using_vmstat">http://www.thomas-krenn.com/en/wiki/Linux_Performance_Measurements_using_vmstat</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/5">&larr; Older</a>
@@ -1754,6 +1788,10 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/09/03/mysql-join/">Mysql Join</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/08/22/chu-li-sqlchao-shi/">处理sql超时</a>
       </li>
     
@@ -1767,10 +1805,6 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
     
       <li class="post">
         <a href="/blog/2015/08/08/oomkiller/">Oomkiller</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/08/03/fan-she-de-xiao-lu/">反射的效率</a>
       </li>
     
   </ul>
@@ -1789,7 +1823,7 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>
 <li><a class='list-group-item' href='/blog/categories/mybatis/'>mybatis (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (10)</a></li>
+<li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (11)</a></li>
 <li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>

@@ -9,7 +9,15 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近在重构项目,有一个场景:根据方法的返回值判断是否成功,成功则从入参里获取需要的参数,构造消息(Msg)并发送通知其他模块. 因为是比较通用的逻辑(判断返回值,获取参数,发送消息),因此做成Spring注解的形式,注解中会用AOP拦截方法获取方法的返回值和参数. 其中获取参数使用的是Spring &hellip;">
+  <meta name="description" content="最近项目中的beta环境,多个应用(10+个)连接数据库,使用的是连接池管理数据库连接. 最近应用中经常抛出数据库连接异常(我们使用的连接池是druid),简单的就是说无法获取Mysql的连接,创建连接失败(create connection error): 1
+2
+3
+4
+5
+6
+7
+8
+9 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -69,6 +77,209 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/05/19/mysql-thread-pool-size/">Mysql Thread_pool_size</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-05-19T06:23:18+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>19</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:23 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近项目中的beta环境,多个应用(10+个)连接数据库,使用的是连接池管理数据库连接.</p>
+
+<p>最近应用中经常抛出数据库连接异常(我们使用的连接池是druid),简单的就是说无法获取Mysql的连接,创建连接失败(create connection error):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[2015-05-14 15:50:51 ERROR com.alibaba.druid.pool.DruidDataSource:1363] create connection error 
+</span><span class='line'>com.mysql.jdbc.exceptions.jdbc4.CommunicationsException: Communications link failure
+</span><span class='line'>
+</span><span class='line'>The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+</span><span class='line'>    at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method) ~[na:1.7.0_45]
+</span><span class='line'>    at sun.reflect.NativeConstructorAccessorImpl.newInstance(NativeConstructorAccessorImpl.java:57) ~[na:1.7.0_45]
+</span><span class='line'>    at sun.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45) ~[na:1.7.0_45]
+</span><span class='line'>    at java.lang.reflect.Constructor.newInstance(Constructor.java:526) ~[na:1.7.0_45]
+</span><span class='line'>    at com.mysql.jdbc.Util.handleNewInstance(Util.java:411) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.SQLError.createCommunicationsException(SQLError.java:1117) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.MysqlIO.&lt;init&gt;(MysqlIO.java:350) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.coreConnect(ConnectionImpl.java:2393) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.connectOneTryOnly(ConnectionImpl.java:2430) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.createNewIO(ConnectionImpl.java:2215) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.&lt;init&gt;(ConnectionImpl.java:813) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.JDBC4Connection.&lt;init&gt;(JDBC4Connection.java:47) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at sun.reflect.GeneratedConstructorAccessor34.newInstance(Unknown Source) ~[na:na]
+</span><span class='line'>    at sun.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45) ~[na:1.7.0_45]
+</span><span class='line'>    at java.lang.reflect.Constructor.newInstance(Constructor.java:526) ~[na:1.7.0_45]
+</span><span class='line'>    at com.mysql.jdbc.Util.handleNewInstance(Util.java:411) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.getInstance(ConnectionImpl.java:399) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.mysql.jdbc.NonRegisteringDriver.connect(NonRegisteringDriver.java:334) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>    at com.alibaba.druid.pool.DruidAbstractDataSource.createPhysicalConnection(DruidAbstractDataSource.java:1296) ~[druid-0.2.18.jar:0.2.18]
+</span><span class='line'>    at com.alibaba.druid.pool.DruidAbstractDataSource.createPhysicalConnection(DruidAbstractDataSource.java:1352) ~[druid-0.2.18.jar:0.2.18]
+</span><span class='line'>    at com.alibaba.druid.pool.DruidDataSource$CreateConnectionThread.run(DruidDataSource.java:1361) ~[druid-0.2.18.jar:0.2.18]
+</span><span class='line'>Caused by: java.net.ConnectException: Connection refused
+</span><span class='line'>        at java.net.PlainSocketImpl.socketConnect(Native Method) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.AbstractPlainSocketImpl.doConnect(AbstractPlainSocketImpl.java:339) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.AbstractPlainSocketImpl.connectToAddress(AbstractPlainSocketImpl.java:200) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.AbstractPlainSocketImpl.connect(AbstractPlainSocketImpl.java:182) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.SocksSocketImpl.connect(SocksSocketImpl.java:392) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.Socket.connect(Socket.java:579) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.Socket.connect(Socket.java:528) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.Socket.&lt;init&gt;(Socket.java:425) ~[na:1.7.0_45]
+</span><span class='line'>        at java.net.Socket.&lt;init&gt;(Socket.java:241) ~[na:1.7.0_45]
+</span><span class='line'>        at com.mysql.jdbc.StandardSocketFactory.connect(StandardSocketFactory.java:257) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>        at com.mysql.jdbc.MysqlIO.&lt;init&gt;(MysqlIO.java:300) ~[mysql-connector-java-5.1.21.jar:na]
+</span><span class='line'>        ... 14 common frames omitted</span></code></pre></td></tr></table></div></figure>
+
+
+<p>开始怀疑机器的压力过大,将一些应用停止,还是出现这个问题.</p>
+
+<p>但是相同的代码在dev环境一切正常,beta环境的机器配置要优于dev环境的.</p>
+
+<h1>1.Druid配置</h1>
+
+<p>首先怀疑那块的代码问题导致的Mysql连接没有被释放.</p>
+
+<p>由于我们使用Druid连接池,尝试使用Druid的removeAbandoned功能,这个配置的意义就是连接泄漏监测,通过这个监控没有发现异常.</p>
+
+<p>当程序存在缺陷时，申请的连接忘记关闭，这时候，就存在连接泄漏了。Druid提供了RemoveAbandanded相关配置，用来关闭长时间不使用的连接.</p>
+
+<p>配置removeAbandoned对性能会有一些影响，建议怀疑存在泄漏之后再打开。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;property name="removeAbandoned" value="true" /&gt; &lt;!-- 打开removeAbandoned功能--&gt;
+</span><span class='line'>&lt;property name="removeAbandonedTimeout" value="600" /&gt; &lt;!-- 600秒，也就是10分钟--&gt;
+</span><span class='line'>&lt;property name="logAbandoned" value="true" /&gt; &lt;!-- 关闭abanded连接时输出错误日志--&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>`
+当removeAbandoned=true之后，可以在内置监控界面datasource.html中的查看ActiveConnection StackTrace属性的，可以看到未关闭连接的具体堆栈信息，从而方便查出哪些连接泄漏了。</p>
+
+<p>参考:
+<a href="https://github.com/alibaba/druid/wiki/%E8%BF%9E%E6%8E%A5%E6%B3%84%E6%BC%8F%E7%9B%91%E6%B5%8B">https://github.com/alibaba/druid/wiki/%E8%BF%9E%E6%8E%A5%E6%B3%84%E6%BC%8F%E7%9B%91%E6%B5%8B</a></p>
+
+<h1>2.diff mysql status</h1>
+
+<p>既然dev环境正常,因此我们的做法是拿出dev环境和beta环境的show status结果进行diff,结果发现了一个比较可疑的参数的配置有差异:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>thread_pool_size</span></code></pre></td></tr></table></div></figure>
+
+
+<p>dev环境配置是16,而beta环境是4,同时线上环境的配置是24.初步判断beta环境的thread_pool_size设置应该是有问题的.</p>
+
+<h1>3.thread_pool_size</h1>
+
+<p>参考官网的描述</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>thread_pool_size is the most important parameter controlling thread pool performance. It can be set only at server startup. Our experience in testing the thread pool indicates the following:
+</span><span class='line'>
+</span><span class='line'>If the primary storage engine is InnoDB, the optimal thread_pool_size setting is likely to be between 16 and 36, with the most common optimal values tending to be from 24 to 36. We have not seen any situation where the setting has been optimal beyond 36. There may be special cases where a value smaller than 16 is optimal.
+</span><span class='line'>
+</span><span class='line'>For workloads such as DBT2 and Sysbench, the optimum for InnoDB seems to be usually around 36. For very write-intensive workloads, the optimal setting can sometimes be lower.
+</span><span class='line'>
+</span><span class='line'>If the primary storage engine is MyISAM, the thread_pool_size setting should be fairly low. We tend to get optimal performance for values from 4 to 8. Higher values tend to have a slightly negative but not dramatic impact on performance.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>简单的翻译一下:
+thread_pool_size是控制线程池性能最重要的一个参数,这个参数只能在Mysql服务启动的时候设置(这是官网5.5版本的文档,5.6版本证明是可以动态修改的).官网的推荐设置:</p>
+
+<pre><code>1.如果存储引擎是InnoDB,thread_pool_size值设置16到36之间比较好,一般配置在24到36之间;
+2.如果存储引擎是MyISAM,thread_pool_size值应该被设置得相当小,倾向于设置在4到8之间;
+</code></pre>
+
+<p>官方网站:
+<a href="https://dev.mysql.com/doc/refman/5.5/en/thread-pool-tuning.html">https://dev.mysql.com/doc/refman/5.5/en/thread-pool-tuning.html</a></p>
+
+<h3>3.1 thread_pool_size意义</h3>
+
+<p>参数thread_pool_size的命令可能会让大家产生误解，它不是指的线程池的大小，而是线程组的大小。</p>
+
+<p>类似所有创建的线程都在某一个group里，group的编号从1~thread_pool_size，每个group里的worker线程数可以通过参数thread_pool_oversubscribe来控制（默认为3）.</p>
+
+<p>同时活跃的最大worker线程数=thread_pool_size * (thread_pool_oversubscribe + 1);</p>
+
+<p>thread_pool_size默认值为CPU核心数，最大为128(MAX_THREAD_GROUPS)，在启动时，就会把128个Group对应的结构体(all_groups)初始化好。每个group(编号小于等于thread_pool_size)会创建一个epoll对象；</p>
+
+<p>当MySQL建立connection时, MySQL根据connection的thread id对thread_pool_size取模,将 connection发起的sql语句分配到对应的group.若worker达到最大数量后还是不足以处理回话请求, 则连接在本group上等待,导致sql语句的RT(Response time)增大。</p>
+
+<p>简单示意图如下:</p>
+
+<p><img src="/images/mysql/Mysql_Pool.png"></p>
+
+<p>所有之前的问题出现的情况是:</p>
+
+<pre><code>1.thread_pool_size为4,即mysql每个thread pool的group中work线程的大小为4,如果有多个应用,恰好多个线程的connection被分发到某一个group上(假设为group-2),并且相当长一段时间一致在占有(比如我们在beta环境的连接,会占用并忙碌长达半小时),这时候,新来的连接正好也分发到group-2上,这时候Mysql上的group-2就没有多余的work线程来为其服务,即其无法和mysql创建连接,从而出现create connection error的异常.
+</code></pre>
+
+<p>参考:
+<a href="http://get.jobdeer.com/908.get">http://get.jobdeer.com/908.get</a>
+<a href="http://chuansong.me/n/1192563">http://chuansong.me/n/1192563</a>
+<a href="http://mysqllover.com/?p=826">http://mysqllover.com/?p=826</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2765,159 +2976,6 @@ Thread pool exhausted通常是min和max不一样大时，表示当前已创建�
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/04/01/enumfan-xu-lie-hua-wen-ti/">Enum反序列化问题</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-04-01T23:01:25+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>1</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>11:01 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h1>1.Enum原理</h1>
-
-<p>定义一个Enum，通过编译之后的字节码，我们可以发现其实现原理：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public enum FruitEnum {  
-</span><span class='line'>    APPLE, ORAGE  
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>编译器是在为我们创建一个类，这个类继承自 java.lang.Enum，有两个公共的、静态的、被声明成final的属性，它们的类型就是我们定义的FruitEnum。</p>
-
-<p>编译器还生成了一个静态初始话器，就是字节码中static{};这一行下面的代码，其中的字节码创建了两个FruitEnum对象，同时分别赋值给APPLE和ORANGE这两个属性，调用的构造函数是定义在java.lang.Enum中的protected Enum(String name, int ordinal)方法。</p>
-
-<p>在创建完成两个FruitEnum对象并且分别赋值给APPLE和ORIGIN之后，还创建了一个名叫ENUM$VALUES的数组，然后把APPLE和ORIGIN按照定义的顺序放如这个数组中。</p>
-
-<p>除了这个静态初始化器之外，编译器还为我们生成了两个静态方法，values()和 valueOf(java.lang.String)方法。其中values()方法将ENUM$VALUES数组拷贝一份然后返回，而valueOf(java.lang.String)方法则会调用java.lang.Enum类中的valueOf方法，其作用是根据参数名找到对应的具体的枚举对象，如果找不到的话会抛出一个IllegalArgumentException异常。</p>
-
-<h1>2.Enum序列化反序列化原理及问题</h1>
-
-<h3>2.1原理</h3>
-
-<p>序列化的时候Java仅仅是将枚举对象的name属性输出到结果中，反序列化的时候则是通过java.lang.Enum的valueOf方法来根据名字查找枚举对象。</p>
-
-<p>同时，编译器是不允许任何对这种序列化机制的定制的，因此禁用了writeObject、readObject、readObjectNoData、writeReplace和readResolve等方法。</p>
-
-<h3>2.2问题</h3>
-
-<p>在系统或者类库升级时，对其中定义的枚举类型多加注意，为了保持代码上的兼容性，如果我们定义的枚举类型有可能会被序列化保存(放到文件中、保存到数据库中，进入分布式内存缓存中)，那么我们是不能够删除原来枚举类型中定义的任何枚举对象的，否则程序在运行过程中，JVM就会抱怨找不到与某个名字对应的枚举对象了。</p>
-
-<p>另外，在远程方法调用过程中，如果我们发布的客户端接口返回值中使用了枚举类型，那么服务端在升级过程中就需要特别注意。如果在接口的返回结果的枚举类型中添加了新的枚举值，那就会导致仍然在使用老的客户端的那些应用出现调用失败的情况。</p>
-
-<h1>3.Enum序列化反序列化问题解决</h1>
-
-<p>使用class代替Enum,原来的枚举使用static对象替换，valueOf()方法使用一个Map实现，示例代码如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public final class FruitEnum implements Serializable {
-</span><span class='line'>
-</span><span class='line'>    private static final long serialVersionUID = -7230925342774763449L;
-</span><span class='line'>
-</span><span class='line'>    private static final Map&lt;Integer, FruitEnum&gt; MAP = new HashMap&lt;Integer, FruitEnum&gt;();
-</span><span class='line'>
-</span><span class='line'>    public static final FruitEnum APPLE = new FruitEnum("Apple", 0);
-</span><span class='line'>    public static final FruitEnum ORAGE = new FruitEnum("Orige", 1);
-</span><span class='line'>
-</span><span class='line'>    private String text;
-</span><span class='line'>    private int code;
-</span><span class='line'>
-</span><span class='line'>    private FruitEnum(String text, int code) {
-</span><span class='line'>        this.text = text;
-</span><span class='line'>        this.code = code;
-</span><span class='line'>
-</span><span class='line'>        MAP.put(code, this);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public String getText() {
-</span><span class='line'>        return text;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setText(String text) {
-</span><span class='line'>        this.text = text;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public int getCode() {
-</span><span class='line'>        return code;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 根据code获取FruitEnum
-</span><span class='line'>     *
-</span><span class='line'>     * @param code
-</span><span class='line'>     * @return
-</span><span class='line'>     */
-</span><span class='line'>    public static FruitEnum valueOf(int code) {
-</span><span class='line'>        return MAP.get(code);
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参考：<a href="http://mysun.iteye.com/blog/1581119">http://mysun.iteye.com/blog/1581119</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/4">&larr; Older</a>
@@ -2937,6 +2995,10 @@ Thread pool exhausted通常是min和max不一样大时，表示当前已创建�
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/09/03/mysql-join/">Mysql Join</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/08/22/chu-li-sqlchao-shi/">处理sql超时</a>
       </li>
     
@@ -2950,10 +3012,6 @@ Thread pool exhausted通常是min和max不一样大时，表示当前已创建�
     
       <li class="post">
         <a href="/blog/2015/08/08/oomkiller/">Oomkiller</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/08/03/fan-she-de-xiao-lu/">反射的效率</a>
       </li>
     
   </ul>
@@ -2972,7 +3030,7 @@ Thread pool exhausted通常是min和max不一样大时，表示当前已创建�
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>
 <li><a class='list-group-item' href='/blog/categories/mybatis/'>mybatis (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (10)</a></li>
+<li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (11)</a></li>
 <li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
