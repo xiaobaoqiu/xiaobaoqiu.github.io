@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Search | xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/blog/categories/search/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2015-09-03T13:58:26+08:00</updated>
+  <updated>2015-09-09T22:16:53+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,361 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Lucene入门]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/09/03/luceneru-men/"/>
+    <updated>2015-09-03T14:13:54+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/09/03/luceneru-men</id>
+    <content type="html"><![CDATA[<p>Crate再项目中扮演越来越重要的角色.但是很多时候我对Crate,包括其下层的ElasticSearch以及Lucene都是一知半解,甚至可以说是完全不懂.因为没看过源代码.所以这段时间会集中学习一下Lucene和ElasticSearch的源码.</p>
+
+<p>从Lucene开始.会包含以下内容:</p>
+
+<pre><code>1.Lucene简介;
+2.Lunece整体架构;
+3.Lucene的存储;
+4.Lucene的搜索;
+5.Lucene其他功能,如高亮等;
+</code></pre>
+
+<p>这里从Lucene简介开始.第一次使用Lucene已经是两年前入职的时候,写了个简单的爬虫,抓取999网的疾病信息并提供一个简单的搜索入口.这里主要弄懂以下几个问题:</p>
+
+<pre><code>1.信息检索
+2.Lucene是什么;
+3.Lucene建立索引的大致过程;
+4.Lucene搜索的大致过程;
+</code></pre>
+
+<p>Lucene官网: <a href="http://lucene.apache.org/">http://lucene.apache.org/</a></p>
+
+<p>在Lucene基础上衍生出很多搜索框架,下面是这些框架的对比:<a href="http://stackoverflow.com/questions/2271600/elasticsearch-sphinx-lucene-solr-xapian-which-fits-for-which-usage">http://stackoverflow.com/questions/2271600/elasticsearch-sphinx-lucene-solr-xapian-which-fits-for-which-usage</a></p>
+
+<h2>1.信息检索</h2>
+
+<p>信息检索简单讲就是从一堆数据中找到你需要的数据,数据的来源可能是文本或者网络,甚至别人说的话或者声波等等.比如:</p>
+
+<ul>
+<li>从一个Excel表格中找到你的名字;</li>
+<li>从学生成绩标表中找到不及格的学生;</li>
+<li>从图书馆里面找Java编程相关的书籍;</li>
+<li>从网络搜索Lucene相关知识;</li>
+<li>老师点名时候喊到;</li>
+</ul>
+
+
+<p>人类信息检索也是一个不断发展的过程,下面这个例子简单的诠释了信息检索的改善过程:</p>
+
+<ol>
+<li>一个书生想从书屋(假设1000本书)里找一本书他能做的就是,从第一本书开始一本一本的往后找,直到找到他要的那本书.如果很不幸,书屋里面每这本书,那么他就必须翻遍所以的书,很可能他找一遍需要10个小时;</li>
+<li>经历过几次这样痛苦的找书经历之后,书生开始想招了,将书分类(假设10个分类),文学类在第一个书架子,史学类再第二个书架子&hellip;从此以后,他找书比以前方便多了.找一本书最多只需要翻一个架子,时间缩短到1个小时;但是带来的成本是:必须将书正确的放在其正确的架子上;</li>
+<li>每次翻遍一个架子,书生觉得还是比较麻烦,于是他给每本书加了一个编号,将书按照编号排列好,并将所以的书名和编号的对应关系记录到一个单独的册子上.下次他找书只需要在册子上找就可以了(只需要看册子上的1000个书名),找到书名对应的编号,然后就能快速的找到书,时间只需要10分钟.成本是书必须按照需要排列;</li>
+<li>10分钟还是有点长,书生于是决定再改善,结合2和3的改进措施.书按照各种类型放在不同的架子,每个架子的书单独编号,比如文学1,文学2&hellip;.册子上也按照书种类进行分开登记.这样找一本书只需要看一个分类下的书名(100个),只需要1分钟.</li>
+</ol>
+
+
+<p>我们生活中的数据分为:结构化数据和非结构化数据.结构化数据指具有固定格式或有限长度的数据,如数据库或者Excel表等.非结构化数据指不定长或无固定格式的数据,如邮件,word文档等.</p>
+
+<p>计算机的产生对信息检索产生了质的变化,帮我们做了很多简单却耗时的工作.在计算机检索的世界里面我们已知了很多技术:</p>
+
+<pre><code>1.对链表的搜索,我们采用从头到位逐项比较,O(N)的时间复杂度;
+2.对于有序数组,我们可以采用二分搜索(其实就是二叉树,通常称之为二叉查找树),能够达到O(logN),底数是2;
+3.多叉数的查找比二叉树更快,参考Tire树,B树等数据结构,O(logN),底数大于2;
+4.Hash表的查找理论上是O(1)的时间复杂度;
+</code></pre>
+
+<p>除了顺序查找,其他几种检索都非常的快,但是这种快都是有维护成本的,比如二分搜索需要保证数据有序,因此新来的数据的插入成本会很高,包括删除数据的成本也会很高.但是其带来的检索效率的提升是非常大的.针对结构化数据,我们往往很简单的实现数据的快速搜索,比如数据库就是使用B树来达到快速搜索的目的.</p>
+
+<p>但是现实中99%以上的原始数据都是混乱无须的非结构化数据.当数据量很大的时候,检索成为一个极其困难的问题(量变导致质变),即使对于计算很快的计算机而言.比如一个简单的字符串查找,假设在1页书的内容(约1000字)中查找一个单词可能需要1毫秒,那么在一本书的内容中(约50W词)中查找一个名字可能需要0.5秒,在1W本书(约50亿个单词)中查找这个单词需要5000秒,也就是接近1个半小时;假设每分钟要找一次呢?不敢想象.</p>
+
+<p>在当今网络及其发达的今天,已经很多的公司的数据量超过了1W本书的信息量.这时候无序信息的全文检索显得极其重要.因此也催生了诸如Google,Yahoo和Baidu这些搜索巨头.</p>
+
+<p>索引是全文搜索的基础,也是现代搜索引擎的核心,建立索引的过程就是把源数据处理成非常方便查询的索引文件的过程.你可以把索引想象成这样一种数据结构,他能够使你快速的随机访问存储在索引中的关键词,进而找到该关键词所关联的文档.</p>
+
+<p>还是以书的例子来说,假设书前三页的内容:</p>
+
+<pre><code>//page1:
+如何使用Lucene完善搜索
+
+//page2
+Lucene数据如何存储
+
+//page3
+Lucene如何实现搜索
+
+//page4
+作者:肖宝秋
+</code></pre>
+
+<p>我们首先使用分词软件见这四页的内容分词,得到以下结果:</p>
+
+<pre><code>//page1:
+如何, 使用, Lucene, 完善, 搜索
+
+//page2
+Lucene, 数据, 如何, 存储
+
+//page3
+Lucene, 如何, 实现, 搜索
+作者, 肖宝秋
+</code></pre>
+
+<p>建立词&ndash;>文档的映射关系:</p>
+
+<pre><code>如何 --&gt; page1, page2, page3
+使用 --&gt; page1
+Lucene --&gt; page1, page2, page3
+完善 --&gt; page1
+搜索 --&gt; page1, page3
+数据 --&gt; page2
+存储 --&gt; page2
+实现 --&gt; page3
+作者 --&gt; page4
+肖宝秋 --&gt; page4
+</code></pre>
+
+<p>现在搜索"Lucene"的时候,我知道在page1,page2,page3中出现了.搜索"作者"的时候,我知道在page4出现了.</p>
+
+<p>另外一个支撑现代搜索理论的既定现实是:词的数量是有限的,而且非常有限.比如常用的中文词就几万个.</p>
+
+<h2>2.Lucene是什么</h2>
+
+<p>简单讲,Lucene是一个高效的,基于Java的全文检索工具包,它不是一个完整的搜索应用程序,而是为你的应用程序提供索引和搜索功能.Lucene是Apache家族中的一个开源项目.也是目前最为流行的基于 Java 开源全文检索工具包.</p>
+
+<p>Lucene 能够为文本类型的数据建立索引,所以你只要能把你要索引的数据格式转化的文本的,Lucene 就能对你的文档进行索引和搜索.比如你要对一些 HTML 文档,PDF 文档进行索引的话你只需要把 HTML 文档和 PDF 文档转化成文本格式的,然后将转化后的内容交给Lucene进行索引,然后把创建好的索引文件保存到磁盘或者内存中,最后根据用户输入的查询条件在索引文件上进行查询.不指定要索引的文档的格式也使Lucene能够几乎适用于所有的搜索应用程序.</p>
+
+<p>下图展示搜索应用程序和Lucene之间的关系,也描述了Lucene的两个核心过程:建立索引和通过索引检索</p>
+
+<p><img src="/images/lucene/lucene_and_application.jpg"></p>
+
+<h4>2.1 Lucene优点</h4>
+
+<p>Lucene作为一个全文搜索引擎,其具有如下突出的优点:</p>
+
+<ul>
+<li>1.索引文件格式独立于应用平台.Lucene定义了一套以八字节为基础的索引文件格式,使得兼容系统和不同平台的应用能够共享建立的索引文件.</li>
+<li>2.在传统全文检索引擎的倒序索引的基础上实现了分块索引,能够针对新的文件建立小文件索引,提升索引速度.然后通过与原有的索引的合并,达到优化的目的.</li>
+<li>3.优秀的面向对象的系统架构,使得对于Lucene扩展的学习难度降低,方便加入新功能.</li>
+<li>4.设计了独立于语言和文件格式的文本分析接口,索引器通过接受token流完成索引文件的创立,用户扩展新的语言和文件格式,只需要实现文本分析的接口.</li>
+<li>5.已经默认实现了一套强大的查询引擎,用户无须自己编写代码即可使系统获得强大的查询能力,Lucene的查询实现中默认实现了布尔操作、模糊查询、分组查询.</li>
+</ul>
+
+
+<p>参考: <a href="http://lucene.apache.org/core/index.html">http://lucene.apache.org/core/index.html</a></p>
+
+<h4>2.2 倒排索引</h4>
+
+<p>现代搜索引擎基本都是基于倒排索引(反向索引).因为搜索问题本质就是求解"哪文档包含搜索词"这个问题.</p>
+
+<p>简单讲一下什么是倒排索引,简单讲就是字符串到文件的映射关系.假设我的文档集合里面有100篇文档,为了方便表示,我们为文档编号从1到100,得到下面的结构:</p>
+
+<p><img src="/images/lucene/inverted_index.jpg"></p>
+
+<p>左边保存的是一系列字符串,称为词典.每个字符串都指向包含此字符串的文档(Document)链表,此文档链表称为倒排表.</p>
+
+<p>有了索引,便使保存的信息和要搜索的信息一致,可以大大加快搜索的速度.比如说,我们要寻找既包含字符串“lucene”又包含字符串“solr”的文档,我们只需要以下几步:</p>
+
+<ol>
+<li>取出包含字符串lucene的文档链表.</li>
+<li>取出包含字符串solr的文档链表.</li>
+<li>通过合并链表,找出既包含lucene又包含solr的文件.</li>
+</ol>
+
+
+<p><img src="/images/lucene/inverted_index_merge.jpg"></p>
+
+<h2>3.Lucene建立索引</h2>
+
+<p>Lucene的建立索引包括以下几个过程:</p>
+
+<h4>3.1.原始文档</h4>
+
+<p>一些要索引的原文档(Document).包括Html文档,PDF文档,MC Word文档等.而Lucene是只能处理文本文档.</p>
+
+<p>庆幸的是现在很多工具帮我们处理这些问题.如Apache的Tika, 官网:<a href="http://tika.apache.org/">http://tika.apache.org/</a></p>
+
+<h4>3.2.分词</h4>
+
+<p>确定输入的文本之后首先将文本传递给分词组件,分词组件(Tokenizer)会做以下几件事情(此过程称为Tokenize):</p>
+
+<pre><code>1. 将文档分成一个一个单独的单词;
+2. 去除标点符号;
+3. 去除停词(Stop word);
+</code></pre>
+
+<p>停词(Stop word)就是一种语言中最普通的一些单词,由于没有特别的意义,因而大多数情况下不能成为搜索的关键词,因而创建索引时,这种词会被去掉而减少索引的大小.英语中挺词(Stop word)如:the,a,this,is等.对于每一种语言的分词组件(Tokenizer),都有一个停词(stop word)集合.经过分词(Tokenizer)后得到的结果称为词元(Token).</p>
+
+<h4>3.3 语言处理</h4>
+
+<p>分词之后将词元传递给语言处理模块,语言处理组件(linguistic processor)主要是对得到的词元(Token)做一些同语言相关的处理.</p>
+
+<p>比如对于英语,语言处理组件(Linguistic Processor)一般做以下几点:</p>
+
+<pre><code>1. 变为小写(Lowercase).
+2. 将单词缩减为词根形式,如cars到car等.这种操作称为:stemming.
+3. 将单词转变为词根形式,如“drove”到“drive”等.这种操作称为:lemmatization.
+</code></pre>
+
+<p>语言处理组件(linguistic processor)的结果称为词(Term).</p>
+
+<h4>3.4 索引</h4>
+
+<p>语言处理之后将词给索引模块,索引模块主要做以下几个事情:</p>
+
+<pre><code>1. 利用得到的词(Term)创建一个字典.
+即Term1--&gt;doc1, Term2--&gt;doc1这种映射关系
+2. 对字典按字母顺序进行排序.
+3. 合并相同的词(Term)成为文档倒排链表.
+</code></pre>
+
+<p>倒排链表的格式如下:</p>
+
+<pre><code>Term1,Document Frequency  --&gt; Doc1,Frequency1 ; Doc2,Frequency2
+</code></pre>
+
+<p>Document Frequency 即文档频次,表示总共有多少文件包含此词(Term),即链表中文档数目.
+Frequency 即词频率,表示此文件中包含了几个此词(Term).</p>
+
+<p>下面是一个建立索引的例子,输入文本如下:</p>
+
+<pre><code>文件一:Students should be allowed to go out with their friends, but not allowed to drink beer.
+文件二:My friend Jerry went to school to see his students but found them drunk which is not allowed.
+</code></pre>
+
+<p>经过分词(Tokenizer)后得到的结果称为词元(Token):</p>
+
+<pre><code>Students,allowed,go,their,friends,allowed,drink,beer,My,friend,Jerry,went,school,see,his,students,found,them,drunk,allowed
+</code></pre>
+
+<p>经过语言处理,得到的词(Term)如下:</p>
+
+<pre><code>student,allow,go,their,friend,allow,drink,beer,my,friend,jerry,go,school,see,his,student,find,them,drink,allow
+</code></pre>
+
+<p>最后得到的倒排索引表如下:</p>
+
+<p><img src="/images/lucene/posting_list.jpg"></p>
+
+<p>所以对词allow来讲,总共有两篇文档包含此词(Term),从而词(Term)后面的文档链表总共有两项,第一项表示包含allow的第一篇文档,即1号文档,此文档中,allow出现了2次,第二项表示包含allow的第二个文档,是2号文档,此文档中,allow出现了1次.</p>
+
+<h2>4.Lucene搜索</h2>
+
+<p>有了倒排索引,我们就可以做搜索了,但是事实上Lucene的搜索过程也不简单.</p>
+
+<p>简单来讲,搜索解决的问题是:找到和搜索词相关性最好的文档.细分的这个问题:</p>
+
+<pre><code>1.找到相关文档;
+2.评价搜索词和文档的相关性;
+</code></pre>
+
+<p>Lucene的搜索包括以下几个过程.</p>
+
+<h4>3.1.用户输入</h4>
+
+<p>查询语句同我们普通的语言一样,也是有一定语法的.查询语句的语法根据全文检索系统的实现而不同.最基本的有比如:AND, OR, NOT等.举个例子,用户输入语句:lucene AND learned NOT hadoop.说明用户想找一个包含lucene和learned然而不包括hadoop的文档.</p>
+
+<p>目前看来,Google和Baidu都不支出这种语法:</p>
+
+<p><img src="/images/lucene/Google_Search.png"></p>
+
+<p><img src="/images/lucene/Baidu_Search.png"></p>
+
+<h4>3.2.词法分析,语法分析,语言处理</h4>
+
+<p>由于查询语句有语法,因而也要进行语法分析,语法分析及语言处理.</p>
+
+<ul>
+<li><p>词法分析主要用来切词,识别单词和关键字.通常建立索引的切词组件和对搜索词的切词组件一致.</p></li>
+<li><p>语法分析主要是根据查询语句的语法规则来形成一棵语法树.比如例子:lucene AND learned NOT hadoop形成的语法树如下:</p>
+
+<p>  <img src="/images/lucene/Token_tree.jpg"></p></li>
+<li><p>语言处理同索引过程中的语言处理几乎相同.如learned变成learn等.经过第三步,我们得到一棵经过语言处理的语法树.</p>
+
+<p> <img src="/images/lucene/Term_Tree.jpg"></p></li>
+</ul>
+
+
+<h4>3.3 搜索索引</h4>
+
+<p>此步骤有分几小步:</p>
+
+<ul>
+<li>在反向索引表中,分别找出包含lucene,learn,hadoop的文档链表.</li>
+<li>对包含lucene,learn的链表进行合并操作,得到既包含lucene又包含learn的文档链表.</li>
+<li>将此链表与hadoop的文档链表进行差操作,去除包含hadoop的文档,从而得到既包含lucene又包含learn而且不包含hadoop的文档链表.此文档链表就是我们要找的文档.</li>
+</ul>
+
+
+<h4>3.4 结果文档排序</h4>
+
+<p>虽然在上一步,我们得到了想要的文档,然而对于查询结果应该按照与查询语句的相关性进行排序,越相关者越靠前.</p>
+
+<p>通常会把查询语句看作一片短小的文档,对文档与文档之间的相关性(relevance)进行打分(scoring),分数高的相关性好,就应该排在前面.</p>
+
+<p>对于文档之间的关系,不同的Term重要性不同,比如对于本篇文档,search, Lucene, full-text就相对重要一些,this, a , what可能相对不重要一些.所以如果两篇文档都包含search, Lucene,fulltext,这两篇文档的相关性好一些,然而就算一篇文档包含this, a, what,另一篇文档不包含this, a, what,也不能影响两篇文档的相关性.</p>
+
+<p>找出词(Term)对文档的重要性的过程称为计算词的权重(Term weight)的过程.计算词的权重(term weight)有两个参数,第一个是词(Term),第二个是文档(Document).词的权重(Term weight)表示此词(Term)在此文档中的重要程度,越重要的词(Term)有越大的权重(Term weight),因而在计算文档之间的相关性中将发挥更大的作用.</p>
+
+<p>下面分析这两个过程:</p>
+
+<ul>
+<li>计算权重(Term weight).</li>
+</ul>
+
+
+<p>影响一个词(Term)在一篇文档中的重要性主要有两个因素:</p>
+
+<pre><code>1.Term Frequency (tf):即此Term在此文档中出现了多少次. tf越大说明越重要.
+2.Document Frequency (df):即有多少文档包含次Term. df越大说明越不重要.
+</code></pre>
+
+<p>很容易理解,词(Term)在文档中出现的次数越多,说明此词(Term)对该文档越重要,如“搜索”这个词,在本文档中出现的次数很多,说明本文档主要就是讲这方面的事的.然而在一篇英语文档中,this出现的次数更多,就说明越重要吗？不是的,这是由第二个因素进行调整,第二个因素说明,有越多的文档包含此词(Term), 说明此词(Term)太普通,不足以区分这些文档,因而重要性越低.</p>
+
+<p>简单公式如下:</p>
+
+<p><img src="/images/lucene/Term_Weight.png"></p>
+
+<ul>
+<li>根据Term之间的关系得到文档相关性.</li>
+</ul>
+
+
+<p>我们把文档看作一系列词(Term),每一个词(Term)都有一个权重(Term weight),不同的词(Term)根据自己在文档中的权重来影响文档相关性的打分计算.</p>
+
+<p>于是我们把所有此文档中词(term)的权重(term weight) 看作一个向量.</p>
+
+<pre><code>Document = {term1, term2, …… ,term N}
+Document Vector = {weight1, weight2, …… ,weight N}
+</code></pre>
+
+<p>同样我们把查询语句看作一个简单的文档,也用向量来表示.</p>
+
+<pre><code>Query = {term1, term 2, …… , term N}
+Query Vector = {weight1, weight2, …… , weight N}
+</code></pre>
+
+<p>我们把所有搜索出的文档向量及查询向量放到一个N维空间中,每个词(term)是一维:</p>
+
+<p><img src="/images/lucene/document_relative_vsm.jpg"></p>
+
+<p>我们认为两个向量之间的夹角越小,相关性越大.所以我们计算夹角的余弦值作为相关性的打分,夹角越小,余弦值越大,打分越高,相关性越大.</p>
+
+<p>需要注意的是,查询语句一般是很短的,包含的词(Term)是很少的,因而查询向量的维数很小,而文档很长,包含词(Term)很多,文档向量维数很大, 但是需要放到相同的向量空间,因此要保证二者维数是相同的.处理方式很简单,维数不同时,取二者的并集,如果不含某个词(Term)时,则权重(Term Weight)为0.</p>
+
+<p>相关性打分公式如下:</p>
+
+<p><img src="/images/lucene/documet_relative_caculate.png"></p>
+
+<p>举个例子,查询语句有11个Term,共有三篇文档搜索出来.其中各自的权重(Term weight),如下:</p>
+
+<p><img src="/images/lucene/document_score.png"></p>
+
+<p>于是计算,三篇文档同查询语句的相关性打分分别为:</p>
+
+<p><img src="/images/lucene/score_example.png"></p>
+
+<p>于是文档二相关性最高,先返回,其次是文档一,最后是文档三.到此为止,我们可以找到我们最想要的文档了.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[分词]]></title>
@@ -491,102 +846,6 @@ elasticSearch的数据存放位置
 
 <p>参考:
 <a href="http://es.xiaoleilu.com/">http://es.xiaoleilu.com/</a></p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Crate Jdbc查询死循环bug]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/05/20/crate-jdbccha-xun-si-xun-huan-bug/"/>
-    <updated>2015-05-20T05:41:17+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/05/20/crate-jdbccha-xun-si-xun-huan-bug</id>
-    <content type="html"><![CDATA[<p>历经一个月的项目,使用Crate提升搜索速度终于要上线.先交代一下背景,我们使用的crate相关的依赖的版本:</p>
-
-<pre><code>1.crate-client  0.47.8
-2.crate-jdbc    1.5.1
-</code></pre>
-
-<p>发布之后,验证阶段一切正常,等把流量入口打开,一段时间之后,猛然发现crate的一个查询服务所在的机器load飙到20往上,机器是4核CPU,4G内存的虚拟机.</p>
-
-<p>top -H发现有大量的tomcat线程(10+),每个线程占用的CPU都达到20%,并且这种线程有增多的趋势.</p>
-
-<p>vmstat命令发现r数字特别高,即正在等待CPU的线程非常多.</p>
-
-<p>jstack的结果发现runnable的线程多达300多.</p>
-
-<p>看现象,感觉问题是线程池分配没有回收,但是定位不到问题在哪.</p>
-
-<p>最终定位的问题是在特定场景下存在死循环,并且直接才crate服务器执行相同的查询逻辑正常返回,因此基本定位在crate-jdbc中.</p>
-
-<h1>1.死循环场景</h1>
-
-<pre><code>1.crate中数据为空,这是很从crate中查询数据;
-2.crate中存在满足查询条件数据,我们分页查询,假设总数据量为10页,我们因为代码问题,直接查询第11页的内容(实际上肯定不存在);
-</code></pre>
-
-<h1>2.原因</h1>
-
-<p>原因是这个版本crate-jdbc和mybatis一起存在死循环,如下,我们对crate的查询首先经过mybatis,从</p>
-
-<pre><code>1.MapperProxy.invoke
-2.MapperMethod.execute
-3.SqlSessionTemplate.selectList, SqlSessionTemplate.invoke
-4.DefaultSqlSession.selectList
-5.BaseExecutor.query, BaseExecutor.queryFromDatabase
-6.ReuseExecutor.doQuery
-7.RoutingStatementHandler.query
-8.PreparedStatementHandler.query
-9.CratePreparedStatement.execute()
-10.DefaultResultSetHandler.handleResultSets, DefaultResultSetHandler.getFirstResultSet
-</code></pre>
-
-<p>问题的代码就在DefaultResultSetHandler.getFirstResultSet中:
-<code>
-private ResultSetWrapper getFirstResultSet(Statement stmt) throws SQLException {
-    ResultSet rs = stmt.getResultSet();
-    while (rs == null) {
-        // move forward to get the first resultset in case the driver
-        // doesn't return the resultset as the first result (HSQLDB 2.1)
-        if (stmt.getMoreResults()) {
-            rs = stmt.getResultSet();
-        } else {
-            if (stmt.getUpdateCount() == -1) {
-                // no more results. Must be no resultset
-                break;
-            }
-        }
-    }
-    return rs != null ? new ResultSetWrapper(rs, configuration) : null;
-}
-</code>
-其中stmt为CratePreparedStatement,其getMoreResults()实现:
-<code>
-@Override
-public boolean getMoreResults() throws SQLException {
-    return false;
-}
-</code>
-因此逻辑进入到else中,stmt.getUpdateCount()的实现:
-<code>
-@Override
-public int getUpdateCount() throws SQLException {
-    checkClosed();  //check connection是否被关闭
-    if (resultSet == null &amp;&amp; sqlResponse != null) {
-        return (int) sqlResponse.rowCount();
-    }
-    return -1;
-}
-</code>
-其中CratePreparedStatement的resultSet为null,并且sqlResponse不为空,sqlResponse的rowCount为0,因此getUpdateCount()返回值为0.因此getFirstResultSet中继续在while循环中,无法跳出.</p>
-
-<p><img src="/images/crate/crate_jdbc_bug_code.png"></p>
-
-<h1>3.绕过</h1>
-
-<p>归结起来产生问题的很简单,就是查询的结果集为空的时候,就会产生死循环,针对两种死循环场景,我们都可以绕过:</p>
-
-<pre><code>1.查询之前,先执行count查询,当count为0,即crate中没有满足我们查询条件的数据,则直接返回空数据集;
-2.分页查询的时候,先执行count查询,当分页的offset大于等于count,则值额节返回空数据集;
-</code></pre>
 ]]></content>
   </entry>
   

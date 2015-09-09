@@ -9,7 +9,10 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="HTTP请求中的form data和request payload的区别 AJAX Post请求中常用的两种传参数的形式：form data 和 request payload Form data get请求的时候，我们的参数直接反映在url里面，形式为key1=value1&amp;key2= &hellip;">
+  <meta name="description" content="1.问题 这段时间最易个图片迁移的工作，涉及60W+图片的迁移，用java写的临时代码，部署到图片服务器上。因为服务器还有其他服务，看日志的同时，也再看迁移的应用对服务器CPU和内存使用的影响。使用top命令猛然发现Mem的used狂涨而free狂降，下面是两个时刻的top情况： 1
+2
+3
+4 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -69,6 +72,376 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/09/04/linux-memory-usage/">Linux Memory Usage</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-09-04T23:37:01+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>4</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>11:37 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><h1>1.问题</h1>
+
+<p>这段时间最易个图片迁移的工作，涉及60W+图片的迁移，用java写的临时代码，部署到图片服务器上。因为服务器还有其他服务，看日志的同时，也再看迁移的应用对服务器CPU和内存使用的影响。使用top命令猛然发现Mem的used狂涨而free狂降，下面是两个时刻的top情况：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>top - 15:41:56 up 176 days, 19:46,  2 users,  load average: 0.34, 0.32, 0.28
+</span><span class='line'>Tasks: 521 total,   1 running, 520 sleeping,   0 stopped,   0 zombie
+</span><span class='line'>Cpu(s):  0.1%us,  0.1%sy,  0.0%ni, 98.6%id,  1.2%wa,  0.0%hi,  0.0%si,  0.0%st
+</span><span class='line'>Mem:  66057208k total, 57548808k used,  8508400k free,  1154764k buffers
+</span><span class='line'>Swap: 50331640k total,        0k used, 50331640k free, 47054444k cached
+</span><span class='line'>
+</span><span class='line'>top - 15:43:45 up 176 days, 19:48,  2 users,  load average: 0.25, 0.30, 0.27
+</span><span class='line'>Tasks: 521 total,   1 running, 520 sleeping,   0 stopped,   0 zombie
+</span><span class='line'>Cpu(s):  0.2%us,  0.0%sy,  0.0%ni, 99.7%id,  0.0%wa,  0.0%hi,  0.0%si,  0.0%st
+</span><span class='line'>Mem:  66057208k total, 57941160k used,  8116048k free,  1154764k buffers
+</span><span class='line'>Swap: 50331640k total,        0k used, 50331640k free, 47448656k cached</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.疑惑</h1>
+
+<p>第一想法是内存泄漏了，之前写惯C++代码Windows下碰到过一次明显的内存泄漏，情况和这个完全类似。</p>
+
+<p>但是这个是java代码，java想写出内存泄漏的代码不容易。</p>
+
+<h1>3.原因</h1>
+
+<p>问了个老鸟，原因是Linux的内存管理和Windows不一样。在Linux下，无论物理内存有多大都将其充份利用，会将应用程序调用过的硬盘数据保留在内存，利用内存读写的高速特性来提高Linux系统的数据访问性能。</p>
+
+<h3>3.1 linux中内存是如何使用</h3>
+
+<p>当有应用需要读写磁盘数据时，由系统把相关数据从磁盘读取到内存，如果物理内存不够，则把内存中的部分数据导入到磁盘，从而把磁盘的部分空间当作虚拟内存来使用，也称为Swap。如果给所有应用分配足够内存后，物理内存还有剩余，linux会尽量再利用这些空闲内存，以提高整体I/O效率，其方法是把这部分剩余内存再划分为cache及buffer两部分加以利用。</p>
+
+<p>从磁盘读取到内存的数据在被相关应用程序读取后，如果有剩余内存，则这部分数据会存入cache，以备第2次读取时，避免重新读取磁盘。当一个应用程序在内存中修改过数据后，因为写入磁盘速度相对较低，在有空闲内存的情况下，这些数据先存入buffer，在以后某个时间再写入磁盘，从而应用程序可以继续后面的操作，而不必等待这些数据写入磁盘的操作完成。</p>
+
+<p>如果在某个时刻，系统需要更多的内存，则会把cache部分擦除，并把buffer中的内容写入磁盘，从而把这两部分内存释放给系统使用，这样再次读取cache中的内容时，就需要重新从磁盘读取了。</p>
+
+<p>通过以上分析可以得知，Mem中的空闲物理内存（free）不多，不一定表示系统运行状态很差，因为内存的cache及buffer部分可以随时被重用，在某种意义上，这两部分内存也可以看作是额外的空闲内存。</p>
+
+<h1>4.Linux和Windows内存管理的差异</h1>
+
+<p>无论物理内存有多大，Linux都将其充份利用，将一些程序调用过的硬盘数据读入内存，利用内存读写的高速特性来提高Linux系统的数据访问性能。</p>
+
+<p>而Windows 是只在需要内存时，才为应用程序分配内存，并不能充分利用大容量的内存空间。</p>
+
+<p>换句话说，每增加一些物理内存，Linux 都将能充分利用起来，发挥了硬件投资带来的好处，而Windows只将其做为摆设，即使增加8GB甚至更大。</p>
+
+<h1>5.什么是Linux的cache，buffers，Swap</h1>
+
+<p>Cached表示page cache大小，Buffers表示内存中块I/O缓冲(buffer cache)的大小。通常而言，Cached很关键，Buffers则影响不大。</p>
+
+<p>简单来说，磁盘的操作有逻辑级（文件系统）和物理级（磁盘块），page cache对应的就是用来缓存逻辑级数据，buffer cache用来缓存物理级数据。</p>
+
+<p>假设我们通过文件系统操作文件，那么文件将被缓存到Page Cache，如果需要刷新文件的时候，page cache将交给buffer cache去完成，因为buffer cache就是缓存磁盘块的。
+也就是说，直接去操作文件，那就是page cache区缓存，用dd等命令直接操作磁盘块，就是buffer cache缓存的东西。</p>
+
+<h3>5.1 buffer</h3>
+
+<p>buffer是作为buffer cache的内存，是块设备的读写缓冲区。</p>
+
+<p>buffer cache也叫块缓冲，由物理内存分配，是对物理磁盘上的一个磁盘块（磁盘的组织单位）进行的缓冲。</p>
+
+<p>设立buffer cache的目的是为在程序多次访问同一磁盘块时，减少访问时间。系统将磁盘块首先读入buffer cache，如果cache空间不够时，会通过一定的策略将一些过时或多次未被访问的buffer cache清空。程序在下一次访问磁盘时首先查看是否在buffer cache找到所需块，命中可减少访问磁盘时间,不命中时需重新读入buffer cache。</p>
+
+<p>对buffer cache 的写分为两种，一是直接写，这是程序在写buffer cache后也写磁盘，要读时从buffer cache 上读，二是后台写，程序在写完buffer cache 后并不立即写磁盘，因为有可能程序在很短时间内又需要写文件，如果直接写，就需多次写磁盘了,这样效率很低，而是过一段时间后由后台写(批量写)，减少了多次访磁盘的时间。</p>
+
+<p>buffer cache 是由物理内存分配，linux系统为提高内存使用率，会将空闲内存全分给buffer cache ，当其他程序需要更多内存时，系统会减少cahce大小。</p>
+
+<h3>5.2 cache</h3>
+
+<p>cache是page cache的内存, 文件系统的cache。</p>
+
+<p>page cache也叫页缓冲或文件缓冲，文件读取是由外存上不连续的几个磁盘块，到buffer cache，然后组成page cache，然后供给应用程序。</p>
+
+<p>page cache在linux读写文件时，它用于缓存文件的逻辑内容，从而加快对磁盘上映像和数据的访问。具体说是加速对文件内容的访问，buffer cache缓存文件的具体内容——物理磁盘上的磁盘块，这是加速对磁盘的访问。</p>
+
+<h3>5.3 Swap</h3>
+
+<p>swap space交换空间，是虚拟内存的表现形式。系统为了应付一些需要大量内存的应用，而将磁盘上的空间做内存使用，当物理内存不够用时，将其中一些暂时不需的数据交换到交换空间。</p>
+
+<p>做虚拟内存的好处是让进程以为好像可以访问整个系统物理内存。因为在一个进程访问数据时，其他进程的数据会被交换到交换空间中。</p>
+
+<h1>6.Linux内存常用命令</h1>
+
+<h3>6.1 top</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>top - 16:13:52 up 1 day,  6:01, 16 users,  load average: 2.89, 2.27, 2.14
+</span><span class='line'>Tasks: 274 total,   7 running, 266 sleeping,   0 stopped,   1 zombie
+</span><span class='line'>%Cpu(s): 44.3 us, 16.6 sy,  0.0 ni, 38.4 id,  0.6 wa,  0.0 hi,  0.1 si,  0.0 st
+</span><span class='line'>KiB Mem:   8047584 total,  7905356 used,   142228 free,    73476 buffers
+</span><span class='line'>KiB Swap: 15879164 total,    26872 used, 15852292 free,  1962736 cached
+</span><span class='line'>
+</span><span class='line'>PID USER      PR  NI  VIRT  RES  SHR S  %CPU %MEM    TIME+  COMMAND
+</span><span class='line'>29121 xiaobaoq  20   0 3938m 2.1g 2.1g S  34.2 27.7 119:28.33 VirtualBox
+</span><span class='line'>2548 xiaobaoq  20   0 1371m  79m  19m R  31.2  1.0 131:40.03 compiz</span></code></pre></td></tr></table></div></figure>
+
+
+<p>字段的意义如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>PID：进程的ID
+</span><span class='line'>　　USER：进程所有者
+</span><span class='line'>　　PR：进程的优先级别，越小越优先被执行
+</span><span class='line'>　　NInice：值
+</span><span class='line'>　　VIRT：进程占用的虚拟内存
+</span><span class='line'>　　RES：进程占用的物理内存
+</span><span class='line'>　　SHR：进程使用的共享内存
+</span><span class='line'>　　S：进程的状态。S表示休眠，R表示正在运行，Z表示僵死状态，N表示该进程优先值为负数
+</span><span class='line'>　　%CPU：进程占用CPU的使用率
+</span><span class='line'>　　%MEM：进程使用的物理内存和总内存的百分比
+</span><span class='line'>　　TIME+：该进程启动后占用的总的CPU时间，即占用CPU使用时间的累加值。
+</span><span class='line'>　　COMMAND：进程启动命令名称</span></code></pre></td></tr></table></div></figure>
+
+
+<p>top命令提供了额外的输入，常用的命令包括（注意是大写）：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>　　P：按%CPU使用率排行
+</span><span class='line'>　　T：按MITE+排行
+</span><span class='line'>　　M：按%MEM排行</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>6.2 free</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ free -m
+</span><span class='line'>             total       used       free     shared    buffers     cached
+</span><span class='line'>Mem:          7858       7687        171          0         71       1889
+</span><span class='line'>-/+ buffers/cache:       5726       2132
+</span><span class='line'>Swap:        15506         26      15480</span></code></pre></td></tr></table></div></figure>
+
+
+<p>-m表示单位为M，可以使用-g表示单位为G，默认为K。
+-/+ buffers/cache表示物理内存的缓存统计，Used为4506，即实际使用的buffers与cache 总量，也是实际使用的内存总量;Free为3352, 即未被使用的buffers与cache和未被分配的内存之和，这就是系统当前实际可用内存。</p>
+
+<p>Swap表示硬盘上交换分区的使用情况。只有mem被当前进程实际占用完,即没有了buffers和cache时，才会使用到swap。</p>
+
+<p>注意一下几个关系：
+Free（-/+ buffers/cache行）= Free(Mem)+buffers(Mem)+Cached(Mem)</p>
+
+<p>Used(Mem) = Used(-/+ buffers/cache)+ buffers(Mem) + Cached(Mem)</p>
+
+<p>total（Mem） = used(-/+ buffers/cache) + free(-/+ buffers/cache)</p>
+
+<p>从应用程序角度来看，对于应用程序来说，buffers/cached 是等于可用的，因为buffer/cached是为了提高文件读取的性能，当应用程序需在用到内存的时候，buffer/cached会很快地被回收。所以从应用程序的角度来说，可用内存=系统free memory+buffers+cached.</p>
+
+<h3>6.3 /proc/meminfo</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ cat /proc/meminfo
+</span><span class='line'>MemTotal:        8047584 kB
+</span><span class='line'>MemFree:          162416 kB
+</span><span class='line'>Buffers:           73772 kB
+</span><span class='line'>Cached:          1943380 kB
+</span><span class='line'>SwapCached:         3860 kB
+</span><span class='line'>Active:          3636032 kB
+</span><span class='line'>Inactive:        1608472 kB
+</span><span class='line'>Active(anon):    3092468 kB
+</span><span class='line'>Inactive(anon):  1121848 kB
+</span><span class='line'>Active(file):     543564 kB
+</span><span class='line'>Inactive(file):   486624 kB
+</span><span class='line'>Unevictable:          48 kB
+</span><span class='line'>Mlocked:              48 kB
+</span><span class='line'>SwapTotal:      15879164 kB
+</span><span class='line'>SwapFree:       15852292 kB
+</span><span class='line'>Dirty:               664 kB
+</span><span class='line'>Writeback:             0 kB
+</span><span class='line'>AnonPages:       3223572 kB
+</span><span class='line'>Mapped:          2597276 kB
+</span><span class='line'>Shmem:            986964 kB
+</span><span class='line'>Slab:             311976 kB
+</span><span class='line'>SReclaimable:     247580 kB
+</span><span class='line'>SUnreclaim:        64396 kB
+</span><span class='line'>KernelStack:        6808 kB
+</span><span class='line'>PageTables:        61012 kB
+</span><span class='line'>NFS_Unstable:          0 kB
+</span><span class='line'>Bounce:                0 kB
+</span><span class='line'>WritebackTmp:          0 kB
+</span><span class='line'>CommitLimit:    19902956 kB
+</span><span class='line'>Committed_AS:   11365592 kB
+</span><span class='line'>VmallocTotal:   34359738367 kB
+</span><span class='line'>VmallocUsed:      360776 kB
+</span><span class='line'>VmallocChunk:   34359367876 kB
+</span><span class='line'>HardwareCorrupted:     0 kB
+</span><span class='line'>AnonHugePages:         0 kB
+</span><span class='line'>HugePages_Total:       0
+</span><span class='line'>HugePages_Free:        0
+</span><span class='line'>HugePages_Rsvd:        0
+</span><span class='line'>HugePages_Surp:        0
+</span><span class='line'>Hugepagesize:       2048 kB
+</span><span class='line'>DirectMap4k:       71156 kB
+</span><span class='line'>DirectMap2M:     8187904 kB</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中的MemTotal, MemFree, Buffers, Cached, SwapTotal, SwapFree和free命令中的值对应起来。</p>
+
+<p>Cached is the size of the page cache。
+Buffers is the size of in-memory block I/O buffer。</p>
+
+<h3>6.4 vmstat</h3>
+
+<p>vmstat -s显示内存使用的统计信息</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ vmstat -s
+</span><span class='line'>      8047584 K total memory
+</span><span class='line'>      7841504 K used memory
+</span><span class='line'>      3624652 K active memory
+</span><span class='line'>      1584740 K inactive memory
+</span><span class='line'>       206080 K free memory
+</span><span class='line'>        69252 K buffer memory
+</span><span class='line'>      1890844 K swap cache
+</span><span class='line'>     15879164 K total swap
+</span><span class='line'>        39488 K used swap
+</span><span class='line'>     15839676 K free swap
+</span><span class='line'>      8744974 non-nice user cpu ticks
+</span><span class='line'>          345 nice user cpu ticks
+</span><span class='line'>      4309209 system cpu ticks
+</span><span class='line'>     29496503 idle cpu ticks
+</span><span class='line'>       240289 IO-wait cpu ticks
+</span><span class='line'>           19 IRQ cpu ticks
+</span><span class='line'>        14705 softirq cpu ticks
+</span><span class='line'>            0 stolen cpu ticks
+</span><span class='line'>      7878551 pages paged in
+</span><span class='line'>     18640168 pages paged out
+</span><span class='line'>          976 pages swapped in
+</span><span class='line'>         9899 pages swapped out
+</span><span class='line'>    664925325 interrupts
+</span><span class='line'>   1290574510 CPU context switches
+</span><span class='line'>   1409739162 boot time
+</span><span class='line'>        36758 forks</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>参考</h1>
+
+<ol>
+<li><a href="http://www.linuxintheshell.org/2012/06/05/episode-008-free-understanding-linux-memory-usage/">http://www.linuxintheshell.org/2012/06/05/episode-008-free-understanding-linux-memory-usage/</a></li>
+</ol>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -3290,376 +3663,6 @@ public class Stack<E> extends Vector<E> {
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/06/29/shu-ju-jie-gou-yu-suan-fa-fen-xi-di-er-zhang/">数据结构与算法分析第二章</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-06-29T14:43:21+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>29</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>2:43 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>&lt;&lt;数据结构与算法分析-C语言描述>></p>
-
-<h1>1.最大子序列和</h1>
-
-<h3>O(n<sup>3</sup>)</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class='c++'><span class='line'><span class="cm">/**</span>
-</span><span class='line'><span class="cm">* 时间复杂度O(n^3)</span>
-</span><span class='line'><span class="cm">*/</span>
-</span><span class='line'><span class="kt">int</span> <span class="n">Chapter2</span><span class="o">::</span><span class="n">maxSubSeqSum1</span><span class="p">(</span><span class="k">const</span> <span class="kt">int</span> <span class="n">A</span><span class="p">[],</span> <span class="kt">int</span> <span class="n">N</span><span class="p">)</span>
-</span><span class='line'><span class="p">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">maxSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>    <span class="k">for</span><span class="p">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">N</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span>
-</span><span class='line'>        <span class="k">for</span><span class="p">(</span><span class="kt">int</span> <span class="n">j</span><span class="o">=</span><span class="n">i</span><span class="p">;</span> <span class="n">j</span><span class="o">&lt;</span><span class="n">N</span><span class="p">;</span> <span class="n">j</span><span class="o">++</span><span class="p">)</span>
-</span><span class='line'>        <span class="p">{</span>
-</span><span class='line'>            <span class="kt">int</span> <span class="n">thisSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>            <span class="k">for</span><span class="p">(</span><span class="kt">int</span> <span class="n">k</span><span class="o">=</span><span class="n">i</span><span class="p">;</span> <span class="n">k</span><span class="o">&lt;=</span><span class="n">j</span><span class="p">;</span> <span class="n">k</span><span class="o">++</span><span class="p">)</span>
-</span><span class='line'>                <span class="n">thisSum</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">k</span><span class="p">];</span>
-</span><span class='line'>            <span class="k">if</span><span class="p">(</span><span class="n">thisSum</span> <span class="o">&gt;</span> <span class="n">maxSum</span><span class="p">)</span> <span class="n">maxSum</span> <span class="o">=</span> <span class="n">thisSum</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">return</span> <span class="n">maxSum</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>O(n<sup>2</sup>)</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/**</span>
-</span><span class='line'><span class="cm">*   算法1的最里层循环不是必须的</span>
-</span><span class='line'><span class="cm">*   时间复杂度:O(n^2)</span>
-</span><span class='line'><span class="cm">*/</span>
-</span><span class='line'><span class="kt">int</span> <span class="n">Chapter2</span><span class="o">::</span><span class="n">maxSubSeqSum2</span><span class="p">(</span><span class="k">const</span> <span class="kt">int</span> <span class="n">A</span><span class="p">[],</span> <span class="kt">int</span> <span class="n">N</span><span class="p">)</span>
-</span><span class='line'><span class="p">{</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">maxSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">for</span><span class="p">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">N</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span>
-</span><span class='line'>        <span class="p">{</span>
-</span><span class='line'>                <span class="kt">int</span> <span class="n">thisSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>                <span class="k">for</span><span class="p">(</span><span class="kt">int</span> <span class="n">j</span><span class="o">=</span><span class="n">i</span><span class="p">;</span> <span class="n">j</span><span class="o">&lt;</span><span class="n">N</span><span class="p">;</span> <span class="n">j</span><span class="o">++</span><span class="p">)</span>
-</span><span class='line'>                <span class="p">{</span>
-</span><span class='line'>                        <span class="n">thisSum</span> <span class="o">+=</span><span class="n">A</span><span class="p">[</span><span class="n">j</span><span class="p">];</span>
-</span><span class='line'>                        <span class="k">if</span><span class="p">(</span><span class="n">thisSum</span> <span class="o">&gt;</span> <span class="n">maxSum</span><span class="p">)</span>    <span class="n">maxSum</span> <span class="o">=</span> <span class="n">thisSum</span><span class="p">;</span>
-</span><span class='line'>                <span class="p">}</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">return</span> <span class="n">maxSum</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>分治,O(nlogn)</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/**</span>
-</span><span class='line'><span class="cm">* 分治,划分为作用两个字数组</span>
-</span><span class='line'><span class="cm">* A[l,...,M], A[M+1,...,R]</span>
-</span><span class='line'><span class="cm">* 则最大子序列和来自三部分:左侧的最大子序列和,右侧的最大子序列和,跨越A[M]和A[M+1]的最大子序列号</span>
-</span><span class='line'><span class="cm">* 1,2情况递归可以完成,情况三其实就是求最测以A[M]结尾的最大和,右侧就是以A[M+1]开头的最大和</span>
-</span><span class='line'><span class="cm">*</span>
-</span><span class='line'><span class="cm">* 时间复杂度:T(n) = 2T(n/2) + O(n)</span>
-</span><span class='line'><span class="cm">* 即 O(nlogn)</span>
-</span><span class='line'><span class="cm">*/</span>
-</span><span class='line'><span class="kt">int</span> <span class="n">Chapter2</span><span class="o">::</span><span class="n">maxSubSeqSum3</span><span class="p">(</span><span class="k">const</span> <span class="kt">int</span> <span class="n">A</span><span class="p">[],</span> <span class="kt">int</span> <span class="n">L</span><span class="p">,</span> <span class="kt">int</span> <span class="n">R</span><span class="p">)</span>
-</span><span class='line'><span class="p">{</span>
-</span><span class='line'>        <span class="k">if</span><span class="p">(</span><span class="n">L</span> <span class="o">==</span> <span class="n">R</span><span class="p">)</span> <span class="k">return</span> <span class="n">A</span><span class="p">[</span><span class="n">L</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="o">?</span><span class="mi">0</span> <span class="o">:</span> <span class="n">A</span><span class="p">[</span><span class="n">L</span><span class="p">];</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">M</span> <span class="o">=</span> <span class="p">(</span><span class="n">L</span> <span class="o">+</span> <span class="n">R</span><span class="p">)</span> <span class="o">&gt;&gt;</span> <span class="mi">1</span><span class="p">;</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">maxSumL</span> <span class="o">=</span> <span class="n">maxSubSeqSum3</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">M</span><span class="p">);</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">maxSumR</span> <span class="o">=</span> <span class="n">maxSubSeqSum3</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">M</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">R</span><span class="p">);</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">maxL</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">sumL</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">for</span><span class="p">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="n">M</span><span class="p">;</span> <span class="n">i</span><span class="o">&gt;=</span><span class="n">L</span><span class="p">;</span> <span class="n">i</span><span class="o">--</span><span class="p">)</span>
-</span><span class='line'>        <span class="p">{</span>
-</span><span class='line'>                <span class="n">sumL</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>
-</span><span class='line'>                <span class="k">if</span><span class="p">(</span><span class="n">sumL</span> <span class="o">&gt;</span> <span class="n">maxL</span><span class="p">)</span> <span class="n">maxL</span> <span class="o">=</span> <span class="n">sumL</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">maxR</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">sumR</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">for</span><span class="p">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="n">M</span><span class="o">+</span><span class="mi">1</span><span class="p">;</span> <span class="n">i</span><span class="o">&lt;=</span><span class="n">R</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span>
-</span><span class='line'>        <span class="p">{</span>
-</span><span class='line'>                <span class="n">sumR</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>
-</span><span class='line'>                <span class="k">if</span><span class="p">(</span><span class="n">sumR</span> <span class="o">&gt;</span> <span class="n">maxR</span><span class="p">)</span> <span class="n">maxR</span> <span class="o">=</span> <span class="n">sumR</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">return</span> <span class="n">max</span><span class="p">(</span><span class="n">max</span><span class="p">(</span><span class="n">maxSumL</span><span class="p">,</span> <span class="n">maxSumR</span><span class="p">),</span> <span class="n">maxL</span><span class="o">+</span><span class="n">maxR</span><span class="p">);</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>O(n)</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/**</span>
-</span><span class='line'><span class="cm">* 时间复杂度 O(n)</span>
-</span><span class='line'><span class="cm">*/</span>
-</span><span class='line'><span class="kt">int</span> <span class="n">Chapter2</span><span class="o">::</span><span class="n">maxSubSeqSum4</span><span class="p">(</span><span class="k">const</span> <span class="kt">int</span> <span class="n">A</span><span class="p">[],</span> <span class="kt">int</span> <span class="n">N</span><span class="p">)</span>
-</span><span class='line'><span class="p">{</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">maxSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">thisSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">for</span><span class="p">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">N</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span>
-</span><span class='line'>        <span class="p">{</span>
-</span><span class='line'>                <span class="n">thisSum</span> <span class="o">+=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>
-</span><span class='line'>                <span class="k">if</span><span class="p">(</span><span class="n">thisSum</span> <span class="o">&gt;</span> <span class="n">maxSum</span><span class="p">)</span> <span class="n">maxSum</span> <span class="o">=</span> <span class="n">thisSum</span><span class="p">;</span>
-</span><span class='line'>                <span class="k">else</span> <span class="k">if</span><span class="p">(</span><span class="n">thisSum</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="n">thisSum</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">return</span> <span class="n">maxSum</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.gcd</h1>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">Chapter2</span><span class="o">::</span><span class="n">gcd</span><span class="p">(</span><span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">L</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">R</span><span class="p">)</span>
-</span><span class='line'><span class="p">{</span>
-</span><span class='line'>        <span class="kt">unsigned</span> <span class="n">rem</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">while</span><span class="p">(</span><span class="n">R</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>
-</span><span class='line'>        <span class="p">{</span>
-</span><span class='line'>                <span class="n">rem</span> <span class="o">=</span> <span class="n">L</span> <span class="o">%</span> <span class="n">R</span><span class="p">;</span>
-</span><span class='line'>                <span class="n">L</span> <span class="o">=</span> <span class="n">R</span><span class="p">;</span>
-</span><span class='line'>                <span class="n">R</span> <span class="o">=</span> <span class="n">rem</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">L</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.快速幂</h1>
-
-<h3>递归</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="kt">long</span> <span class="n">Chapter2</span><span class="o">::</span><span class="n">pow1</span><span class="p">(</span><span class="kt">long</span> <span class="n">x</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="n">n</span><span class="p">)</span>
-</span><span class='line'><span class="p">{</span>
-</span><span class='line'>        <span class="k">if</span><span class="p">(</span><span class="n">n</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">if</span><span class="p">(</span><span class="n">n</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="k">return</span> <span class="n">x</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">if</span><span class="p">(</span><span class="n">isEven</span><span class="p">((</span><span class="n">n</span><span class="p">)))</span> <span class="k">return</span> <span class="n">pow</span><span class="p">(</span><span class="n">x</span><span class="o">*</span><span class="n">x</span><span class="p">,</span> <span class="n">n</span><span class="o">&gt;&gt;</span><span class="mi">1</span><span class="p">);</span>
-</span><span class='line'>        <span class="k">else</span> <span class="k">return</span> <span class="n">pow</span><span class="p">(</span><span class="n">x</span><span class="o">*</span><span class="n">x</span><span class="p">,</span> <span class="n">n</span><span class="o">&gt;&gt;</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">x</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>非递归</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="kt">long</span> <span class="n">Chapter2</span><span class="o">::</span><span class="n">pow2</span><span class="p">(</span><span class="kt">long</span> <span class="n">x</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="n">n</span><span class="p">)</span>
-</span><span class='line'><span class="p">{</span>
-</span><span class='line'>        <span class="kt">long</span> <span class="n">base</span> <span class="o">=</span> <span class="n">x</span><span class="p">,</span> <span class="n">ret</span> <span class="o">=</span> <span class="mi">1L</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">while</span><span class="p">(</span><span class="n">n</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>
-</span><span class='line'>        <span class="p">{</span>
-</span><span class='line'>                <span class="k">if</span><span class="p">(</span><span class="n">isEven</span><span class="p">(</span><span class="n">n</span><span class="p">))</span> <span class="p">{</span><span class="n">base</span> <span class="o">*=</span> <span class="n">base</span><span class="p">;</span> <span class="n">n</span><span class="o">&gt;&gt;=</span><span class="mi">1</span><span class="p">;}</span>
-</span><span class='line'>                <span class="k">else</span> <span class="p">{</span><span class="n">ret</span> <span class="o">*=</span> <span class="n">base</span><span class="p">;</span> <span class="n">n</span><span class="o">-=</span><span class="mi">1</span><span class="p">;}</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.随机置换</h1>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/**</span>
-</span><span class='line'><span class="cm">* 生成前N个数的随机置换</span>
-</span><span class='line'><span class="cm">* 如 N = 3, 生成 [2 1 3]</span>
-</span><span class='line'><span class="cm">*/</span>
-</span><span class='line'><span class="kt">void</span> <span class="n">Chapter2</span><span class="o">::</span><span class="n">randomSeq</span><span class="p">(</span><span class="kt">int</span><span class="o">*</span> <span class="n">A</span><span class="p">,</span> <span class="kt">int</span> <span class="n">N</span><span class="p">)</span>
-</span><span class='line'><span class="p">{</span>
-</span><span class='line'>        <span class="k">for</span><span class="p">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">N</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span>
-</span><span class='line'>                <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">for</span><span class="p">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">1</span><span class="p">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">N</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span>
-</span><span class='line'>        <span class="p">{</span>
-</span><span class='line'>                <span class="n">swap</span><span class="p">(</span><span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">A</span><span class="p">[</span><span class="n">random</span><span class="p">(</span><span class="n">N</span><span class="p">)]);</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>5.出现次数超过一半的数</h1>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/**</span>
-</span><span class='line'><span class="cm">* 寻找数组的主要元素:即一个N个元素的数组中,某一个元素出现次数 &gt;= N/2次</span>
-</span><span class='line'><span class="cm">* 如 [6, 8, 8, 2, 3, 4, 8, 8, 8]中8是主要元素</span>
-</span><span class='line'><span class="cm">* 思路:比较A1和A2,相等则将A1放入一个新的数组B,不想等则放弃;同样比较A3,A4...</span>
-</span><span class='line'><span class="cm">* 递归处理数组B</span>
-</span><span class='line'><span class="cm">*</span>
-</span><span class='line'><span class="cm">* 注意这里只是返回了一个候选解,如果存在,则一定是这个元素</span>
-</span><span class='line'><span class="cm">* 不存在的情况需要再扫描一遍数组</span>
-</span><span class='line'><span class="cm">*/</span>
-</span><span class='line'> <span class="kt">int</span> <span class="n">Chapter2</span><span class="o">::</span><span class="n">mainElement</span><span class="p">(</span><span class="k">const</span> <span class="kt">int</span><span class="o">*</span> <span class="n">A</span><span class="p">,</span> <span class="kt">int</span> <span class="n">N</span><span class="p">)</span>
-</span><span class='line'> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">Candidata</span><span class="p">,</span> <span class="n">nTimes</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span>
-</span><span class='line'>    <span class="k">while</span><span class="p">(</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">N</span><span class="p">)</span>
-</span><span class='line'>    <span class="p">{</span>
-</span><span class='line'>        <span class="k">if</span><span class="p">(</span><span class="n">nTimes</span><span class="o">==</span><span class="mi">0</span><span class="p">)</span> <span class="p">{</span> <span class="n">Candidata</span> <span class="o">=</span> <span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">];</span> <span class="n">nTimes</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="p">}</span>
-</span><span class='line'>        <span class="k">else</span>
-</span><span class='line'>        <span class="p">{</span>
-</span><span class='line'>            <span class="k">if</span><span class="p">(</span><span class="n">A</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">!=</span> <span class="n">Candidata</span><span class="p">)</span> <span class="o">--</span><span class="n">nTimes</span><span class="p">;</span>
-</span><span class='line'>            <span class="k">else</span> <span class="o">++</span><span class="n">nTimes</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>        <span class="o">++</span><span class="n">i</span><span class="p">;</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>    <span class="k">return</span> <span class="n">Candidata</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/9">&larr; Older</a>
@@ -3679,6 +3682,10 @@ public class Stack<E> extends Vector<E> {
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/09/03/luceneru-men/">Lucene入门</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/09/03/mysql-join/">Mysql Join</a>
       </li>
     
@@ -3692,10 +3699,6 @@ public class Stack<E> extends Vector<E> {
     
       <li class="post">
         <a href="/blog/2015/08/22/mybatiskong-wherelan-jie-qi/">MyBatis空where拦截器</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/08/12/mysql-packettoobigexception/">Mysql PacketTooBigException</a>
       </li>
     
   </ul>
@@ -3719,7 +3722,7 @@ public class Stack<E> extends Vector<E> {
 <li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
-<li><a class='list-group-item' href='/blog/categories/search/'>search (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/search/'>search (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/spring/'>spring (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>

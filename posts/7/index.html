@@ -9,8 +9,7 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="在多线程环境下,Java里面的++i或者&ndash;i操作不是线程安全的，因为它其实包含了三个操作:获取当前值,++或者&ndash;,写回.
-在没有额外资源可以利用的情况下，只能使用加锁才能保证三个操作时“原子性”的. 在Java中，协调对线程间共享字段的访问的传统方法是使用同步， &hellip;">
+  <meta name="description" content="这篇博客的目的是了解Java Concurrent包中Lock的实现原理. java.util.concurrent.locks包下提供了一系列关于锁的抽象的类,主要实现有两种锁ReentrantLock和ReentrantReadWriteLock. 1.一个简单的锁 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -70,6 +69,1885 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/11/12/java-lock/">Java Lock</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-11-12T18:35:00+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>12</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>6:35 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>这篇博客的目的是了解Java Concurrent包中Lock的实现原理.</p>
+
+<p>java.util.concurrent.locks包下提供了一系列关于锁的抽象的类,主要实现有两种锁ReentrantLock和ReentrantReadWriteLock.</p>
+
+<h1>1.一个简单的锁</h1>
+
+<p>让我们从java中的一个同步块开始</p>
+
+<h3>1.1 synchronized实现同步块</h3>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Counter</span><span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">inc</span><span class="o">(){</span>
+</span><span class='line'>        <span class="kd">synchronized</span><span class="o">(</span><span class="k">this</span><span class="o">){</span>
+</span><span class='line'>            <span class="k">return</span> <span class="o">++</span><span class="n">count</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>可以看到在inc()方法中有一个synchronized(this)代码块。该代码块可以保证在同一时间只有一个线程可以执行return ++count操作。虽然在synchronized的同步块中的代码可以更加复杂，但是++count这种简单的操作已经足以表达出线程同步的意思。</p>
+
+<h3>1.2 Lock实现同步块</h3>
+
+<p>以下的Counter类用Lock代替synchronized可以达到了同样的目的：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Counter</span><span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">Lock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">Lock</span><span class="o">();</span> <span class="c1">//锁</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">inc</span><span class="o">(){</span>
+</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">newCount</span> <span class="o">=</span> <span class="o">++</span><span class="n">count</span><span class="o">;</span>
+</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">newCount</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>lock()方法会对Lock实例对象进行加锁，因此所有对该对象调用lock()方法的线程都会被阻塞，直到该Lock对象的unlock()方法被调用。</p>
+
+<h3>1.3 Lock类实现</h3>
+
+<p>这里有一个Lock类的简单实现：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Lock</span><span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="n">isLocked</span> <span class="o">=</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">lock</span><span class="o">()</span>
+</span><span class='line'>        <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="k">while</span><span class="o">(</span><span class="n">isLocked</span><span class="o">){</span>
+</span><span class='line'>            <span class="n">wait</span><span class="o">();</span>         <span class="c1">//阻塞</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">isLocked</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">unlock</span><span class="o">(){</span>
+</span><span class='line'>        <span class="n">isLocked</span> <span class="o">=</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="n">notify</span><span class="o">();</span>           <span class="c1">//唤醒</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>注意其中的while(isLocked)循环，它又被叫做“自旋锁”。自旋锁以及wait()和notify()方法在<a href="http://tutorials.jenkov.com/java-concurrency/thread-signaling.html">线程通信</a>这篇文章中有更加详细的介绍。</p>
+
+<p>当isLocked为true时，调用lock()的线程在wait()调用上阻塞等待。为防止该线程没有收到notify()调用也从wait()中返回，这个线程会重新去检查isLocked条件以决定当前是否可以安全地继续执行还是需要重新保持等待，而不是认为线程被唤醒了就可以安全地继续执行了。如果isLocked为false，当前线程会退出while(isLocked)循环，并将isLocked设回true，让其它正在调用lock()方法的线程能够在Lock实例上加锁。</p>
+
+<p>当线程完成了临界区（锁住的代码端,即位于lock()和unlock()之间）中的代码，就会调用unlock()。执行unlock()会重新将isLocked设置为false，并且通知（唤醒）其中一个（若有的话）在lock()方法中调用了wait()函数而处于等待状态的线程。</p>
+
+<h3>1.4 在finally语句中调用unlock()</h3>
+
+<p>如果用Lock来保护临界区，并且临界区有可能会抛出异常，那么在finally语句中调用unlock()就显得非常重要了,这样可以保证这个锁对象可以被解锁以便其它线程能继续对其加锁:</p>
+
+<pre><code>lock.lock();
+try{
+    //do critical section code,
+    //which may throw exception
+} finally {
+    lock.unlock();
+}
+</code></pre>
+
+<p>这个简单的结构可以保证当临界区抛出异常时Lock对象可以被解锁。如果不是在finally语句中调用的unlock()，当临界区抛出异常时，Lock对象将永远停留在被锁住的状态，这会导致其它所有在该Lock对象上调用lock()的线程一直阻塞。</p>
+
+<h1>2.锁的可重入性</h1>
+
+<h4>2.1 什么是可重入</h4>
+
+<p>如果一个线程持有某个管程对象(monitor object)上的锁，那么它就有权访问所有在该管程对象上同步块。这就叫可重入。
+通俗讲即若线程已经持有锁，那么它就可以重复访问所有使用该锁的代码块。</p>
+
+<h3>2.2 synchronized同步块是可重入的</h3>
+
+<p>Java中的synchronized同步块是可重入的。这意味着如果一个java线程进入了代码中的synchronized同步块，并因此获得了该同步块使用的同步对象对应的管程上的锁，那么这个线程可以进入由同一个管程对象所同步的另一个java代码块。因此下面的代码没有问题:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Reentrant</span><span class="o">{</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="nf">outer</span><span class="o">(){</span>
+</span><span class='line'>        <span class="n">inner</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="nf">inner</span><span class="o">(){</span>
+</span><span class='line'>        <span class="c1">//do something</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>注意outer()和inner()都声明为synchronized，这在Java中这相当于synchronized(this)块.如果某个线程调用了outer()，outer()中的inner()调用是没问题的，因为两个方法都是在同一个管程对象(即this)上同步的。</p>
+
+<h3>2.3 不可重入锁</h3>
+
+<p>1.3节的锁实现是不可重入的,原因是如果一个线程在两次调用lock()间没有调用unlock()方法，那么第二次调用lock()就会被阻塞，这就出现了重入锁死,如下:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Reentrant2</span><span class="o">{</span>
+</span><span class='line'>    <span class="n">Lock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">Lock</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">outer</span><span class="o">(){</span>
+</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
+</span><span class='line'>        <span class="n">inner</span><span class="o">();</span>
+</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="nf">inner</span><span class="o">(){</span>
+</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
+</span><span class='line'>        <span class="c1">//do something</span>
+</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>调用outer()的线程首先会锁住Lock实例，然后继续调用inner()。inner()方法中该线程将再一次尝试锁住Lock实例，结果该动作会失败（也就是说该线程会被阻塞），因为这个Lock实例已经在outer()方法中被锁住了。</p>
+
+<h3>2.4 修改成可重入锁</h3>
+
+<p>为了让这个Lock类具有可重入性，我们需要对它做一点小的改动:</p>
+
+<pre><code>(1).可重入锁需要一个重入计数变量，初始值设为0，当成功请求锁时加1，释放锁时减1，当释放锁之后计数为0则真正释放锁;
+(2).重入锁还必须持有对锁持有者的引用，用以判断是否可以重入;
+</code></pre>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Lock</span><span class="o">{</span>
+</span><span class='line'>    <span class="kt">boolean</span> <span class="n">isLocked</span> <span class="o">=</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>    <span class="n">Thread</span>  <span class="n">lockedBy</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>    <span class="c1">//阻塞的线程</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">lockedCount</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>        <span class="c1">//同一个线程加锁的次数</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">lock</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="n">Thread</span> <span class="n">callingThread</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">while</span><span class="o">(</span><span class="n">isLocked</span> <span class="o">&amp;&amp;</span> <span class="n">lockedBy</span> <span class="o">!=</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>            <span class="n">wait</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">isLocked</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="n">lockedCount</span><span class="o">++;</span>
+</span><span class='line'>        <span class="n">lockedBy</span> <span class="o">=</span> <span class="n">callingThread</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">unlock</span><span class="o">(){</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">Thread</span><span class="o">.</span><span class="na">curentThread</span><span class="o">()</span> <span class="o">==</span> <span class="k">this</span><span class="o">.</span><span class="na">lockedBy</span><span class="o">){</span>
+</span><span class='line'>            <span class="n">lockedCount</span><span class="o">--;</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="k">if</span><span class="o">(</span><span class="n">lockedCount</span> <span class="o">==</span> <span class="mi">0</span><span class="o">){</span>   <span class="c1">//锁次数为0之后才解锁</span>
+</span><span class='line'>                <span class="n">isLocked</span> <span class="o">=</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">notify</span><span class="o">();</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>注意到现在的while循环（自旋锁）也考虑到了已锁住该Lock实例的线程。如果当前的锁对象没有被加锁(isLocked = false)，或者当前调用线程已经对该Lock实例加了锁，那么while循环就不会被执行，调用lock()的线程就不会被阻塞了。</p>
+
+<p>除此之外，我们需要记录同一个线程重复对一个锁对象加锁的次数。否则，一次unblock()调用就会解除整个锁，即使当前锁已经被加锁过多次。在unlock()调用没有达到对应lock()调用的次数之前，我们不希望锁被解除。</p>
+
+<h1>3.锁的公平性</h1>
+
+<p>Java的synchronized块并不保证尝试进入它们的线程的顺序。如果一个线程因为CPU时间全部被其他线程抢走而得不到CPU运行时间，这种状态被称之为“饥饿”。而该线程被“饥饿致死”正是因为它得不到CPU运行时间的机会。解决饥饿的方案被称之为“公平性”,即所有线程均能公平地获得运行机会。</p>
+
+<p>通俗讲,如果在绝对时间上，先对锁进行获取的请求一定被先满足，那么这个锁是公平的，反之，是不公平的，也就是说等待时间最长的线程最有机会获取锁，也可以说锁的获取是有序的。</p>
+
+<h3>3.1 Java中导致饥饿的原因</h3>
+
+<p><strong>(1).高优先级线程抢占所有的低优先级线程的CPU时间</strong></p>
+
+<p>我们能为每个线程设置独自的线程优先级，优先级越高的线程获得的CPU时间越多，线程优先级值设置在1到10之间，这些优先级值所表示行为的准确解释则依赖于你的应用运行平台。</p>
+
+<p><strong>(2).线程被永久堵塞在一个等待进入同步块的状态</strong></p>
+
+<p>Java的同步代码区也是一个导致饥饿的因素。Java的同步代码区对哪个线程允许进入的次序没有任何保障。这就意味着理论上存在一个试图进入该同步区的线程处于被永久堵塞的风险，因为其他线程总是能持续地先于它获得访问，这即是“饥饿”问题，而一个线程被“饥饿致死”正是因为它得不到CPU运行时间的机会。</p>
+
+<p><strong>(3).线程在等待一个本身也处于永久等待完成的对象(比如调用这个对象的wait方法)</strong></p>
+
+<p>如果多个线程处在wait()方法执行上，而对其调用notify()不会保证哪一个线程会获得唤醒，任何线程都有可能处于继续等待的状态。因此存在这样一个风险：一个等待线程从来得不到唤醒，因为其他等待线程总是能被获得唤醒。</p>
+
+<h3>3.2 实现公平锁</h3>
+
+<p>下面来讲述将上面Lock类转变为公平锁FairLock。基本原理是每一个调用lock()的线程都会进入一个队列，当解锁后，只有队列里的第一个线程被允许锁住Farlock实例，所有其它的线程都将处于等待状态，直到他们处于队列头部。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">FairLock</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span>           <span class="n">isLocked</span>       <span class="o">=</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">Thread</span>            <span class="n">lockingThread</span>  <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="c1">//用于等待的线程队列</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">QueueObject</span><span class="o">&gt;</span> <span class="n">waitingThreads</span> <span class="o">=</span> <span class="k">new</span> <span class="n">ArrayList</span><span class="o">&lt;</span><span class="n">QueueObject</span><span class="o">&gt;();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">lock</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="n">QueueObject</span> <span class="n">queueObject</span>           <span class="o">=</span> <span class="k">new</span> <span class="nf">QueueObject</span><span class="o">();</span>
+</span><span class='line'>        <span class="kt">boolean</span>     <span class="n">isLockedForThisThread</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="kd">synchronized</span><span class="o">(</span><span class="k">this</span><span class="o">){</span> <span class="c1">//加入等到队列</span>
+</span><span class='line'>            <span class="n">waitingThreads</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="n">queueObject</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="k">while</span><span class="o">(</span><span class="n">isLockedForThisThread</span><span class="o">){</span>
+</span><span class='line'>            <span class="kd">synchronized</span><span class="o">(</span><span class="k">this</span><span class="o">){</span>
+</span><span class='line'>                <span class="n">isLockedForThisThread</span> <span class="o">=</span>
+</span><span class='line'>                <span class="n">isLocked</span> <span class="o">||</span> <span class="n">waitingThreads</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="mi">0</span><span class="o">)</span> <span class="o">!=</span> <span class="n">queueObject</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span><span class="o">(!</span><span class="n">isLockedForThisThread</span><span class="o">){</span> <span class="c1">//当前线程没有被阻塞</span>
+</span><span class='line'>                    <span class="n">isLocked</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>                    <span class="n">waitingThreads</span><span class="o">.</span><span class="na">remove</span><span class="o">(</span><span class="n">queueObject</span><span class="o">);</span>
+</span><span class='line'>                    <span class="n">lockingThread</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>                    <span class="k">return</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="c1">//isLockedForThisThread == true</span>
+</span><span class='line'>            <span class="k">try</span><span class="o">{</span>
+</span><span class='line'>                <span class="n">queueObject</span><span class="o">.</span><span class="na">doWait</span><span class="o">();</span>   <span class="c1">//通知当前线程等待</span>
+</span><span class='line'>            <span class="o">}</span><span class="k">catch</span><span class="o">(</span><span class="n">InterruptedException</span> <span class="n">e</span><span class="o">){</span>
+</span><span class='line'>                <span class="kd">synchronized</span><span class="o">(</span><span class="k">this</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">waitingThreads</span><span class="o">.</span><span class="na">remove</span><span class="o">(</span><span class="n">queueObject</span><span class="o">);</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">throw</span> <span class="n">e</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">unlock</span><span class="o">(){</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="k">this</span><span class="o">.</span><span class="na">lockingThread</span> <span class="o">!=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">()){</span>
+</span><span class='line'>          <span class="k">throw</span> <span class="k">new</span> <span class="nf">IllegalMonitorStateException</span><span class="o">(</span>
+</span><span class='line'>            <span class="s">&quot;Calling thread has not locked this lock&quot;</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">isLocked</span>      <span class="o">=</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="n">lockingThread</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">waitingThreads</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">){</span>
+</span><span class='line'>            <span class="n">waitingThreads</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="mi">0</span><span class="o">).</span><span class="na">doNotify</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>QueueObject实现:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">QueueObject</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="n">isNotified</span> <span class="o">=</span> <span class="kc">false</span><span class="o">;</span> <span class="c1">//被唤醒</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">doWait</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">while</span><span class="o">(!</span><span class="n">isNotified</span><span class="o">){</span>
+</span><span class='line'>            <span class="k">this</span><span class="o">.</span><span class="na">wait</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">isNotified</span> <span class="o">=</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">doNotify</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">isNotified</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">notify</span><span class="o">();</span>  <span class="c1">//唤醒等待当前QueueObject对象的线程</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">equals</span><span class="o">(</span><span class="n">Object</span> <span class="n">o</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="k">this</span> <span class="o">==</span> <span class="n">o</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>首先注意到lock()方法不在声明为synchronized，取而代之的是对必需同步的代码，在synchronized中进行嵌套。</p>
+
+<p>FairLock新创建了一个QueueObject的实例，并对每个调用lock()的线程进行入队列。调用unlock()的线程将从队列头部获取QueueObject，并对其调用doNotify()，以唤醒在该对象上等待的线程。通过这种方式，在同一时间仅有一个等待线程获得唤醒，而不是所有的等待线程。这也是实现FairLock公平性的核心所在。</p>
+
+<p>请注意，在同一个同步块中，锁状态依然被检查和设置，以避免出现滑漏条件。</p>
+
+<p>还需注意到，QueueObject实际是一个信号量(Semaphore)。doWait()和doNotify()方法在QueueObject中保存着信号。这样做以避免一个线程在调用queueObject.doWait()之前被另一个调用unlock()并随之调用queueObject.doNotify()的线程重入，从而导致信号丢失。queueObject.doWait()调用放置在synchronized(this)块之外，以避免被monitor嵌套锁死，所以另外的线程可以解锁，只要当没有线程在lock方法的synchronized(this)块中执行即可。</p>
+
+<p>最后，注意到queueObject.doWait()在try – catch块中是怎样调用的。在InterruptedException抛出的情况下，线程得以离开lock()，并需让它从队列中移除。</p>
+
+<h1>4.ReentrantLock源码</h1>
+
+<p>ReentrantLock是java中可重入锁的一个实现,一次只能有一个线程持有锁，也即所谓独占锁的概念。它包含三个内部类:Sync、NonfairSync、FairSync，通过构造函数的参数来指定锁是否是公平的，下面是一些核心代码:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ReentrantLock</span> <span class="kd">implements</span> <span class="n">Lock</span><span class="o">,</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Sync</span> <span class="n">sync</span><span class="o">;</span>
+</span><span class='line'>    <span class="c1">//默认是不公平锁</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">ReentrantLock</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">sync</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">NonfairSync</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//参数fair决定,true为公平锁实现,false为非公平锁实现</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">ReentrantLock</span><span class="o">(</span><span class="kt">boolean</span> <span class="n">fair</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">sync</span> <span class="o">=</span> <span class="o">(</span><span class="n">fair</span><span class="o">)?</span> <span class="k">new</span> <span class="nf">FairSync</span><span class="o">()</span> <span class="o">:</span> <span class="k">new</span> <span class="nf">NonfairSync</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">lock</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">sync</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//不公平锁</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">tryLock</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">nonfairTryAcquire</span><span class="o">(</span><span class="mi">1</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//带超时时间的锁</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">tryLock</span><span class="o">(</span><span class="kt">long</span> <span class="n">timeout</span><span class="o">,</span> <span class="n">TimeUnit</span> <span class="n">unit</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">InterruptedException</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">tryAcquireNanos</span><span class="o">(</span><span class="mi">1</span><span class="o">,</span> <span class="n">unit</span><span class="o">.</span><span class="na">toNanos</span><span class="o">(</span><span class="n">timeout</span><span class="o">));</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">unlock</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">sync</span><span class="o">.</span><span class="na">release</span><span class="o">(</span><span class="mi">1</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//是否有线程等待当前锁</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">hasQueuedThreads</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">hasQueuedThreads</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="o">...</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们可以发现,ReentrantLock都是把具体实现委托给内部类(Sync、NonfairSync、FairSync),ReentrantLock的重入计数是使用AbstractQueuedSynchronizer的state属性的，state大于0表示锁被占用、等于0表示空闲，小于0则是重入次数太多导致溢出了.</p>
+
+<h3>4.1 ReentrantLock.Sync</h3>
+
+<p>Sync类代码如下:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">static</span> <span class="kd">abstract</span> <span class="kd">class</span> <span class="nc">Sync</span> <span class="kd">extends</span> <span class="n">AbstractQueuedSynchronizer</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">abstract</span> <span class="kt">void</span> <span class="nf">lock</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">//非公平获取,公平锁和非公平锁都需要这个方法</span>
+</span><span class='line'>        <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">nonfairTryAcquire</span><span class="o">(</span><span class="kt">int</span> <span class="n">acquires</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="kd">final</span> <span class="n">Thread</span> <span class="n">current</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>   <span class="c1">//state == 0表示无锁</span>
+</span><span class='line'>                <span class="c1">//CAS确保即使有多个线程竞争锁也是安全的</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">compareAndSetState</span><span class="o">(</span><span class="mi">0</span><span class="o">,</span> <span class="n">acquires</span><span class="o">))</span> <span class="o">{</span>  <span class="c1">//加锁成功  </span>
+</span><span class='line'>                    <span class="n">setExclusiveOwnerThread</span><span class="o">(</span><span class="n">current</span><span class="o">);</span>   <span class="c1">//设置当前持有锁的线程</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>                        <span class="c1">//获取成功</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">current</span> <span class="o">==</span> <span class="n">getExclusiveOwnerThread</span><span class="o">())</span> <span class="o">{</span><span class="c1">//当前线程正是锁持有者</span>
+</span><span class='line'>                <span class="kt">int</span> <span class="n">nextc</span> <span class="o">=</span> <span class="n">c</span> <span class="o">+</span> <span class="n">acquires</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">nextc</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span> <span class="c1">// 被锁次数上溢(很少出现)</span>
+</span><span class='line'>                    <span class="k">throw</span> <span class="k">new</span> <span class="nf">Error</span><span class="o">(</span><span class="s">&quot;Maximum lock count exceeded&quot;</span><span class="o">);</span>
+</span><span class='line'>                <span class="c1">//锁被持有的情况下,只有持有者才能更新锁保护的资源</span>
+</span><span class='line'>                <span class="n">setState</span><span class="o">(</span><span class="n">nextc</span><span class="o">);</span>
+</span><span class='line'>                <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="c1">//释放</span>
+</span><span class='line'>        <span class="kd">protected</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">tryRelease</span><span class="o">(</span><span class="kt">int</span> <span class="n">releases</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">getState</span><span class="o">()</span> <span class="o">-</span> <span class="n">releases</span><span class="o">;</span>
+</span><span class='line'>            <span class="c1">//只有锁的持有者才能释放锁</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">()</span> <span class="o">!=</span> <span class="n">getExclusiveOwnerThread</span><span class="o">())</span>
+</span><span class='line'>                <span class="k">throw</span> <span class="k">new</span> <span class="nf">IllegalMonitorStateException</span><span class="o">();</span>
+</span><span class='line'>            <span class="kt">boolean</span> <span class="n">free</span> <span class="o">=</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>   <span class="c1">//锁被释放</span>
+</span><span class='line'>                <span class="n">free</span> <span class="o">=</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">setExclusiveOwnerThread</span><span class="o">(</span><span class="kc">null</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="n">setState</span><span class="o">(</span><span class="n">c</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span> <span class="n">free</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="c1">//当前线程是否持有锁</span>
+</span><span class='line'>        <span class="kd">protected</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">isHeldExclusively</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">return</span> <span class="nf">getExclusiveOwnerThread</span><span class="o">()</span> <span class="o">==</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kd">final</span> <span class="n">ConditionObject</span> <span class="nf">newCondition</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">return</span> <span class="k">new</span> <span class="nf">ConditionObject</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">//锁的持有者</span>
+</span><span class='line'>        <span class="kd">final</span> <span class="n">Thread</span> <span class="nf">getOwner</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">return</span> <span class="nf">getState</span><span class="o">()</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">?</span> <span class="kc">null</span> <span class="o">:</span> <span class="n">getExclusiveOwnerThread</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="c1">//加锁次数</span>
+</span><span class='line'>        <span class="kd">final</span> <span class="kt">int</span> <span class="nf">getHoldCount</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">return</span> <span class="nf">isHeldExclusively</span><span class="o">()</span> <span class="o">?</span> <span class="n">getState</span><span class="o">()</span> <span class="o">:</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="c1">//是否上锁,根据state字段可以判断</span>
+</span><span class='line'>        <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">isLocked</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">return</span> <span class="nf">getState</span><span class="o">()</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>4.2 ReentrantLock.NonfairSync</h3>
+
+<p>公平锁的实现:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">final</span> <span class="kd">static</span> <span class="kd">class</span> <span class="nc">NonfairSync</span> <span class="kd">extends</span> <span class="n">Sync</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>     <span class="c1">// 执行lock,尝试立即闯入，失败就退回常规流程</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="kt">void</span> <span class="nf">lock</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">compareAndSetState</span><span class="o">(</span><span class="mi">0</span><span class="o">,</span> <span class="mi">1</span><span class="o">))</span>   <span class="c1">//比较并设置state,成功则表示获取成功</span>
+</span><span class='line'>            <span class="n">setExclusiveOwnerThread</span><span class="o">(</span><span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">());</span><span class="c1">//锁持有者</span>
+</span><span class='line'>        <span class="k">else</span>
+</span><span class='line'>            <span class="nf">acquire</span><span class="o">(</span><span class="mi">1</span><span class="o">);</span><span class="c1">//获取失败，进入常规流程：acquire会首先调用tryAcquire</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">protected</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">tryAcquire</span><span class="o">(</span><span class="kt">int</span> <span class="n">acquires</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="nf">nonfairTryAcquire</span><span class="o">(</span><span class="n">acquires</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>acquire的实现(AbstractQueuedSynchronizer.java):</p>
+
+<pre><code>public final void acquire(int arg) {
+    if (!tryAcquire(arg) &amp;&amp;
+        acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+        selfInterrupt();
+}
+</code></pre>
+
+<p>就是说常规流程下,首先会执行Sync类中非公平获取(nonfairTryAcquire(1))的过程.</p>
+
+<h3>4.3 ReentrantLock.FairSync</h3>
+
+<p>非公平锁的实现:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">final</span> <span class="kd">static</span> <span class="kd">class</span> <span class="nc">FairSync</span> <span class="kd">extends</span> <span class="n">Sync</span> <span class="o">{</span>
+</span><span class='line'>    <span class="c1">//见AbstractQueuedSynchronizer.java, 4.2节有</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="kt">void</span> <span class="nf">lock</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">acquire</span><span class="o">(</span><span class="mi">1</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">//公平版本的tryAcquire,除非是递归调用或没有等待者或者是第一个，否则不授予访问</span>
+</span><span class='line'>    <span class="kd">protected</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">tryAcquire</span><span class="o">(</span><span class="kt">int</span> <span class="n">acquires</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">final</span> <span class="n">Thread</span> <span class="n">current</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">//是等待队列的第一个等待者</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">isFirst</span><span class="o">(</span><span class="n">current</span><span class="o">)</span> <span class="o">&amp;&amp;</span>
+</span><span class='line'>                <span class="n">compareAndSetState</span><span class="o">(</span><span class="mi">0</span><span class="o">,</span> <span class="n">acquires</span><span class="o">))</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">setExclusiveOwnerThread</span><span class="o">(</span><span class="n">current</span><span class="o">);</span>   <span class="c1">//加锁成功</span>
+</span><span class='line'>                <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="c1">//当前线程正是线程的持有者</span>
+</span><span class='line'>        <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">current</span> <span class="o">==</span> <span class="n">getExclusiveOwnerThread</span><span class="o">())</span> <span class="o">{</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">nextc</span> <span class="o">=</span> <span class="n">c</span> <span class="o">+</span> <span class="n">acquires</span><span class="o">;</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">nextc</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>  <span class="c1">//溢出</span>
+</span><span class='line'>                <span class="k">throw</span> <span class="k">new</span> <span class="nf">Error</span><span class="o">(</span><span class="s">&quot;Maximum lock count exceeded&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">setState</span><span class="o">(</span><span class="n">nextc</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>isFirst的实现,即等待队列为空或者当前线程为等待队列的第一个元素:</p>
+
+<pre><code>final boolean isFirst(Thread current) {
+    Node h, s;
+    return ((h = head) == null ||
+            ((s = h.next) != null &amp;&amp; s.thread == current) ||
+            fullIsFirst(current));
+}
+</code></pre>
+
+<h3>4.4 lock() VS lockInterruptibly()</h3>
+
+<p>先说线程请求锁的几个方法:</p>
+
+<pre><code>lock():拿不到lock就不罢休，不然线程就一直block;
+tryLock():马上返回，拿到lock就返回true，不然返回false;
+带时间限制的tryLock():拿不到lock，就等一段时间，超时返回false;
+</code></pre>
+
+<p>先说说线程的打扰机制，每个线程都有一个 打扰 标志。这里分两种情况:</p>
+
+<pre><code>1. 线程在sleep或wait,join， 此时如果别的进程调用此进程的 interrupt（）方法，此线程会被唤醒并被要求处理InterruptedException；
+2. 此线程在运行中，则不会收到提醒。但是 此线程的 “打扰标志”会被设置， 可以通过isInterrupted()查看并作出处理。
+</code></pre>
+
+<p>lockInterruptibly()和上面的第一种情况是一样的，线程在请求lock并被阻塞时，如果被interrupt，则“此线程会被唤醒并被要求处理InterruptedException”。</p>
+
+<h1>5.读写锁</h1>
+
+<p>假设你的程序中涉及到对一些共享资源的读和写操作，且写操作没有读操作那么频繁。在没有写操作的时候，两个线程同时读一个资源没有任何问题，所以应该允许多个线程能在同时读取共享资源;但是如果有一个线程想去写这些共享资源，就不应该再有其它线程对该资源进行读或写（也就是说：读-读能共存，读-写不能共存，写-写不能共存）,这就需要一个读/写锁来解决这个问题。</p>
+
+<h3>5.1 读/写锁的Java实现</h3>
+
+<p>如果某个线程想要读取资源，只要没有线程正在对该资源进行写操作且没有线程请求对该资源的写操作即可。我们假设对写操作的请求比对读操作的请求更重要，即需要提升写请求的优先级;</p>
+
+<p>此外，如果读操作发生的比较频繁，我们又没有提升写操作的优先级，那么就会产生“饥饿”现象,请求写操作的线程会一直阻塞，直到所有的读线程都从ReadWriteLock上解锁了(因为多个读可以共存),如果一直保证新线程的读操作权限，那么等待写操作的线程就会一直阻塞下去，结果就是发生“饥饿”;</p>
+
+<p>因此，只有当没有线程正在锁住ReadWriteLock进行写操作，且没有线程请求该锁准备执行写操作时，才能保证读操作继续.</p>
+
+<p>根据上面的描述,我们可以对读写访问资源的条件做个概述:</p>
+
+<pre><code>读:没有线程正在做写操作，且没有线程在请求写操作
+写:没有线程正在做读写操作
+</code></pre>
+
+<p>按照上面的叙述，简单的实现出一个读/写锁，代码如下:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ReadWriteLock</span><span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">readers</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>        <span class="c1">//在读线程数</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">writers</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>        <span class="c1">//在写线程数目</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">writeRequests</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>  <span class="c1">//请求写线程数目</span>
+</span><span class='line'>    <span class="c1">//尝试读加锁,有写或者有写请求时候,等待</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">lockRead</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="k">while</span><span class="o">(</span><span class="n">writers</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">writeRequests</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">){</span>
+</span><span class='line'>            <span class="n">wait</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">readers</span><span class="o">++;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//读解锁</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">unlockRead</span><span class="o">(){</span>
+</span><span class='line'>        <span class="n">readers</span><span class="o">--;</span>
+</span><span class='line'>        <span class="n">notifyAll</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//尝试写加锁</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">lockWrite</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="n">writeRequests</span><span class="o">++;</span>
+</span><span class='line'>        <span class="c1">//有在读或者在在写的线程</span>
+</span><span class='line'>        <span class="k">while</span><span class="o">(</span><span class="n">readers</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">writers</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">){</span>
+</span><span class='line'>            <span class="n">wait</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">writeRequests</span><span class="o">--;</span>
+</span><span class='line'>        <span class="n">writers</span><span class="o">++;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//写解锁</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">unlockWrite</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="n">writers</span><span class="o">--;</span>
+</span><span class='line'>        <span class="n">notifyAll</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在两个释放锁的方法（unlockRead，unlockWrite）中，都调用了notifyAll方法，而不是notify。要解释这个原因，我们可以想象下面一种情形：</p>
+
+<p>如果有线程在等待获取读锁，同时又有线程在等待获取写锁。如果这时其中一个等待读锁的线程被notify方法唤醒，但因为此时仍有请求写锁的线程存在（writeRequests>0），所以被唤醒的线程会再次进入阻塞状态。然而，等待写锁的线程一个也没被唤醒，就像什么也没发生过一样（出现了所谓的信号丢失现象）。如果用的是notifyAll方法，所有的线程都会被唤醒，然后判断能否获得其请求的锁。</p>
+
+<p>用notifyAll还有一个好处。如果有多个读线程在等待读锁且没有线程在等待写锁时，调用unlockWrite()后，所有等待读锁的线程都能立马成功获取读锁(共享读锁),而不是一次只允许一个。</p>
+
+<h3>5.2 读/写锁的重入</h3>
+
+<p>上面实现的读/写锁(ReadWriteLock) 是不可重入的，当一个已经持有写锁的线程再次请求写锁时，就会被阻塞。原因是已经有一个写线程了(就是它自己)。此外，考虑下面的例子：</p>
+
+<pre><code>Thread 1 获得了读锁
+Thread 2 请求写锁，但因为Thread 1 持有了读锁，所以写锁请求被阻塞。
+Thread 1 再想请求一次读锁，但因为Thread 2处于请求写锁的状态，所以想再次获取读锁也会被阻塞。
+</code></pre>
+
+<p>上面这种情形使用前面的ReadWriteLock就会被锁定,即一种类似于死锁的情形。导致不会再有线程能够成功获取读锁或写锁了。</p>
+
+<p>为了让ReadWriteLock可重入，需要对它做一些改进,下面会分别处理读锁的重入和写锁的重入。</p>
+
+<h3>5.3 读锁重入</h3>
+
+<p>了让ReadWriteLock的读锁可重入，我们要先为读锁重入建立规则：</p>
+
+<pre><code>要保证某个线程中的读锁可重入，要么满足获取读锁的条件(没有写或写请求)，要么已经持有读锁(不管是否有写请求).
+</code></pre>
+
+<p>要确定一个线程是否已经持有读锁，可以用一个map来存储已经持有读锁的线程以及对应线程获取读锁的次数,即Map&lt;thread, count>，当需要判断某个线程能否获得读锁时，就利用map中存储的数据进行判断。下面是方法lockRead和unlockRead修改后的的代码(省略了写锁代码)：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ReadWriteLock</span><span class="o">{</span>
+</span><span class='line'>    <span class="c1">//读锁计数器,记录当前持有读锁的线程以及加锁次数</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">Map</span><span class="o">&lt;</span><span class="n">Thread</span><span class="o">,</span> <span class="n">Integer</span><span class="o">&gt;</span> <span class="n">readingThreads</span> <span class="o">=</span>
+</span><span class='line'>        <span class="k">new</span> <span class="n">HashMap</span><span class="o">&lt;</span><span class="n">Thread</span><span class="o">,</span> <span class="n">Integer</span><span class="o">&gt;();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">writers</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">writeRequests</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">lockRead</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="n">Thread</span> <span class="n">callingThread</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">while</span><span class="o">(!</span><span class="n">canGrantReadAccess</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)){</span>
+</span><span class='line'>            <span class="n">wait</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">readingThreads</span><span class="o">.</span><span class="na">put</span><span class="o">(</span><span class="n">callingThread</span><span class="o">,</span> <span class="o">(</span><span class="n">getAccessCount</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)</span> <span class="o">+</span> <span class="mi">1</span><span class="o">));</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">unlockRead</span><span class="o">(){</span>
+</span><span class='line'>        <span class="n">Thread</span> <span class="n">callingThread</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">accessCount</span> <span class="o">=</span> <span class="n">getAccessCount</span><span class="o">(</span><span class="n">callingThread</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">accessCount</span> <span class="o">==</span> <span class="mi">1</span><span class="o">)</span> <span class="o">{</span>  <span class="c1">//加锁次数为0了</span>
+</span><span class='line'>            <span class="n">readingThreads</span><span class="o">.</span><span class="na">remove</span><span class="o">(</span><span class="n">callingThread</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">readingThreads</span><span class="o">.</span><span class="na">put</span><span class="o">(</span><span class="n">callingThread</span><span class="o">,</span> <span class="o">(</span><span class="n">accessCount</span> <span class="o">-</span><span class="mi">1</span><span class="o">));</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">notifyAll</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//判断当前线程能否获得读锁</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">canGrantReadAccess</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">writers</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">isReader</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)</span> <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">writeRequests</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//获取这个读锁目前的加锁次数</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="nf">getReadAccessCount</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="n">Integer</span> <span class="n">accessCount</span> <span class="o">=</span> <span class="n">readingThreads</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">callingThread</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">accessCount</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="k">return</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">accessCount</span><span class="o">.</span><span class="na">intValue</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//当前线程是否为已加锁的读锁</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">isReader</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">readingThreads</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>代码中我们可以看到(canGrantReadAccess函数)，只有在没有线程拥有写锁的情况下才允许读锁的重入,此外，重入的读锁比写锁请求优先级高。</p>
+
+<h3>5.4 写锁重入</h3>
+
+<p>因为写锁是排他锁,写锁的可重入规则比较简单:</p>
+
+<pre><code>仅当一个线程已经持有写锁，才允许写锁重入（再次获得写锁）。
+</code></pre>
+
+<p>下面是方法lockWrite和unlockWrite修改后的的代码(省略了写锁的代码):</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ReadWriteLock</span><span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">Map</span><span class="o">&lt;</span><span class="n">Thread</span><span class="o">,</span> <span class="n">Integer</span><span class="o">&gt;</span> <span class="n">readingThreads</span> <span class="o">=</span>
+</span><span class='line'>        <span class="k">new</span> <span class="n">HashMap</span><span class="o">&lt;</span><span class="n">Thread</span><span class="o">,</span> <span class="n">Integer</span><span class="o">&gt;();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">writeAccesses</span>    <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">writeRequests</span>    <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">Thread</span> <span class="n">writingThread</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>    <span class="c1">//当前的写锁线程</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">lockWrite</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="n">writeRequests</span><span class="o">++;</span>
+</span><span class='line'>        <span class="n">Thread</span> <span class="n">callingThread</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">while</span><span class="o">(!</span><span class="n">canGrantWriteAccess</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)){</span>
+</span><span class='line'>            <span class="n">wait</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">writeRequests</span><span class="o">--;</span>
+</span><span class='line'>        <span class="n">writeAccesses</span><span class="o">++;</span>
+</span><span class='line'>        <span class="n">writingThread</span> <span class="o">=</span> <span class="n">callingThread</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">unlockWrite</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="n">writeAccesses</span><span class="o">--;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">writeAccesses</span> <span class="o">==</span> <span class="mi">0</span><span class="o">){</span>
+</span><span class='line'>            <span class="n">writingThread</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">notifyAll</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//判断能否加写锁</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">canGrantWriteAccess</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">hasReaders</span><span class="o">())</span> <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">writingThread</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>    <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(!</span><span class="n">isWriter</span><span class="o">(</span><span class="n">callingThread</span><span class="o">))</span> <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//有线程正持有读锁</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">hasReaders</span><span class="o">(){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">readingThreads</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//请求线程是否为当前已加写锁的线程</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">isWriter</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">writingThread</span> <span class="o">==</span> <span class="n">callingThread</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>5.5 读锁升级到写锁</h3>
+
+<p>有时，我们希望一个拥有读锁的线程，也能获得写锁。想要允许这样的操作，要求这个线程是唯一一个拥有读锁的线程(因为写锁是排他锁)。writeLock()需要做点改动来达到这个目的：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ReadWriteLock</span><span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">Map</span><span class="o">&lt;</span><span class="n">Thread</span><span class="o">,</span> <span class="n">Integer</span><span class="o">&gt;</span> <span class="n">readingThreads</span> <span class="o">=</span>
+</span><span class='line'>        <span class="k">new</span> <span class="n">HashMap</span><span class="o">&lt;</span><span class="n">Thread</span><span class="o">,</span> <span class="n">Integer</span><span class="o">&gt;();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">writeAccesses</span>    <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">writeRequests</span>    <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">Thread</span> <span class="n">writingThread</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">lockWrite</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="n">writeRequests</span><span class="o">++;</span>
+</span><span class='line'>        <span class="n">Thread</span> <span class="n">callingThread</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">while</span><span class="o">(!</span><span class="n">canGrantWriteAccess</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)){</span>
+</span><span class='line'>            <span class="n">wait</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">writeRequests</span><span class="o">--;</span>
+</span><span class='line'>        <span class="n">writeAccesses</span><span class="o">++;</span>
+</span><span class='line'>        <span class="n">writingThread</span> <span class="o">=</span> <span class="n">callingThread</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">unlockWrite</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="n">writeAccesses</span><span class="o">--;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">writeAccesses</span> <span class="o">==</span> <span class="mi">0</span><span class="o">){</span>
+</span><span class='line'>            <span class="n">writingThread</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">notifyAll</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//能否获得写锁,如果是当前唯一的一个读锁,则可以升级获得写锁</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">canGrantWriteAccess</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">isOnlyReader</span><span class="o">(</span><span class="n">callingThread</span><span class="o">))</span> <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">hasReaders</span><span class="o">())</span> <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">writingThread</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(!</span><span class="n">isWriter</span><span class="o">(</span><span class="n">callingThread</span><span class="o">))</span> <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">hasReaders</span><span class="o">(){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">readingThreads</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">isWriter</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">writingThread</span> <span class="o">==</span> <span class="n">callingThread</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//当前持有锁的线程是否为唯一的读锁线程</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">isOnlyReader</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">readers</span> <span class="o">==</span> <span class="mi">1</span> <span class="o">&amp;&amp;</span> <span class="n">readingThreads</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>5.6 写锁降级到读锁</h3>
+
+<p>有时拥有写锁的线程也希望得到读锁。如果一个线程拥有了写锁，那么自然其它线程是不可能拥有读锁或写锁了。所以对于一个拥有写锁的线程，再获得读锁，是不会有什么危险的。</p>
+
+<p>我们仅仅需要对上面canGrantReadAccess方法进行简单地修改：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ReadWriteLock</span><span class="o">{</span>
+</span><span class='line'>    <span class="c1">//能否获得读锁,当当前持有的线程为一个写锁线程,则可以</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">canGrantReadAccess</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">isWriter</span><span class="o">(</span><span class="n">callingThread</span><span class="o">))</span> <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">writingThread</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">isReader</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)</span> <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">writeRequests</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>5.7 可重入的ReadWriteLock的完整实现</h3>
+
+<p>下面是完整的ReadWriteLock实现:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ReadWriteLock</span><span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">Map</span><span class="o">&lt;</span><span class="n">Thread</span><span class="o">,</span> <span class="n">Integer</span><span class="o">&gt;</span> <span class="n">readingThreads</span> <span class="o">=</span>
+</span><span class='line'>        <span class="k">new</span> <span class="n">HashMap</span><span class="o">&lt;</span><span class="n">Thread</span><span class="o">,</span> <span class="n">Integer</span><span class="o">&gt;();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">writeAccesses</span>    <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">writeRequests</span>    <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">Thread</span> <span class="n">writingThread</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">lockRead</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="n">Thread</span> <span class="n">callingThread</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">while</span><span class="o">(!</span><span class="n">canGrantReadAccess</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)){</span>
+</span><span class='line'>            <span class="n">wait</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">readingThreads</span><span class="o">.</span><span class="na">put</span><span class="o">(</span><span class="n">callingThread</span><span class="o">,</span>
+</span><span class='line'>            <span class="o">(</span><span class="n">getReadAccessCount</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)</span> <span class="o">+</span> <span class="mi">1</span><span class="o">));</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">canGrantReadAccess</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">isWriter</span><span class="o">(</span><span class="n">callingThread</span><span class="o">))</span> <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">hasWriter</span><span class="o">())</span> <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">isReader</span><span class="o">(</span><span class="n">callingThread</span><span class="o">))</span> <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">hasWriteRequests</span><span class="o">())</span> <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">unlockRead</span><span class="o">(){</span>
+</span><span class='line'>        <span class="n">Thread</span> <span class="n">callingThread</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(!</span><span class="n">isReader</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)){</span>
+</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">IllegalMonitorStateException</span><span class="o">(</span>
+</span><span class='line'>                <span class="s">&quot;Calling Thread does not&quot;</span> <span class="o">+</span>
+</span><span class='line'>                <span class="s">&quot; hold a read lock on this ReadWriteLock&quot;</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">accessCount</span> <span class="o">=</span> <span class="n">getReadAccessCount</span><span class="o">(</span><span class="n">callingThread</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">accessCount</span> <span class="o">==</span> <span class="mi">1</span><span class="o">){</span>
+</span><span class='line'>            <span class="n">readingThreads</span><span class="o">.</span><span class="na">remove</span><span class="o">(</span><span class="n">callingThread</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">readingThreads</span><span class="o">.</span><span class="na">put</span><span class="o">(</span><span class="n">callingThread</span><span class="o">,</span> <span class="o">(</span><span class="n">accessCount</span> <span class="o">-</span><span class="mi">1</span><span class="o">));</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">notifyAll</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">lockWrite</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="n">writeRequests</span><span class="o">++;</span>
+</span><span class='line'>        <span class="n">Thread</span> <span class="n">callingThread</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">while</span><span class="o">(!</span><span class="n">canGrantWriteAccess</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)){</span>
+</span><span class='line'>            <span class="n">wait</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">writeRequests</span><span class="o">--;</span>
+</span><span class='line'>        <span class="n">writeAccesses</span><span class="o">++;</span>
+</span><span class='line'>        <span class="n">writingThread</span> <span class="o">=</span> <span class="n">callingThread</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">unlockWrite</span><span class="o">()</span>
+</span><span class='line'>        <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(!</span><span class="n">isWriter</span><span class="o">(</span><span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">()){</span>
+</span><span class='line'>        <span class="k">throw</span> <span class="k">new</span> <span class="nf">IllegalMonitorStateException</span><span class="o">(</span>
+</span><span class='line'>            <span class="s">&quot;Calling Thread does not&quot;</span> <span class="o">+</span>
+</span><span class='line'>            <span class="s">&quot; hold the write lock on this ReadWriteLock&quot;</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">writeAccesses</span><span class="o">--;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">writeAccesses</span> <span class="o">==</span> <span class="mi">0</span><span class="o">){</span>
+</span><span class='line'>            <span class="n">writingThread</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">notifyAll</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">canGrantWriteAccess</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">isOnlyReader</span><span class="o">(</span><span class="n">callingThread</span><span class="o">))</span> <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">hasReaders</span><span class="o">())</span> <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">writingThread</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(!</span><span class="n">isWriter</span><span class="o">(</span><span class="n">callingThread</span><span class="o">))</span> <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="nf">getReadAccessCount</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="n">Integer</span> <span class="n">accessCount</span> <span class="o">=</span> <span class="n">readingThreads</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">callingThread</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">accessCount</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="k">return</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">accessCount</span><span class="o">.</span><span class="na">intValue</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">hasReaders</span><span class="o">(){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">readingThreads</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">isReader</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">readingThreads</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">isOnlyReader</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">readingThreads</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">==</span> <span class="mi">1</span> <span class="o">&amp;&amp;</span>
+</span><span class='line'>            <span class="n">readingThreads</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">callingThread</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">hasWriter</span><span class="o">(){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">writingThread</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">isWriter</span><span class="o">(</span><span class="n">Thread</span> <span class="n">callingThread</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">writingThread</span> <span class="o">==</span> <span class="n">callingThread</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">hasWriteRequests</span><span class="o">(){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="k">this</span><span class="o">.</span><span class="na">writeRequests</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在利用ReadWriteLock来保护临界区时，如果临界区可能抛出异常，在finally块中调用readUnlock()和writeUnlock()就显得很重要了。这样做是为了保证ReadWriteLock能被成功解锁，然后其它线程可以请求到该锁:</p>
+
+<pre><code>lock.lockWrite();
+try{
+    //do critical section code, which may throw exception
+} finally {
+    lock.unlockWrite();
+}
+</code></pre>
+
+<h1>6.ReentrantReadWriteLock源码</h1>
+
+<p>ReentrantLock 实现了标准的互斥操作，也就是一次只能有一个线程持有锁，也即所谓独占锁的概念。前面的章节中一直在强调这个特点。显然这个特点在一定程度上面减低了吞吐量，实际上独占锁是一种保守的锁策略，在这种情况下任何“读/读”，“写/读”，“写/写”操作都不能同时发生。</p>
+
+<p>读写锁使用的场合是一个共享资源被大量读取操作，而只有少量的写操作（修改数据）.</p>
+
+<p>ReentrantReadWriteLock是java中可重入读写锁的一个实现.包含五个内部类:Sync,NonfairSync,FairSync,ReadLock,WriteLock.其中Sync,NonfairSync,FairSync用上公平锁和非公平锁的实现,ReadLock和WriteLock分别用于实现读锁和写锁.</p>
+
+<p>ReentrantReadWriteLock的一些特性:</p>
+
+<pre><code>(1).写线程获取写入锁后可以获取读取锁，然后释放写入锁，这样就从写入锁变成了读取锁，从而实现锁降级的特性;读取锁是不能直接升级为写入锁的;
+(2).读取锁和写入锁的数量最大分别只能是65535;
+</code></pre>
+
+<h3>6.1 ReentrantReadWriteLock一些关键的方法:</h3>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ReentrantReadWriteLock</span> <span class="kd">implements</span> <span class="n">ReadWriteLock</span><span class="o">,</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span>  <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">ReentrantReadWriteLock</span><span class="o">.</span><span class="na">ReadLock</span> <span class="n">readerLock</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">ReentrantReadWriteLock</span><span class="o">.</span><span class="na">WriteLock</span> <span class="n">writerLock</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Sync</span> <span class="n">sync</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">//默认实现是非公平的</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">ReentrantReadWriteLock</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">(</span><span class="kc">false</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">ReentrantReadWriteLock</span><span class="o">(</span><span class="kt">boolean</span> <span class="n">fair</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">sync</span> <span class="o">=</span> <span class="o">(</span><span class="n">fair</span><span class="o">)?</span> <span class="k">new</span> <span class="nf">FairSync</span><span class="o">()</span> <span class="o">:</span> <span class="k">new</span> <span class="nf">NonfairSync</span><span class="o">();</span>
+</span><span class='line'>        <span class="n">readerLock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">ReadLock</span><span class="o">(</span><span class="k">this</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">writerLock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">WriteLock</span><span class="o">(</span><span class="k">this</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">getReadLockCount</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">getReadLockCount</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">isWriteLocked</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">isWriteLocked</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//是否由当前线程持有写锁</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">isWriteLockedByCurrentThread</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">isHeldExclusively</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//读锁等待队列</span>
+</span><span class='line'>    <span class="kd">protected</span> <span class="n">Collection</span><span class="o">&lt;</span><span class="n">Thread</span><span class="o">&gt;</span> <span class="nf">getQueuedWriterThreads</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">getExclusiveQueuedThreads</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//写锁等待队列</span>
+</span><span class='line'>    <span class="kd">protected</span> <span class="n">Collection</span><span class="o">&lt;</span><span class="n">Thread</span><span class="o">&gt;</span> <span class="nf">getQueuedReaderThreads</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">getSharedQueuedThreads</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>6.2 读锁实现:</h3>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="kd">class</span> <span class="nc">ReadLock</span> <span class="kd">implements</span> <span class="n">Lock</span><span class="o">,</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span>  <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Sync</span> <span class="n">sync</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">//加锁(共享锁)</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">lock</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">sync</span><span class="o">.</span><span class="na">acquireShared</span><span class="o">(</span><span class="mi">1</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span>  <span class="kt">boolean</span> <span class="nf">tryLock</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">tryReadLock</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">tryLock</span><span class="o">(</span><span class="kt">long</span> <span class="n">timeout</span><span class="o">,</span> <span class="n">TimeUnit</span> <span class="n">unit</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">InterruptedException</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">tryAcquireSharedNanos</span><span class="o">(</span><span class="mi">1</span><span class="o">,</span> <span class="n">unit</span><span class="o">.</span><span class="na">toNanos</span><span class="o">(</span><span class="n">timeout</span><span class="o">));</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//解锁</span>
+</span><span class='line'>    <span class="kd">public</span>  <span class="kt">void</span> <span class="nf">unlock</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">sync</span><span class="o">.</span><span class="na">releaseShared</span><span class="o">(</span><span class="mi">1</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>6.3 写锁实现:</h3>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="kd">class</span> <span class="nc">WriteLock</span> <span class="kd">implements</span> <span class="n">Lock</span><span class="o">,</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span>  <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Sync</span> <span class="n">sync</span><span class="o">;</span>
+</span><span class='line'>    <span class="c1">//排他锁</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">lock</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">sync</span><span class="o">.</span><span class="na">acquire</span><span class="o">(</span><span class="mi">1</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">tryLock</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">tryWriteLock</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">tryLock</span><span class="o">(</span><span class="kt">long</span> <span class="n">timeout</span><span class="o">,</span> <span class="n">TimeUnit</span> <span class="n">unit</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">InterruptedException</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">tryAcquireNanos</span><span class="o">(</span><span class="mi">1</span><span class="o">,</span> <span class="n">unit</span><span class="o">.</span><span class="na">toNanos</span><span class="o">(</span><span class="n">timeout</span><span class="o">));</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">unlock</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">sync</span><span class="o">.</span><span class="na">release</span><span class="o">(</span><span class="mi">1</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//是否有当前线程持有</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">isHeldByCurrentThread</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">isHeldExclusively</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//加锁次数</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">getHoldCount</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sync</span><span class="o">.</span><span class="na">getWriteHoldCount</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>6.4 state</h3>
+
+<p>ReentrantLock和ReentrantReadWriteLock的实现很多细节都是由借由AbstractQueuedSynchronizer实现.</p>
+
+<p>AQS中有一个state字段（int类型，32位）用来描述有多少线程获持有锁。在独占锁的时代这个值通常是0或者1（如果是重入的就是重入的次数），在共享锁的时代就是持有锁的数量。</p>
+
+<p>ReentrantLock的锁是排他锁,因此只用来表示重入数.</p>
+
+<p>ReentrantReadWriteLock的读、写锁是相关但是又不一致的，所以需要两个数来描述读锁（共享锁）和写锁（独占锁）的数量。显然现在一个state就不够用了。于是在ReentrantReadWrilteLock里面将这个字段一分为二，高位16位表示共享锁的数量，低位16位表示独占锁的数量（或者重入数量）,这就是上节中提到的为什么共享锁和独占锁的数量(包括重入次数)最大只能是65535的原因了.</p>
+
+<p>我们可以借此分析写入锁获取片段:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">protected</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">tryAcquire</span><span class="o">(</span><span class="kt">int</span> <span class="n">acquires</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Thread</span> <span class="n">current</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">w</span> <span class="o">=</span> <span class="n">exclusiveCount</span><span class="o">(</span><span class="n">c</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">//有读锁或者写锁持有者不是当前线程</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">w</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">current</span> <span class="o">!=</span> <span class="n">getExclusiveOwnerThread</span><span class="o">())</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">w</span> <span class="o">+</span> <span class="n">exclusiveCount</span><span class="o">(</span><span class="n">acquires</span><span class="o">)</span> <span class="o">&gt;</span> <span class="n">MAX_COUNT</span><span class="o">)</span>
+</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">Error</span><span class="o">(</span><span class="s">&quot;Maximum lock count exceeded&quot;</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">((</span><span class="n">w</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="n">writerShouldBlock</span><span class="o">(</span><span class="n">current</span><span class="o">))</span> <span class="o">||</span>
+</span><span class='line'>        <span class="o">!</span><span class="n">compareAndSetState</span><span class="o">(</span><span class="n">c</span><span class="o">,</span> <span class="n">c</span> <span class="o">+</span> <span class="n">acquires</span><span class="o">))</span>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>    <span class="n">setExclusiveOwnerThread</span><span class="o">(</span><span class="n">current</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>exclusiveCount&copy;的实现很简单,就是用掩码去掉高16位(c &amp; EXCLUSIVE_MASK).</p>
+
+<p>writerShouldBlock的实现分为公平锁和非公平锁两个实现,不公平锁的实现</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">writerShouldBlock</span><span class="o">(</span><span class="n">Thread</span> <span class="n">current</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>即在非公平锁中写锁优先级高.</p>
+
+<p>writerShouldBlock公平锁的实现:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">writerShouldBlock</span><span class="o">(</span><span class="n">Thread</span> <span class="n">current</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="c1">// only proceed if queue is empty or current thread at head</span>
+</span><span class='line'>    <span class="k">return</span> <span class="o">!</span><span class="n">isFirst</span><span class="o">(</span><span class="n">current</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>即请求写锁的线程不是等待队列的第一个就会被阻塞,即读锁和写锁是公平排队的.</p>
+
+<p>读锁的获取:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">protected</span> <span class="kd">final</span> <span class="kt">int</span> <span class="nf">tryAcquireShared</span><span class="o">(</span><span class="kt">int</span> <span class="n">unused</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Thread</span> <span class="n">current</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+</span><span class='line'>    <span class="c1">//有写锁并且写锁持有者不是当前线程(考虑写锁可以降级到读锁)</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">exclusiveCount</span><span class="o">(</span><span class="n">c</span><span class="o">)</span> <span class="o">!=</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="n">getExclusiveOwnerThread</span><span class="o">()</span> <span class="o">!=</span> <span class="n">current</span><span class="o">)</span>
+</span><span class='line'>        <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">sharedCount</span><span class="o">(</span><span class="n">c</span><span class="o">)</span> <span class="o">==</span> <span class="n">MAX_COUNT</span><span class="o">)</span>
+</span><span class='line'>        <span class="k">throw</span> <span class="k">new</span> <span class="nf">Error</span><span class="o">(</span><span class="s">&quot;Maximum lock count exceeded&quot;</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(!</span><span class="n">readerShouldBlock</span><span class="o">(</span><span class="n">current</span><span class="o">)</span> <span class="o">&amp;&amp;</span> <span class="n">compareAndSetState</span><span class="o">(</span><span class="n">c</span><span class="o">,</span> <span class="n">c</span> <span class="o">+</span> <span class="n">SHARED_UNIT</span><span class="o">)){</span>
+</span><span class='line'>        <span class="n">HoldCounter</span> <span class="n">rh</span> <span class="o">=</span> <span class="n">cachedHoldCounter</span><span class="o">;</span> <span class="c1">//首先访问缓存</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">rh</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">rh</span><span class="o">.</span><span class="na">tid</span> <span class="o">!=</span> <span class="n">current</span><span class="o">.</span><span class="na">getId</span><span class="o">())</span>
+</span><span class='line'>            <span class="n">cachedHoldCounter</span> <span class="o">=</span> <span class="n">rh</span> <span class="o">=</span> <span class="n">readHolds</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>
+</span><span class='line'>        <span class="n">rh</span><span class="o">.</span><span class="na">count</span><span class="o">++;</span>
+</span><span class='line'>        <span class="k">return</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">fullTryAcquireShared</span><span class="o">(</span><span class="n">current</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这里注意到在读锁的获取和释放都用到了一个HoldCounter类,下面会介绍.</p>
+
+<h3>6.5 HoldCounter</h3>
+
+<p>在ReentrantReadWriteLock.Sync中有包含几个内部类:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="cm">/**</span>
+</span><span class='line'><span class="cm"> * 每个线程特定的 read 持有计数。存放在ThreadLocal</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="kd">static</span> <span class="kd">final</span> <span class="kd">class</span> <span class="nc">HoldCounter</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">count</span><span class="o">;</span>
+</span><span class='line'>    <span class="c1">// 用id而不是引用是为了避免保留垃圾</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="kt">long</span> <span class="n">tid</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">().</span><span class="na">getId</span><span class="o">();</span>
+</span><span class='line'>    <span class="cm">/** Decrement if positive; return previous value */</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="nf">tryDecrement</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">count</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>            <span class="n">count</span> <span class="o">=</span> <span class="n">c</span> <span class="o">-</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">c</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="cm">/**</span>
+</span><span class='line'><span class="cm"> * ThreadLocal subclass. Easiest to explicitly define for sake</span>
+</span><span class='line'><span class="cm"> * of deserialization mechanics.</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="kd">static</span> <span class="kd">final</span> <span class="kd">class</span> <span class="nc">ThreadLocalHoldCounter</span> <span class="kd">extends</span> <span class="n">ThreadLocal</span><span class="o">&lt;</span><span class="n">HoldCounter</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="n">HoldCounter</span> <span class="nf">initialValue</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="k">new</span> <span class="nf">HoldCounter</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">static</span> <span class="kd">abstract</span> <span class="kd">class</span> <span class="nc">Sync</span> <span class="kd">extends</span> <span class="n">AbstractQueuedSynchronizer</span> <span class="o">{</span>
+</span><span class='line'>    <span class="c1">//当前线程持有读锁的数目</span>
+</span><span class='line'>    <span class="kd">transient</span> <span class="n">ThreadLocalHoldCounter</span> <span class="n">readHolds</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 最近一个成功获取读锁的线程的计数。</span>
+</span><span class='line'><span class="cm">     * 通常情况,下一个要释放的线程是最后一个获取线程</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">transient</span> <span class="n">HoldCounter</span> <span class="n">cachedHoldCounter</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>可以看到这里使用ThreadLocal将HoldCounter绑定到当前线程上，同时HoldCounter也持有线程Id，这样在释放锁的时候才能知道ReadWriteLock里面缓存的上一个读取线程（cachedHoldCounter）是否是当前线程。这样做的好处是可以减少ThreadLocal.get()的次数，因为这也是一个耗时操作。</p>
+
+<p>需要说明的是这样HoldCounter绑定线程id而不绑定线程对象的原因是避免HoldCounter和ThreadLocal互相绑定而GC难以释放它们,所以其实这样做只是为了帮助GC快速回收对象而已。</p>
+
+<h1>7.参考</h1>
+
+<p><a href="http://tutorials.jenkov.com/java-concurrency/locks.html">http://tutorials.jenkov.com/java-concurrency/locks.html</a>
+<a href="http://tutorials.jenkov.com/java-concurrency/starvation-and-fairness.html">http://tutorials.jenkov.com/java-concurrency/starvation-and-fairness.html</a>
+<a href="http://ifeve.com/java-concurrency-thread-directory/">http://ifeve.com/java-concurrency-thread-directory/</a>
+<a href="http://coderbee.net/index.php/concurrent/20131209/618">http://coderbee.net/index.php/concurrent/20131209/618</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -6165,376 +8043,6 @@ Fieldref, Methodref, InterfaceMethodrefA  点号分割的一对值,每个值指�
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/09/04/linux-memory-usage/">Linux Memory Usage</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-09-04T23:37:01+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>4</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>11:37 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h1>1.问题</h1>
-
-<p>这段时间最易个图片迁移的工作，涉及60W+图片的迁移，用java写的临时代码，部署到图片服务器上。因为服务器还有其他服务，看日志的同时，也再看迁移的应用对服务器CPU和内存使用的影响。使用top命令猛然发现Mem的used狂涨而free狂降，下面是两个时刻的top情况：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>top - 15:41:56 up 176 days, 19:46,  2 users,  load average: 0.34, 0.32, 0.28
-</span><span class='line'>Tasks: 521 total,   1 running, 520 sleeping,   0 stopped,   0 zombie
-</span><span class='line'>Cpu(s):  0.1%us,  0.1%sy,  0.0%ni, 98.6%id,  1.2%wa,  0.0%hi,  0.0%si,  0.0%st
-</span><span class='line'>Mem:  66057208k total, 57548808k used,  8508400k free,  1154764k buffers
-</span><span class='line'>Swap: 50331640k total,        0k used, 50331640k free, 47054444k cached
-</span><span class='line'>
-</span><span class='line'>top - 15:43:45 up 176 days, 19:48,  2 users,  load average: 0.25, 0.30, 0.27
-</span><span class='line'>Tasks: 521 total,   1 running, 520 sleeping,   0 stopped,   0 zombie
-</span><span class='line'>Cpu(s):  0.2%us,  0.0%sy,  0.0%ni, 99.7%id,  0.0%wa,  0.0%hi,  0.0%si,  0.0%st
-</span><span class='line'>Mem:  66057208k total, 57941160k used,  8116048k free,  1154764k buffers
-</span><span class='line'>Swap: 50331640k total,        0k used, 50331640k free, 47448656k cached</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.疑惑</h1>
-
-<p>第一想法是内存泄漏了，之前写惯C++代码Windows下碰到过一次明显的内存泄漏，情况和这个完全类似。</p>
-
-<p>但是这个是java代码，java想写出内存泄漏的代码不容易。</p>
-
-<h1>3.原因</h1>
-
-<p>问了个老鸟，原因是Linux的内存管理和Windows不一样。在Linux下，无论物理内存有多大都将其充份利用，会将应用程序调用过的硬盘数据保留在内存，利用内存读写的高速特性来提高Linux系统的数据访问性能。</p>
-
-<h3>3.1 linux中内存是如何使用</h3>
-
-<p>当有应用需要读写磁盘数据时，由系统把相关数据从磁盘读取到内存，如果物理内存不够，则把内存中的部分数据导入到磁盘，从而把磁盘的部分空间当作虚拟内存来使用，也称为Swap。如果给所有应用分配足够内存后，物理内存还有剩余，linux会尽量再利用这些空闲内存，以提高整体I/O效率，其方法是把这部分剩余内存再划分为cache及buffer两部分加以利用。</p>
-
-<p>从磁盘读取到内存的数据在被相关应用程序读取后，如果有剩余内存，则这部分数据会存入cache，以备第2次读取时，避免重新读取磁盘。当一个应用程序在内存中修改过数据后，因为写入磁盘速度相对较低，在有空闲内存的情况下，这些数据先存入buffer，在以后某个时间再写入磁盘，从而应用程序可以继续后面的操作，而不必等待这些数据写入磁盘的操作完成。</p>
-
-<p>如果在某个时刻，系统需要更多的内存，则会把cache部分擦除，并把buffer中的内容写入磁盘，从而把这两部分内存释放给系统使用，这样再次读取cache中的内容时，就需要重新从磁盘读取了。</p>
-
-<p>通过以上分析可以得知，Mem中的空闲物理内存（free）不多，不一定表示系统运行状态很差，因为内存的cache及buffer部分可以随时被重用，在某种意义上，这两部分内存也可以看作是额外的空闲内存。</p>
-
-<h1>4.Linux和Windows内存管理的差异</h1>
-
-<p>无论物理内存有多大，Linux都将其充份利用，将一些程序调用过的硬盘数据读入内存，利用内存读写的高速特性来提高Linux系统的数据访问性能。</p>
-
-<p>而Windows 是只在需要内存时，才为应用程序分配内存，并不能充分利用大容量的内存空间。</p>
-
-<p>换句话说，每增加一些物理内存，Linux 都将能充分利用起来，发挥了硬件投资带来的好处，而Windows只将其做为摆设，即使增加8GB甚至更大。</p>
-
-<h1>5.什么是Linux的cache，buffers，Swap</h1>
-
-<p>Cached表示page cache大小，Buffers表示内存中块I/O缓冲(buffer cache)的大小。通常而言，Cached很关键，Buffers则影响不大。</p>
-
-<p>简单来说，磁盘的操作有逻辑级（文件系统）和物理级（磁盘块），page cache对应的就是用来缓存逻辑级数据，buffer cache用来缓存物理级数据。</p>
-
-<p>假设我们通过文件系统操作文件，那么文件将被缓存到Page Cache，如果需要刷新文件的时候，page cache将交给buffer cache去完成，因为buffer cache就是缓存磁盘块的。
-也就是说，直接去操作文件，那就是page cache区缓存，用dd等命令直接操作磁盘块，就是buffer cache缓存的东西。</p>
-
-<h3>5.1 buffer</h3>
-
-<p>buffer是作为buffer cache的内存，是块设备的读写缓冲区。</p>
-
-<p>buffer cache也叫块缓冲，由物理内存分配，是对物理磁盘上的一个磁盘块（磁盘的组织单位）进行的缓冲。</p>
-
-<p>设立buffer cache的目的是为在程序多次访问同一磁盘块时，减少访问时间。系统将磁盘块首先读入buffer cache，如果cache空间不够时，会通过一定的策略将一些过时或多次未被访问的buffer cache清空。程序在下一次访问磁盘时首先查看是否在buffer cache找到所需块，命中可减少访问磁盘时间,不命中时需重新读入buffer cache。</p>
-
-<p>对buffer cache 的写分为两种，一是直接写，这是程序在写buffer cache后也写磁盘，要读时从buffer cache 上读，二是后台写，程序在写完buffer cache 后并不立即写磁盘，因为有可能程序在很短时间内又需要写文件，如果直接写，就需多次写磁盘了,这样效率很低，而是过一段时间后由后台写(批量写)，减少了多次访磁盘的时间。</p>
-
-<p>buffer cache 是由物理内存分配，linux系统为提高内存使用率，会将空闲内存全分给buffer cache ，当其他程序需要更多内存时，系统会减少cahce大小。</p>
-
-<h3>5.2 cache</h3>
-
-<p>cache是page cache的内存, 文件系统的cache。</p>
-
-<p>page cache也叫页缓冲或文件缓冲，文件读取是由外存上不连续的几个磁盘块，到buffer cache，然后组成page cache，然后供给应用程序。</p>
-
-<p>page cache在linux读写文件时，它用于缓存文件的逻辑内容，从而加快对磁盘上映像和数据的访问。具体说是加速对文件内容的访问，buffer cache缓存文件的具体内容——物理磁盘上的磁盘块，这是加速对磁盘的访问。</p>
-
-<h3>5.3 Swap</h3>
-
-<p>swap space交换空间，是虚拟内存的表现形式。系统为了应付一些需要大量内存的应用，而将磁盘上的空间做内存使用，当物理内存不够用时，将其中一些暂时不需的数据交换到交换空间。</p>
-
-<p>做虚拟内存的好处是让进程以为好像可以访问整个系统物理内存。因为在一个进程访问数据时，其他进程的数据会被交换到交换空间中。</p>
-
-<h1>6.Linux内存常用命令</h1>
-
-<h3>6.1 top</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>top - 16:13:52 up 1 day,  6:01, 16 users,  load average: 2.89, 2.27, 2.14
-</span><span class='line'>Tasks: 274 total,   7 running, 266 sleeping,   0 stopped,   1 zombie
-</span><span class='line'>%Cpu(s): 44.3 us, 16.6 sy,  0.0 ni, 38.4 id,  0.6 wa,  0.0 hi,  0.1 si,  0.0 st
-</span><span class='line'>KiB Mem:   8047584 total,  7905356 used,   142228 free,    73476 buffers
-</span><span class='line'>KiB Swap: 15879164 total,    26872 used, 15852292 free,  1962736 cached
-</span><span class='line'>
-</span><span class='line'>PID USER      PR  NI  VIRT  RES  SHR S  %CPU %MEM    TIME+  COMMAND
-</span><span class='line'>29121 xiaobaoq  20   0 3938m 2.1g 2.1g S  34.2 27.7 119:28.33 VirtualBox
-</span><span class='line'>2548 xiaobaoq  20   0 1371m  79m  19m R  31.2  1.0 131:40.03 compiz</span></code></pre></td></tr></table></div></figure>
-
-
-<p>字段的意义如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>PID：进程的ID
-</span><span class='line'>　　USER：进程所有者
-</span><span class='line'>　　PR：进程的优先级别，越小越优先被执行
-</span><span class='line'>　　NInice：值
-</span><span class='line'>　　VIRT：进程占用的虚拟内存
-</span><span class='line'>　　RES：进程占用的物理内存
-</span><span class='line'>　　SHR：进程使用的共享内存
-</span><span class='line'>　　S：进程的状态。S表示休眠，R表示正在运行，Z表示僵死状态，N表示该进程优先值为负数
-</span><span class='line'>　　%CPU：进程占用CPU的使用率
-</span><span class='line'>　　%MEM：进程使用的物理内存和总内存的百分比
-</span><span class='line'>　　TIME+：该进程启动后占用的总的CPU时间，即占用CPU使用时间的累加值。
-</span><span class='line'>　　COMMAND：进程启动命令名称</span></code></pre></td></tr></table></div></figure>
-
-
-<p>top命令提供了额外的输入，常用的命令包括（注意是大写）：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>　　P：按%CPU使用率排行
-</span><span class='line'>　　T：按MITE+排行
-</span><span class='line'>　　M：按%MEM排行</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>6.2 free</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ free -m
-</span><span class='line'>             total       used       free     shared    buffers     cached
-</span><span class='line'>Mem:          7858       7687        171          0         71       1889
-</span><span class='line'>-/+ buffers/cache:       5726       2132
-</span><span class='line'>Swap:        15506         26      15480</span></code></pre></td></tr></table></div></figure>
-
-
-<p>-m表示单位为M，可以使用-g表示单位为G，默认为K。
--/+ buffers/cache表示物理内存的缓存统计，Used为4506，即实际使用的buffers与cache 总量，也是实际使用的内存总量;Free为3352, 即未被使用的buffers与cache和未被分配的内存之和，这就是系统当前实际可用内存。</p>
-
-<p>Swap表示硬盘上交换分区的使用情况。只有mem被当前进程实际占用完,即没有了buffers和cache时，才会使用到swap。</p>
-
-<p>注意一下几个关系：
-Free（-/+ buffers/cache行）= Free(Mem)+buffers(Mem)+Cached(Mem)</p>
-
-<p>Used(Mem) = Used(-/+ buffers/cache)+ buffers(Mem) + Cached(Mem)</p>
-
-<p>total（Mem） = used(-/+ buffers/cache) + free(-/+ buffers/cache)</p>
-
-<p>从应用程序角度来看，对于应用程序来说，buffers/cached 是等于可用的，因为buffer/cached是为了提高文件读取的性能，当应用程序需在用到内存的时候，buffer/cached会很快地被回收。所以从应用程序的角度来说，可用内存=系统free memory+buffers+cached.</p>
-
-<h3>6.3 /proc/meminfo</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ cat /proc/meminfo
-</span><span class='line'>MemTotal:        8047584 kB
-</span><span class='line'>MemFree:          162416 kB
-</span><span class='line'>Buffers:           73772 kB
-</span><span class='line'>Cached:          1943380 kB
-</span><span class='line'>SwapCached:         3860 kB
-</span><span class='line'>Active:          3636032 kB
-</span><span class='line'>Inactive:        1608472 kB
-</span><span class='line'>Active(anon):    3092468 kB
-</span><span class='line'>Inactive(anon):  1121848 kB
-</span><span class='line'>Active(file):     543564 kB
-</span><span class='line'>Inactive(file):   486624 kB
-</span><span class='line'>Unevictable:          48 kB
-</span><span class='line'>Mlocked:              48 kB
-</span><span class='line'>SwapTotal:      15879164 kB
-</span><span class='line'>SwapFree:       15852292 kB
-</span><span class='line'>Dirty:               664 kB
-</span><span class='line'>Writeback:             0 kB
-</span><span class='line'>AnonPages:       3223572 kB
-</span><span class='line'>Mapped:          2597276 kB
-</span><span class='line'>Shmem:            986964 kB
-</span><span class='line'>Slab:             311976 kB
-</span><span class='line'>SReclaimable:     247580 kB
-</span><span class='line'>SUnreclaim:        64396 kB
-</span><span class='line'>KernelStack:        6808 kB
-</span><span class='line'>PageTables:        61012 kB
-</span><span class='line'>NFS_Unstable:          0 kB
-</span><span class='line'>Bounce:                0 kB
-</span><span class='line'>WritebackTmp:          0 kB
-</span><span class='line'>CommitLimit:    19902956 kB
-</span><span class='line'>Committed_AS:   11365592 kB
-</span><span class='line'>VmallocTotal:   34359738367 kB
-</span><span class='line'>VmallocUsed:      360776 kB
-</span><span class='line'>VmallocChunk:   34359367876 kB
-</span><span class='line'>HardwareCorrupted:     0 kB
-</span><span class='line'>AnonHugePages:         0 kB
-</span><span class='line'>HugePages_Total:       0
-</span><span class='line'>HugePages_Free:        0
-</span><span class='line'>HugePages_Rsvd:        0
-</span><span class='line'>HugePages_Surp:        0
-</span><span class='line'>Hugepagesize:       2048 kB
-</span><span class='line'>DirectMap4k:       71156 kB
-</span><span class='line'>DirectMap2M:     8187904 kB</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中的MemTotal, MemFree, Buffers, Cached, SwapTotal, SwapFree和free命令中的值对应起来。</p>
-
-<p>Cached is the size of the page cache。
-Buffers is the size of in-memory block I/O buffer。</p>
-
-<h3>6.4 vmstat</h3>
-
-<p>vmstat -s显示内存使用的统计信息</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ vmstat -s
-</span><span class='line'>      8047584 K total memory
-</span><span class='line'>      7841504 K used memory
-</span><span class='line'>      3624652 K active memory
-</span><span class='line'>      1584740 K inactive memory
-</span><span class='line'>       206080 K free memory
-</span><span class='line'>        69252 K buffer memory
-</span><span class='line'>      1890844 K swap cache
-</span><span class='line'>     15879164 K total swap
-</span><span class='line'>        39488 K used swap
-</span><span class='line'>     15839676 K free swap
-</span><span class='line'>      8744974 non-nice user cpu ticks
-</span><span class='line'>          345 nice user cpu ticks
-</span><span class='line'>      4309209 system cpu ticks
-</span><span class='line'>     29496503 idle cpu ticks
-</span><span class='line'>       240289 IO-wait cpu ticks
-</span><span class='line'>           19 IRQ cpu ticks
-</span><span class='line'>        14705 softirq cpu ticks
-</span><span class='line'>            0 stolen cpu ticks
-</span><span class='line'>      7878551 pages paged in
-</span><span class='line'>     18640168 pages paged out
-</span><span class='line'>          976 pages swapped in
-</span><span class='line'>         9899 pages swapped out
-</span><span class='line'>    664925325 interrupts
-</span><span class='line'>   1290574510 CPU context switches
-</span><span class='line'>   1409739162 boot time
-</span><span class='line'>        36758 forks</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>参考</h1>
-
-<ol>
-<li><a href="http://www.linuxintheshell.org/2012/06/05/episode-008-free-understanding-linux-memory-usage/">http://www.linuxintheshell.org/2012/06/05/episode-008-free-understanding-linux-memory-usage/</a></li>
-</ol>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/8">&larr; Older</a>
@@ -6554,6 +8062,10 @@ Buffers is the size of in-memory block I/O buffer。</p>
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/09/03/luceneru-men/">Lucene入门</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/09/03/mysql-join/">Mysql Join</a>
       </li>
     
@@ -6567,10 +8079,6 @@ Buffers is the size of in-memory block I/O buffer。</p>
     
       <li class="post">
         <a href="/blog/2015/08/22/mybatiskong-wherelan-jie-qi/">MyBatis空where拦截器</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/08/12/mysql-packettoobigexception/">Mysql PacketTooBigException</a>
       </li>
     
   </ul>
@@ -6594,7 +8102,7 @@ Buffers is the size of in-memory block I/O buffer。</p>
 <li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
-<li><a class='list-group-item' href='/blog/categories/search/'>search (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/search/'>search (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/spring/'>spring (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
