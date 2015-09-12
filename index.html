@@ -9,7 +9,7 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="Crate再项目中扮演越来越重要的角色.但是很多时候我对Crate,包括其下层的ElasticSearch以及Lucene都是一知半解,甚至可以说是完全不懂.因为没看过源代码.所以这段时间会集中学习一下Lucene和ElasticSearch的源码. 从Lucene开始.会包含以下内容: 1. &hellip;">
+  <meta name="description" content="根据上篇文章,我们大致知道Lucene创建索引和搜索的一个过程: 这里主要分析一下Lucene的代码结构,包括理由Lucene API实现一个简单建立索引和搜索的小例子. 由于我们的服务器上crate是基于Lucene 4.10.3版本.所以我这里采用的Lucene版本也是4.10版本,小版本是4 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -69,6 +69,414 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/09/09/lunecezheng-ti-jia-gou/">Lunece整体架构</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-09-09T22:19:51+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>9</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>10:19 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>根据上篇文章,我们大致知道Lucene创建索引和搜索的一个过程:</p>
+
+<p><img src="/images/lucene/Lucene_index_and_search.jpg"></p>
+
+<p>这里主要分析一下Lucene的代码结构,包括理由Lucene API实现一个简单建立索引和搜索的小例子.</p>
+
+<p>由于我们的服务器上crate是基于Lucene 4.10.3版本.所以我这里采用的Lucene版本也是4.10版本,小版本是4.10.4,是Lucene 4的最后一个版本,大约2014年9月推出,还比较新鲜.目前已经到了5.3版本.</p>
+
+<h2>1. 源码结构</h2>
+
+<p>首先看一下Lucene的源码结构,Lucene-core主要代码包结构如下:</p>
+
+<p><img src="/images/lucene/Lucene_source_struct.png"></p>
+
+<p>每个包下面都有package.html文件介绍包的作用.各个包的作用如下:</p>
+
+<pre><code>1.analysis
+分词模块,包含将文本转化为可索引化/可搜索化的词元(convert text into indexable/searchable tokens)的API和实现.包括org.apache.lucene.analysis.Analyzer和其相关类.
+2.codecs
+包含自定义底层索引的编码和索引结构的模块,还包括索引的压缩,索引版本管理等.
+3.document
+定义了被索引和搜索内容的用户层面的逻辑定义,就是我们熟悉的Document,各种类型的Filed及其属性定义等.同事也提供了一下org.apache.lucene.document.Document和org.apache.lucene.index.IndexableField相关的工具类.
+4.index
+包含了索引维护(创建,更新,删除)和访问(读)的逻辑.包括我们熟悉的IndexReader,IndexWriter等.
+5.search
+索引的搜索.包括相似度的定义(similarities包),权重计算,文档评分计算,布尔模型,搜索结果搜集等逻辑.
+6.store
+索引底层二进制数据的读写,包括索引文件的Buffered的流的实现等,还包括一些限流策略的实现(RateLimiter)等.
+7.util
+工具类,如排序器,数学工具类,优先级队列等工具的实现等.
+</code></pre>
+
+<p>包基本上和本文开头的图对应起来,其中的QueryParser再Lucene4中是一个单独的jar包:</p>
+
+<p><img src="/images/lucene/Lucene_code_package_usage.jpg"></p>
+
+<h2>2. 主要类</h2>
+
+<p>首先上一个Lucene的简单的Demo,基本上是参考官网提供的Demo,自己手动修改了点,作用就是索引一个目录下的文本文件,在此基础上提供搜索服务.其中Indexer用于创建索引,Searcher作为搜索入口,接受用户输入的Query词并执行搜索.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+<span class='line-number'>111</span>
+<span class='line-number'>112</span>
+<span class='line-number'>113</span>
+<span class='line-number'>114</span>
+<span class='line-number'>115</span>
+<span class='line-number'>116</span>
+<span class='line-number'>117</span>
+<span class='line-number'>118</span>
+<span class='line-number'>119</span>
+<span class='line-number'>120</span>
+<span class='line-number'>121</span>
+<span class='line-number'>122</span>
+<span class='line-number'>123</span>
+<span class='line-number'>124</span>
+<span class='line-number'>125</span>
+<span class='line-number'>126</span>
+<span class='line-number'>127</span>
+<span class='line-number'>128</span>
+<span class='line-number'>129</span>
+<span class='line-number'>130</span>
+<span class='line-number'>131</span>
+<span class='line-number'>132</span>
+<span class='line-number'>133</span>
+<span class='line-number'>134</span>
+<span class='line-number'>135</span>
+<span class='line-number'>136</span>
+<span class='line-number'>137</span>
+<span class='line-number'>138</span>
+<span class='line-number'>139</span>
+<span class='line-number'>140</span>
+<span class='line-number'>141</span>
+<span class='line-number'>142</span>
+<span class='line-number'>143</span>
+<span class='line-number'>144</span>
+<span class='line-number'>145</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 创建索引
+</span><span class='line'> *
+</span><span class='line'> * @author: xiaobaoqiu  Date: 15-9-8 Time: 下午4:04
+</span><span class='line'> */
+</span><span class='line'>public final class Indexer {
+</span><span class='line'>
+</span><span class='line'>    public static void main(String[] args) {
+</span><span class='line'>        indexDocs(CommonConfig.SOURCE_FILE_DIR, CommonConfig.INDEX_FILE_DIR, true);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 构建磁盘索引
+</span><span class='line'>     *
+</span><span class='line'>     * @param dirPath 原始文件
+</span><span class='line'>     * @param indexPath 索引文件存放路径
+</span><span class='line'>     * @param create    创建or更新
+</span><span class='line'>     */
+</span><span class='line'>    public static void indexDocs(String dirPath, String indexPath, boolean create) {
+</span><span class='line'>        try {
+</span><span class='line'>            Directory dir = FSDirectory.open(new File(indexPath));
+</span><span class='line'>            Analyzer analyzer = new StandardAnalyzer(Version.LUCENE_4_10_0);
+</span><span class='line'>            IndexWriterConfig iwc = new IndexWriterConfig(Version.LUCENE_4_10_0, analyzer);
+</span><span class='line'>
+</span><span class='line'>            if (create) {
+</span><span class='line'>                iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
+</span><span class='line'>            } else {
+</span><span class='line'>                iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
+</span><span class='line'>            }
+</span><span class='line'>
+</span><span class='line'>            IndexWriter writer = new IndexWriter(dir, iwc);
+</span><span class='line'>            doIndexDocs(writer, new File(dirPath));
+</span><span class='line'>
+</span><span class='line'>            System.out.println("Build index finished...");
+</span><span class='line'>            writer.close();
+</span><span class='line'>        }catch (IOException ioe) {
+</span><span class='line'>            //do something...
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    static void doIndexDocs(IndexWriter writer, File file) throws IOException {
+</span><span class='line'>        if (!file.canRead()) {
+</span><span class='line'>            System.out.println("文件不可读:" + file.getAbsolutePath());
+</span><span class='line'>            return;
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        //文件夹则索引文件夹下的索引文件
+</span><span class='line'>        if (file.isDirectory()) {
+</span><span class='line'>            String[] files = file.list();
+</span><span class='line'>            if (files != null) {
+</span><span class='line'>                for (int i = 0; i &lt; files.length; i++) {
+</span><span class='line'>                    doIndexDocs(writer, new File(file, files[i]));
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        } else {
+</span><span class='line'>            doIndexFile(writer, file);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 索引一个文件
+</span><span class='line'>     *
+</span><span class='line'>     * @param writer
+</span><span class='line'>     * @param file
+</span><span class='line'>     */
+</span><span class='line'>    private static void doIndexFile(IndexWriter writer, File file) throws IOException{
+</span><span class='line'>        //单个文件
+</span><span class='line'>        FileInputStream fis;
+</span><span class='line'>        try {
+</span><span class='line'>            fis = new FileInputStream(file);
+</span><span class='line'>        } catch (FileNotFoundException fnfe) {
+</span><span class='line'>            //do nothing
+</span><span class='line'>            return;
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        try {
+</span><span class='line'>            // 创建一个新的空的Document
+</span><span class='line'>            Document doc = new Document();
+</span><span class='line'>
+</span><span class='line'>            //文件路径字段
+</span><span class='line'>            doc.add(new StringField(CommonConfig.PATH_FIELD_NAME, file.getPath(), Field.Store.YES));
+</span><span class='line'>            //文件最后修改时间字段
+</span><span class='line'>            doc.add(new LongField(CommonConfig.MODIFIED_FIELD_NAME, file.lastModified(), Field.Store.NO));
+</span><span class='line'>            //文件内容,不存储原始串
+</span><span class='line'>            doc.add(new TextField(CommonConfig.CONTENTS_FIELD_NAME, new BufferedReader(new InputStreamReader(fis, StandardCharsets.UTF_8))));
+</span><span class='line'>
+</span><span class='line'>            //新建索引 or 更新索引
+</span><span class='line'>            if (writer.getConfig().getOpenMode() == IndexWriterConfig.OpenMode.CREATE) {
+</span><span class='line'>                writer.addDocument(doc);
+</span><span class='line'>            } else {
+</span><span class='line'>                writer.updateDocument(new Term("path", file.getPath()), doc);
+</span><span class='line'>            }
+</span><span class='line'>        } finally {
+</span><span class='line'>            fis.close();
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 查询索引
+</span><span class='line'> * 接受用户输入作为Query词
+</span><span class='line'> *
+</span><span class='line'> * @author: xiaobaoqiu  Date: 15-9-8 Time: 下午4:09
+</span><span class='line'> */
+</span><span class='line'>public final class Searcher {
+</span><span class='line'>
+</span><span class='line'>    public static void main(String[] args) throws Exception {
+</span><span class='line'>        search(CommonConfig.INDEX_FILE_DIR, CommonConfig.CONTENTS_FIELD_NAME);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public static void search(String indexPath, String field) throws Exception {
+</span><span class='line'>        IndexReader reader = DirectoryReader.open(FSDirectory.open(new File(indexPath)));
+</span><span class='line'>        IndexSearcher searcher = new IndexSearcher(reader);
+</span><span class='line'>        Analyzer analyzer = new StandardAnalyzer(Version.LUCENE_4_10_0);
+</span><span class='line'>        QueryParser parser = new QueryParser(Version.LUCENE_4_10_0, field, analyzer);
+</span><span class='line'>
+</span><span class='line'>        //接受用户输入
+</span><span class='line'>        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+</span><span class='line'>        String queryString = null;
+</span><span class='line'>        while (StringUtils.isNotEmpty(queryString = in.readLine())) {
+</span><span class='line'>            Query query = parser.parse(queryString.trim());
+</span><span class='line'>
+</span><span class='line'>            doSearch(searcher, query);
+</span><span class='line'>        }
+</span><span class='line'>        reader.close();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public static void doSearch(IndexSearcher searcher, Query query) throws IOException {
+</span><span class='line'>        // 搜索 CommonConfig.SEARCH_MAX_ITEM_COUNT 个数据
+</span><span class='line'>        TopDocs results = searcher.search(query, CommonConfig.SEARCH_MAX_ITEM_COUNT);
+</span><span class='line'>        ScoreDoc[] hits = results.scoreDocs;
+</span><span class='line'>        int numTotalHits = results.totalHits;
+</span><span class='line'>        System.out.println(numTotalHits + " total matching documents");
+</span><span class='line'>
+</span><span class='line'>        if (ArrayUtils.isEmpty(hits)) return;
+</span><span class='line'>
+</span><span class='line'>        for (ScoreDoc hit : hits) {
+</span><span class='line'>            System.out.println();
+</span><span class='line'>            Document hitDoc = searcher.doc(hit.doc);
+</span><span class='line'>            System.out.println(CommonConfig.PATH_FIELD_NAME + " = " + hitDoc.get(CommonConfig.PATH_FIELD_NAME) +
+</span><span class='line'>                    "\n" + CommonConfig.MODIFIED_FIELD_NAME + " = " + hitDoc.get(CommonConfig.MODIFIED_FIELD_NAME) +
+</span><span class='line'>                    "\n" + CommonConfig.CONTENTS_FIELD_NAME + " = " + hitDoc.get(CommonConfig.CONTENTS_FIELD_NAME));
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>输入的文件及生成的索引:</p>
+
+<p><img src="/images/lucene/Lucene_demo_input_output.png"></p>
+
+<p>建立索引的基本过程如下:</p>
+
+<pre><code>1.FSDirectory定义索引文件存放目录
+2.选择分词使用的Analyzer.
+3.选择索引文件版本信息Version,将其和Analyzer组成IndexWriterConfig.
+4.利用IndexWriterConfig生成一个IndexWriter,用于索引文件的变更;
+5.根据原始文件生成一些列的Document,每个文档中包含多个Field,设置每个Field是否分词,释放存储等属性;
+6.使用IndexWriter将文档写入索引文件.
+</code></pre>
+
+<p>搜索的基本过程如下:</p>
+
+<pre><code>1.根据索引文件的目录生成一个IndexReader,将索引文件读到内存中.
+2.生成一个IndexSearcher用于搜索;
+3.选择一个分词器;
+4.定义用户输入Query的解析器QueryParser;
+5.接受用户输入,执行搜索过程,得到搜索结果用TopDocs表示,其中包含了命中文档的数目以及命中文档的id集合;
+6.根据文档id获取对应的文档,从文档中获取各个Field信息;
+</code></pre>
+
+<h4>2.1 主要类</h4>
+
+<p>首先介绍一下其中涉及到的主要的类:</p>
+
+<ul>
+<li>FSDirectory</li>
+<li>Analyzer,StandardAnalyzer</li>
+<li>Version</li>
+<li>IndexWriterConfig</li>
+<li>IndexWriter</li>
+<li>Document</li>
+<li>StringField,LongField,TextField</li>
+<li>IndexReader,DirectoryReader</li>
+<li>IndexSearcher</li>
+<li>QueryParser</li>
+<li>Query</li>
+<li>TopDocs</li>
+<li>ScoreDoc</li>
+</ul>
+
+
+<h2>3. 建立索引流程</h2>
+
+<h2>4. 搜索流程</h2>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -3170,44 +3578,6 @@ PropertyUtils的实现和BeanUtils的实现基本一致。</li>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/07/17/fen-ci/">分词</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-07-17T01:24:30+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>17</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>1:24 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近有需求需要使用crate搜索时候的分词功能,正好研究一下搜索中分词相关的基础知识
-.</p>
-
-<h1>1.什么是分词</h1>
-
-<h1>2.为什么要分词</h1>
-
-<h1>3.怎么做分词</h1>
-
-<p>参考：<a href="http://my.oschina.net/apdplat/blog/412921">http://my.oschina.net/apdplat/blog/412921</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/2">&larr; Older</a>
@@ -3225,6 +3595,10 @@ PropertyUtils的实现和BeanUtils的实现基本一致。</li>
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/09/09/lunecezheng-ti-jia-gou/">Lunece整体架构</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/09/03/luceneru-men/">Lucene入门</a>
       </li>
     
@@ -3238,10 +3612,6 @@ PropertyUtils的实现和BeanUtils的实现基本一致。</li>
     
       <li class="post">
         <a href="/blog/2015/08/22/chu-li-sqlchao-shi/">处理sql超时</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/08/22/mybatiskong-wherelan-jie-qi/">MyBatis空where拦截器</a>
       </li>
     
   </ul>
@@ -3265,7 +3635,7 @@ PropertyUtils的实现和BeanUtils的实现基本一致。</li>
 <li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
-<li><a class='list-group-item' href='/blog/categories/search/'>search (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/search/'>search (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/spring/'>spring (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>

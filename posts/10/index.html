@@ -9,44 +9,11 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="环境:Ubuntu 13.04 1.保存下述代码为 sublime-imfix.c 文件 1
+  <meta name="description" content="第二章：线程安全 1.什么是线程安全 当多个线程并发的访问一个类,如果不用考虑多个线程运行时的调度执行顺序,且不需要做额外的同步及代码调用时候的限制,这个类的结果依然是正确的,则可以称之为线程安全. 无状态的类是线程安全的,无状态指不包含域也没有引用其他类的域.如下面这个类: 1
 2
 3
 4
-5
-6
-7
-8
-9
-10
-11
-12
-13
-14
-15
-16
-17
-18
-19
-20
-21
-22
-23
-24
-25
-26
-27
-28
-29
-30
-31
-32
-33
-34
-35
-36
-37
-38 &hellip;">
+5 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -106,6 +73,245 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/05/30/java-concurrency-in-practice-2/">Java Concurrency in Practice 2 : 线程安全</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-05-30T15:52:06+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>30</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>3:52 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p><strong>第二章：线程安全</strong></p>
+
+<h3>1.什么是线程安全</h3>
+
+<p>当多个线程并发的访问一个类,如果不用考虑多个线程运行时的调度执行顺序,且不需要做额外的同步及代码调用时候的限制,这个类的结果依然是正确的,则可以称之为线程安全.</p>
+
+<p>无状态的类是线程安全的,无状态指不包含域也没有引用其他类的域.如下面这个类:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">StateLess</span> <span class="kd">extends</span> <span class="n">HttpServlet</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 从请求中获取两个数字,并计算两个数字的最大公约数,返回</span>
+</span><span class='line'><span class="cm">     *</span>
+</span><span class='line'><span class="cm">     * @param req</span>
+</span><span class='line'><span class="cm">     * @param resp</span>
+</span><span class='line'><span class="cm">     * @throws ServletException</span>
+</span><span class='line'><span class="cm">     * @throws IOException</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">protected</span> <span class="kt">void</span> <span class="nf">service</span><span class="o">(</span><span class="n">HttpServletRequest</span> <span class="n">req</span><span class="o">,</span> <span class="n">HttpServletResponse</span> <span class="n">resp</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">ServletException</span><span class="o">,</span> <span class="n">IOException</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Pair</span><span class="o">&lt;</span><span class="n">Integer</span><span class="o">,</span> <span class="n">Integer</span><span class="o">&gt;</span> <span class="n">number</span> <span class="o">=</span> <span class="n">extract</span><span class="o">(</span><span class="n">req</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">result</span> <span class="o">=</span> <span class="n">computer</span><span class="o">(</span><span class="n">number</span><span class="o">.</span><span class="na">getLeft</span><span class="o">(),</span> <span class="n">number</span><span class="o">.</span><span class="na">getRight</span><span class="o">());</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">setToResponse</span><span class="o">(</span><span class="n">resp</span><span class="o">,</span> <span class="n">result</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2.原子性</h3>
+
+<p>常见的竞争条件1:检查再运行(check_then_act).检查再运行指使用潜在的过期值来做决策或者执行计算.如下面的代码:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Account</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 余额</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">float</span> <span class="n">balance</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 取款</span>
+</span><span class='line'><span class="cm">     * @param count</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">withdrawing</span><span class="o">(</span><span class="kt">float</span> <span class="n">count</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">balance</span> <span class="o">&gt;</span> <span class="n">count</span><span class="o">){</span>         <span class="c1">//check</span>
+</span><span class='line'>            <span class="n">doWithdrawing</span><span class="o">(</span><span class="n">count</span><span class="o">);</span>     <span class="c1">//act</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">void</span> <span class="nf">doWithdrawing</span><span class="o">(</span><span class="kt">float</span> <span class="n">count</span><span class="o">){</span>
+</span><span class='line'>        <span class="n">balance</span> <span class="o">-=</span> <span class="n">count</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>常见的竞争条件2:读-改-写.如count++ 这种非原子的操作,其实包含三个原子操作</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">Read</span>
+</span><span class='line'><span class="n">Add</span>
+</span><span class='line'><span class="n">Write</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>什么是原子操作:</p>
+
+<p>假设有操作A,在其他线程来看,执行操作A的线程执行时,要么操作A执行完成,要么一点都没有执行.则称之为原子操作.</p>
+
+<p>如果前面的例子是原子的,则不会出现检查再运行和读-改-写的竞争条件.</p>
+
+<p>为例保证线程安全,操作必须原子的执行.</p>
+
+<p>比如count++,我们可以使用AtomicInteger:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">count</span><span class="o">.</span><span class="na">getAndIncrement</span><span class="o">();</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>3.锁</h3>
+
+<p>java提供了强制原子性的内置锁机制:synchronized块.一个synchronized块包含两部分:1.锁对象的引用;2.锁对象保护的代码块;</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">synchronized</span><span class="o">(</span><span class="n">lock</span><span class="o">){</span>
+</span><span class='line'>  <span class="c1">// code</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>每个java对象都代表一个互斥锁(称之为内部锁或者监视器锁),因此每个java对象都可以扮演lock的角色.对于方法级别的synchronized,获取的是方法所在对象的锁.对于静态方法,从Class对象上获取锁.</p>
+
+<p>当一个线程请求另外一个线程持有的锁时候,请求线程将会被阻塞.但是,内部锁是可以重入(Reentrancy)的,即线程请求它自己占有的锁的时候,是会成功的.这表示锁的请求是基于每个线程(per-thread)的,而不是基于每个调用(per-invocation)的.</p>
+
+<h3>4.用锁来保护状态</h3>
+
+<p>对于可以被多个线程访问的可变状态变量,如果所有访问它的线程在执行时都占有同一个锁,则称这个变量是由这个锁保护的.</p>
+
+<p>并不是所有数据都需要锁的保护,只有哪些被多个线程访问的可变数据.</p>
+
+<p>如果类的不变约束涉及到多个变量,则需要用同一个锁来保护这多个变量.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Account</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 余额</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">float</span> <span class="n">balance</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 操作次数</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 取款</span>
+</span><span class='line'><span class="cm">     * @param value</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">withdrawing</span><span class="o">(</span><span class="kt">float</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">synchronized</span> <span class="o">(</span><span class="k">this</span><span class="o">){</span>    <span class="c1">//同一个锁保护多个可变变量</span>
+</span><span class='line'>            <span class="k">if</span><span class="o">(</span><span class="n">balance</span> <span class="o">&gt;</span> <span class="n">value</span><span class="o">){</span>
+</span><span class='line'>                <span class="n">doWithdrawing</span><span class="o">(</span><span class="n">value</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="n">count</span><span class="o">++;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>5.活跃度和性能</h3>
+
+<p>为了达到安全的目的,我们完全可以将方法设置为synchronized,但是这样带来的问题是:我们期房方法能提供并发访问,但是为了安全,实际上变成的串行访问.</p>
+
+<p>因此在使用synchronized的时候需要考虑安全(不能妥协),简单性和性能.</p>
+
+<p>比如网络或者IO这种耗时的操作器件,不应该占用锁.</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2945,6 +3151,10 @@ Octopress是利用Jekyll博客引擎开发的一个博客系统，生成的静�
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/09/09/lunecezheng-ti-jia-gou/">Lunece整体架构</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/09/03/luceneru-men/">Lucene入门</a>
       </li>
     
@@ -2958,10 +3168,6 @@ Octopress是利用Jekyll博客引擎开发的一个博客系统，生成的静�
     
       <li class="post">
         <a href="/blog/2015/08/22/chu-li-sqlchao-shi/">处理sql超时</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/08/22/mybatiskong-wherelan-jie-qi/">MyBatis空where拦截器</a>
       </li>
     
   </ul>
@@ -2985,7 +3191,7 @@ Octopress是利用Jekyll博客引擎开发的一个博客系统，生成的静�
 <li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
-<li><a class='list-group-item' href='/blog/categories/search/'>search (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/search/'>search (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/spring/'>spring (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
