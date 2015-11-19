@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Library | xiaobaoqiu Blog]]></title>
+  <link href="http://xiaobaoqiu.github.io/blog/categories/library/atom.xml" rel="self"/>
+  <link href="http://xiaobaoqiu.github.io/"/>
+  <updated>2015-11-19T18:31:33+08:00</updated>
+  <id>http://xiaobaoqiu.github.io/</id>
+  <author>
+    <name><![CDATA[xiaobaoqiu]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Libphonenumber]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/11/18/libphonenumber/"/>
+    <updated>2015-11-18T18:52:58+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/11/18/libphonenumber</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.%E7%AE%80%E4%BB%8B">1.简介</a></li>
+<li><a href="#2.%E4%BD%BF%E7%94%A8Demo">2.使用Demo</a>
+
+<ul>
+<li><a href="#2.1%20%E6%89%8B%E6%9C%BA%E5%8F%B7%E8%A7%A3%E6%9E%90">2.1 手机号解析</a></li>
+<li><a href="#2.1%20%E6%89%8B%E6%9C%BA%E5%8F%B7%E6%A0%A1%E9%AA%8C">2.2 手机号校验</a></li>
+<li><a href="#2.1%20%E6%89%8B%E6%9C%BA%E5%8F%B7%E8%BF%90%E8%90%A5%E5%95%86">2.2 手机号运营商</a></li>
+<li><a href="#2.1%20%E6%89%8B%E6%9C%BA%E5%8F%B7%E5%BD%92%E5%B1%9E%E5%9C%B0">2.2 手机号归属地</a></li>
+</ul>
+</li>
+<li><a href="#3.%E6%B3%A8%E6%84%8F%E7%82%B9">3.注意点</a></li>
+</ul>
+
+
+<h2 id="1.简介">1.简介</h2>
+
+
+<p>最近项目中做短信发送相关的工作.涉及到国内手机和国际手机.因此第一步需要解析电话获取国家码.</p>
+
+<p>使用的库是Google提供的著名开源库libphonenumber.有的App的手机号码归属地等功能就是使用这个实现的。支持Java， C++ 和 JavaScript。</p>
+
+<p>libphonenumber是一个手机号码工具类,提供了手机号码的格式化,解析,校验等功能.典型的比如:
+(1). 解析手机号码,获取国际码;
+(2). 根据国家代码和手机号,判断手机号是否有效;
+(3). 根据国家代码和手机号,判断手机运营商
+(4). 根据国家代码和手机号,手机归属地</p>
+
+<p>Git地址： <a href="https://github.com/googlei18n/libphonenumber">https://github.com/googlei18n/libphonenumber</a></p>
+
+<h2 id="2.使用Demo">2.使用Demo</h2>
+
+
+<p>Maven引入</p>
+
+<pre><code>        &lt;!--手机号解析--&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
+            &lt;artifactId&gt;libphonenumber&lt;/artifactId&gt;
+            &lt;version&gt;7.2.1&lt;/version&gt;
+        &lt;/dependency&gt;
+        &lt;!--手机归属地定位相关--&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
+            &lt;artifactId&gt;geocoder&lt;/artifactId&gt;
+            &lt;version&gt;2.9&lt;/version&gt;
+        &lt;/dependency&gt;
+        &lt;!-- 手机运营商相关 --&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
+            &lt;artifactId&gt;carrier&lt;/artifactId&gt;
+            &lt;version&gt;1.21&lt;/version&gt;
+        &lt;/dependency&gt;
+</code></pre>
+
+<p>简单代码如下</p>
+
+<pre><code>public class LibphonenumberUsage {
+
+    private static final PhoneNumberUtil phoneNumberUtil = PhoneNumberUtil.getInstance();
+
+    private static PhoneNumberToCarrierMapper carrier = PhoneNumberToCarrierMapper.getInstance();
+
+    private static PhoneNumberOfflineGeocoder geocoder = PhoneNumberOfflineGeocoder.getInstance();
+
+    private static final String DEFAULT_COUNTRY = "CN";
+
+    private static final String[] phoneCases = new String[] {
+            "008618612483515",  //中国
+            "00886972777718",   //台湾
+            "006582922994",     //新加坡
+            "15910645718",      //中国
+            "008201074704546",  //Korea
+            "17091008155"       //中国170
+    };
+
+    private static final String[] countryCodes = new String[]{
+            "886",      //台湾
+            "65",       //新加坡
+            "86",       //中国
+            "82",       //Korea
+            "86"        //中国170
+    };
+    private static final String[] phones = new String[]{
+            "972777718",        //台湾
+            "82922994",         //新加坡
+            "15910645718",      //中国
+            "1074704546",       //Korea
+            "17091008155"       //中国170
+    };
+
+    public static final Map&lt;String, String&gt; CHINESE_CARRIER_MAPPER = Maps.newHashMap();
+    static {
+        CHINESE_CARRIER_MAPPER.put("China Mobile", "中国移动");
+        CHINESE_CARRIER_MAPPER.put("China Unicom", "中国联通");
+        CHINESE_CARRIER_MAPPER.put("China Telecom", "中国电信");
+    }
+
+    public static void main(String[] args) {
+//        parsePhone();
+
+//        validPhone();
+
+//        phoneCarrierCase();
+
+        phoneGeoCase();
+    }
+
+    /**
+     * 电话解析case
+     */
+    private static void parsePhone() {
+
+
+        for(String phone : phoneCases) {
+            Phonenumber.PhoneNumber pn = doParse(phone);
+            System.out.println(phone + " --&gt; " + pn.getCountryCode() + ", " + pn.getNationalNumber());
+        }
+    }
+
+    /**
+     * 解析逻辑
+     */
+    private static final Phonenumber.PhoneNumber doParse(String phone) {
+        try {
+            return phoneNumberUtil.parse(phone, DEFAULT_COUNTRY);
+        } catch (NumberParseException e) {
+            throw new NumberFormatException("invalid phone number: " + phone);
+        }
+    }
+
+    /**
+     * 电话解析case
+     */
+    private static void validPhone() {
+        for (int i = 0; i &lt; countryCodes.length; i++) {
+            boolean valid = doValid(countryCodes[i], phones[i]);
+            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + valid);
+        }
+    }
+
+    /**
+     * 手机校验逻辑
+     */
+    private static boolean doValid(String countryCode, String phoneNumber){
+        int ccode = Integer.parseInt(countryCode);
+        long phone = Long.parseLong(phoneNumber);
+
+        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
+        pn.setCountryCode(ccode);
+        pn.setNationalNumber(phone);
+
+        return phoneNumberUtil.isValidNumber(pn);
+    }
+
+    private static void phoneCarrierCase() {
+        for (int i = 0; i &lt; countryCodes.length; i++) {
+            String carrier = doCarrier(countryCodes[i], phones[i]);
+            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + (CHINESE_CARRIER_MAPPER.containsKey(carrier)?CHINESE_CARRIER_MAPPER.get(carrier):carrier));
+        }
+    }
+
+    /**
+     * 手机运营商
+     */
+    private static String doCarrier(String countryCode, String phoneNumber){
+        int ccode = Integer.parseInt(countryCode);
+        long phone = Long.parseLong(phoneNumber);
+
+        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
+        pn.setCountryCode(ccode);
+        pn.setNationalNumber(phone);
+
+        //返回结果只有英文，自己转成成中文
+        return carrier.getNameForNumber(pn, Locale.ENGLISH);
+    }
+
+    private static void phoneGeoCase() {
+        for (int i = 0; i &lt; countryCodes.length; i++) {
+            String geo = doGeo(countryCodes[i], phones[i]);
+            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + geo);
+        }
+    }
+
+    /**
+     * 手机归属地
+     */
+    public static String doGeo(String countryCode, String phoneNumber){
+        int ccode = Integer.parseInt(countryCode);
+        long phone = Long.parseLong(phoneNumber);
+
+        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
+        pn.setCountryCode(ccode);
+        pn.setNationalNumber(phone);
+
+        return geocoder.getDescriptionForNumber(pn, Locale.CHINESE);
+    }
+}
+</code></pre>
+
+<h2 id="3.注意点">3.注意点</h2>
+
+
+<p>1.电话解析的时候需要加上00前缀才能解析成功，比如008615912345678能解析，但是8615912345678不能解析成功；
+2.libphonenumber的基础信息库也是不断更新，比如libphonenumber的7.0.2版本不能解析170号段的电话，7.0.3以后就支持了；</p>
+
+<p>国家码参考：<a href="http://country-code.cl/">http://country-code.cl/</a></p>
+]]></content>
+  </entry>
+  
+</feed>

@@ -9,9 +9,11 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.源码结构
-2.Lucene使用Demo 2.1 主要类 3.建立索引流程
-4.搜索流程 根据上篇文章,我们大致知道Lucene创建索引和搜索的一个过程: 这里主要分析一下Lucene的代码结构,包括理由Lucene API实现一个简单建立索引和搜索的小例子. &hellip;">
+  <meta name="description" content="1.简介
+2.使用Demo 2.1 手机号解析
+2.2 手机号校验
+2.2 手机号运营商
+2.2 手机号归属地 3.注意点 1.简介 最近项目中做短信发送相关的工作.涉及到国内手机和国际手机.因此第一步需要解析电话获取国家码. 使用的库是Google提供的著名开源库libphonenumber. &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -71,6 +73,402 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/11/18/libphonenumber/">Libphonenumber</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-11-18T18:52:58+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>18</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:52 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.%E7%AE%80%E4%BB%8B">1.简介</a></li>
+<li><a href="#2.%E4%BD%BF%E7%94%A8Demo">2.使用Demo</a>
+
+<ul>
+<li><a href="#2.1%20%E6%89%8B%E6%9C%BA%E5%8F%B7%E8%A7%A3%E6%9E%90">2.1 手机号解析</a></li>
+<li><a href="#2.1%20%E6%89%8B%E6%9C%BA%E5%8F%B7%E6%A0%A1%E9%AA%8C">2.2 手机号校验</a></li>
+<li><a href="#2.1%20%E6%89%8B%E6%9C%BA%E5%8F%B7%E8%BF%90%E8%90%A5%E5%95%86">2.2 手机号运营商</a></li>
+<li><a href="#2.1%20%E6%89%8B%E6%9C%BA%E5%8F%B7%E5%BD%92%E5%B1%9E%E5%9C%B0">2.2 手机号归属地</a></li>
+</ul>
+</li>
+<li><a href="#3.%E6%B3%A8%E6%84%8F%E7%82%B9">3.注意点</a></li>
+</ul>
+
+
+<h2 id="1.简介">1.简介</h2>
+
+
+<p>最近项目中做短信发送相关的工作.涉及到国内手机和国际手机.因此第一步需要解析电话获取国家码.</p>
+
+<p>使用的库是Google提供的著名开源库libphonenumber.有的App的手机号码归属地等功能就是使用这个实现的。支持Java， C++ 和 JavaScript。</p>
+
+<p>libphonenumber是一个手机号码工具类,提供了手机号码的格式化,解析,校验等功能.典型的比如:
+(1). 解析手机号码,获取国际码;
+(2). 根据国家代码和手机号,判断手机号是否有效;
+(3). 根据国家代码和手机号,判断手机运营商
+(4). 根据国家代码和手机号,手机归属地</p>
+
+<p>Git地址： <a href="https://github.com/googlei18n/libphonenumber">https://github.com/googlei18n/libphonenumber</a></p>
+
+<h2 id="2.使用Demo">2.使用Demo</h2>
+
+
+<p>Maven引入</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>    &lt;!--手机号解析--&gt;
+</span><span class='line'>    &lt;dependency&gt;
+</span><span class='line'>        &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
+</span><span class='line'>        &lt;artifactId&gt;libphonenumber&lt;/artifactId&gt;
+</span><span class='line'>        &lt;version&gt;7.2.1&lt;/version&gt;
+</span><span class='line'>    &lt;/dependency&gt;
+</span><span class='line'>    &lt;!--手机归属地定位相关--&gt;
+</span><span class='line'>    &lt;dependency&gt;
+</span><span class='line'>        &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
+</span><span class='line'>        &lt;artifactId&gt;geocoder&lt;/artifactId&gt;
+</span><span class='line'>        &lt;version&gt;2.9&lt;/version&gt;
+</span><span class='line'>    &lt;/dependency&gt;
+</span><span class='line'>    &lt;!-- 手机运营商相关 --&gt;
+</span><span class='line'>    &lt;dependency&gt;
+</span><span class='line'>        &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
+</span><span class='line'>        &lt;artifactId&gt;carrier&lt;/artifactId&gt;
+</span><span class='line'>        &lt;version&gt;1.21&lt;/version&gt;
+</span><span class='line'>    &lt;/dependency&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>简单代码如下</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+<span class='line-number'>111</span>
+<span class='line-number'>112</span>
+<span class='line-number'>113</span>
+<span class='line-number'>114</span>
+<span class='line-number'>115</span>
+<span class='line-number'>116</span>
+<span class='line-number'>117</span>
+<span class='line-number'>118</span>
+<span class='line-number'>119</span>
+<span class='line-number'>120</span>
+<span class='line-number'>121</span>
+<span class='line-number'>122</span>
+<span class='line-number'>123</span>
+<span class='line-number'>124</span>
+<span class='line-number'>125</span>
+<span class='line-number'>126</span>
+<span class='line-number'>127</span>
+<span class='line-number'>128</span>
+<span class='line-number'>129</span>
+<span class='line-number'>130</span>
+<span class='line-number'>131</span>
+<span class='line-number'>132</span>
+<span class='line-number'>133</span>
+<span class='line-number'>134</span>
+<span class='line-number'>135</span>
+<span class='line-number'>136</span>
+<span class='line-number'>137</span>
+<span class='line-number'>138</span>
+<span class='line-number'>139</span>
+<span class='line-number'>140</span>
+<span class='line-number'>141</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class LibphonenumberUsage {
+</span><span class='line'>
+</span><span class='line'>    private static final PhoneNumberUtil phoneNumberUtil = PhoneNumberUtil.getInstance();
+</span><span class='line'>
+</span><span class='line'>    private static PhoneNumberToCarrierMapper carrier = PhoneNumberToCarrierMapper.getInstance();
+</span><span class='line'>
+</span><span class='line'>    private static PhoneNumberOfflineGeocoder geocoder = PhoneNumberOfflineGeocoder.getInstance();
+</span><span class='line'>
+</span><span class='line'>    private static final String DEFAULT_COUNTRY = "CN";
+</span><span class='line'>
+</span><span class='line'>    private static final String[] phoneCases = new String[] {
+</span><span class='line'>            "008618612483515",  //中国
+</span><span class='line'>            "00886972777718",   //台湾
+</span><span class='line'>            "006582922994",     //新加坡
+</span><span class='line'>            "15910645718",      //中国
+</span><span class='line'>            "008201074704546",  //Korea
+</span><span class='line'>            "17091008155"       //中国170
+</span><span class='line'>    };
+</span><span class='line'>
+</span><span class='line'>    private static final String[] countryCodes = new String[]{
+</span><span class='line'>            "886",      //台湾
+</span><span class='line'>            "65",       //新加坡
+</span><span class='line'>            "86",       //中国
+</span><span class='line'>            "82",       //Korea
+</span><span class='line'>            "86"        //中国170
+</span><span class='line'>    };
+</span><span class='line'>    private static final String[] phones = new String[]{
+</span><span class='line'>            "972777718",        //台湾
+</span><span class='line'>            "82922994",         //新加坡
+</span><span class='line'>            "15910645718",      //中国
+</span><span class='line'>            "1074704546",       //Korea
+</span><span class='line'>            "17091008155"       //中国170
+</span><span class='line'>    };
+</span><span class='line'>
+</span><span class='line'>    public static final Map&lt;String, String&gt; CHINESE_CARRIER_MAPPER = Maps.newHashMap();
+</span><span class='line'>    static {
+</span><span class='line'>        CHINESE_CARRIER_MAPPER.put("China Mobile", "中国移动");
+</span><span class='line'>        CHINESE_CARRIER_MAPPER.put("China Unicom", "中国联通");
+</span><span class='line'>        CHINESE_CARRIER_MAPPER.put("China Telecom", "中国电信");
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public static void main(String[] args) {
+</span><span class='line'>//        parsePhone();
+</span><span class='line'>
+</span><span class='line'>//        validPhone();
+</span><span class='line'>
+</span><span class='line'>//        phoneCarrierCase();
+</span><span class='line'>
+</span><span class='line'>        phoneGeoCase();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 电话解析case
+</span><span class='line'>     */
+</span><span class='line'>    private static void parsePhone() {
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>        for(String phone : phoneCases) {
+</span><span class='line'>            Phonenumber.PhoneNumber pn = doParse(phone);
+</span><span class='line'>            System.out.println(phone + " --&gt; " + pn.getCountryCode() + ", " + pn.getNationalNumber());
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 解析逻辑
+</span><span class='line'>     */
+</span><span class='line'>    private static final Phonenumber.PhoneNumber doParse(String phone) {
+</span><span class='line'>        try {
+</span><span class='line'>            return phoneNumberUtil.parse(phone, DEFAULT_COUNTRY);
+</span><span class='line'>        } catch (NumberParseException e) {
+</span><span class='line'>            throw new NumberFormatException("invalid phone number: " + phone);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 电话解析case
+</span><span class='line'>     */
+</span><span class='line'>    private static void validPhone() {
+</span><span class='line'>        for (int i = 0; i &lt; countryCodes.length; i++) {
+</span><span class='line'>            boolean valid = doValid(countryCodes[i], phones[i]);
+</span><span class='line'>            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + valid);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 手机校验逻辑
+</span><span class='line'>     */
+</span><span class='line'>    private static boolean doValid(String countryCode, String phoneNumber){
+</span><span class='line'>        int ccode = Integer.parseInt(countryCode);
+</span><span class='line'>        long phone = Long.parseLong(phoneNumber);
+</span><span class='line'>
+</span><span class='line'>        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
+</span><span class='line'>        pn.setCountryCode(ccode);
+</span><span class='line'>        pn.setNationalNumber(phone);
+</span><span class='line'>
+</span><span class='line'>        return phoneNumberUtil.isValidNumber(pn);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private static void phoneCarrierCase() {
+</span><span class='line'>        for (int i = 0; i &lt; countryCodes.length; i++) {
+</span><span class='line'>            String carrier = doCarrier(countryCodes[i], phones[i]);
+</span><span class='line'>            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + (CHINESE_CARRIER_MAPPER.containsKey(carrier)?CHINESE_CARRIER_MAPPER.get(carrier):carrier));
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 手机运营商
+</span><span class='line'>     */
+</span><span class='line'>    private static String doCarrier(String countryCode, String phoneNumber){
+</span><span class='line'>        int ccode = Integer.parseInt(countryCode);
+</span><span class='line'>        long phone = Long.parseLong(phoneNumber);
+</span><span class='line'>
+</span><span class='line'>        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
+</span><span class='line'>        pn.setCountryCode(ccode);
+</span><span class='line'>        pn.setNationalNumber(phone);
+</span><span class='line'>
+</span><span class='line'>        //返回结果只有英文，自己转成成中文
+</span><span class='line'>        return carrier.getNameForNumber(pn, Locale.ENGLISH);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private static void phoneGeoCase() {
+</span><span class='line'>        for (int i = 0; i &lt; countryCodes.length; i++) {
+</span><span class='line'>            String geo = doGeo(countryCodes[i], phones[i]);
+</span><span class='line'>            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + geo);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 手机归属地
+</span><span class='line'>     */
+</span><span class='line'>    public static String doGeo(String countryCode, String phoneNumber){
+</span><span class='line'>        int ccode = Integer.parseInt(countryCode);
+</span><span class='line'>        long phone = Long.parseLong(phoneNumber);
+</span><span class='line'>
+</span><span class='line'>        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
+</span><span class='line'>        pn.setCountryCode(ccode);
+</span><span class='line'>        pn.setNationalNumber(phone);
+</span><span class='line'>
+</span><span class='line'>        return geocoder.getDescriptionForNumber(pn, Locale.CHINESE);
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h2 id="3.注意点">3.注意点</h2>
+
+
+<p>1.电话解析的时候需要加上00前缀才能解析成功，比如008615912345678能解析，但是8615912345678不能解析成功；
+2.libphonenumber的基础信息库也是不断更新，比如libphonenumber的7.0.2版本不能解析170号段的电话，7.0.3以后就支持了；</p>
+
+<p>国家码参考：<a href="http://country-code.cl/">http://country-code.cl/</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -493,6 +891,24 @@
 
 <h2 id="4.搜索流程">4.搜索流程</h2>
 
+
+<p>hotel.tuan.buyout.prepayment.beta
+beta-scm-ct</p>
+
+<p>{
+  &ldquo;messageId&rdquo;: &ldquo;140602.150528.192.168.36.235.24996.55584&rdquo;,
+  &ldquo;subject&rdquo;: &ldquo;tc.qmq.test.order&rdquo;,
+  &ldquo;attrs&rdquo;: {
+    &ldquo;content&rdquo;: &ldquo;crm_doctor&rdquo;,
+    &ldquo;ORDER_ID&rdquo;: 123456789,
+    &ldquo;qmq_createTIme&rdquo;: 1401692728358,
+    &ldquo;VERSION&rdquo;: 1,
+    &ldquo;qmq_scheduleRecevieTime&rdquo;: 1401696328358,
+    &ldquo;qmq_expireTime&rdquo;: 1401697228358
+  }
+}</p>
+
+<p>export JAVA_OPTS=&ldquo;-Xms256m -Xmx256m -XX:NewSize=16m -XX:PermSize=128m -server -XX:+DisableExplicitGC -Dqunar.logs=$CATALINA_BASE/logs -Dqunar.cache=$CATALINA_BASE/cache -verbose:gc -XX:+PrintGCDateStamps -XX:+PrintGCDetails -Xloggc:$CATALINA_BASE/logs/gc.log -server -Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=9898&rdquo;</p>
 </div>
   
   
@@ -3406,200 +3822,6 @@ PropertyUtils的实现和BeanUtils的实现基本一致。</li>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/08/01/mycli/">Mycli</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-08-01T10:37:00+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>1</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>10:37 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>相信很多同学都喜欢使用命令行和Mysql交互而不喜欢各种图形化的客户端，我也是其中之一。</p>
-
-<p>使用命令行交互的一个缺点就是没有自动补全等功能，很多时候忘记字段叫什么，不得不去看一下见表语句。</p>
-
-<p>现在Mycli帮我们搞定这个问题了。Mycli是一个自带自动补全和语法高亮的Mysql客户端，也适用于MariaDB和Percona。赶紧使用Mycli替换你所以的alias吧。</p>
-
-<p>Mycli官网：<a href="http://mycli.net/">http://mycli.net/</a></p>
-
-<h1>1.安装</h1>
-
-<p>Linux下可以使用Python的包管理器pip安装，首先你得有pip，我使用的是Ubuntu：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install python-pip</span></code></pre></td></tr></table></div></figure>
-
-
-<p>之后就可以安装Mycli了，可能需要sudo权限，因为它会往python的lib目录下加一些包</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>pip install mycli</span></code></pre></td></tr></table></div></figure>
-
-
-<p>高端的Mac同学使用brew就可以了。</p>
-
-<p>感觉Windows被抛弃，更详细的安装见：<a href="http://mycli.net/install">http://mycli.net/install</a></p>
-
-<p>源代码github地址：<a href="https://github.com/dbcli/mycli">https://github.com/dbcli/mycli</a></p>
-
-<p>使用pg数据库的同学可以使用类似的工具：pgcli</p>
-
-<h1>2.使用</h1>
-
-<p>使用上没啥特别，看看Mycli的手册就可以了，这里将英文简单翻译一下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Sublime/Sublime2$ mycli --help
-</span><span class='line'>Usage: mycli [OPTIONS] [DATABASE]
-</span><span class='line'>
-</span><span class='line'>Options:
-</span><span class='line'>  -h, --host TEXT             数据库host
-</span><span class='line'>  -P, --port TEXT             数据库端口. Honors $MYSQL_TCP_PORT
-</span><span class='line'>  -u, --user TEXT             用户名
-</span><span class='line'>  -S, --socket TEXT       链接数据库使用的socket文件
-</span><span class='line'>  -p, --password          密码
-</span><span class='line'>  --pass TEXT                 密码
-</span><span class='line'>  -v, --version               版本
-</span><span class='line'>  -D, --database TEXT         数据库名字
-</span><span class='line'>  -R, --prompt TEXT           提示格式(默认: "\t \u@\h:\d&gt; ")
-</span><span class='line'>  -l, --logfile FILENAME      将每个查询和查询的结构记录到文件
-</span><span class='line'>  --help                      帮助文档</span></code></pre></td></tr></table></div></figure>
-
-
-<p>一个本机的截图如下：
-<img src="/images/mysql/Mycli_usage.png"></p>
-
-<h1>3.配置</h1>
-
-<p>配置文件默认为：~/.myclirc，我们可以简单的看一下配置,都比较简单：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># vi: ft=dosini
-</span><span class='line'>[main]
-</span><span class='line'>
-</span><span class='line'># Enables context sensitive auto-completion. If this is disabled the all
-</span><span class='line'># possible completions will be listed.
-</span><span class='line'>smart_completion = True
-</span><span class='line'>
-</span><span class='line'># Multi-line mode allows breaking up the sql statements into multiple lines. If
-</span><span class='line'># this is set to True, then the end of the statements must have a semi-colon.
-</span><span class='line'># If this is set to False then sql statements can't be split into multiple
-</span><span class='line'># lines. End of line (return) is considered as the end of the statement.
-</span><span class='line'>multi_line = False
-</span><span class='line'>
-</span><span class='line'># log_file location.
-</span><span class='line'>log_file = ~/.mycli.log
-</span><span class='line'>
-</span><span class='line'># Default log level. Possible values: "CRITICAL", "ERROR", "WARNING", "INFO"
-</span><span class='line'># and "DEBUG".
-</span><span class='line'>log_level = INFO
-</span><span class='line'>
-</span><span class='line'># Timing of sql statments and table rendering.
-</span><span class='line'>timing = True
-</span><span class='line'>
-</span><span class='line'># Table format. Possible values: psql, plain, simple, grid, fancy_grid, pipe,
-</span><span class='line'># orgtbl, rst, mediawiki, html, latex, latex_booktabs.
-</span><span class='line'># Recommended: psql, fancy_grid and grid.
-</span><span class='line'>table_format = psql
-</span><span class='line'>
-</span><span class='line'># Syntax Style. Possible values: manni, igor, xcode, vim, autumn, vs, rrt,
-</span><span class='line'># native, perldoc, borland, tango, emacs, friendly, monokai, paraiso-dark,
-</span><span class='line'># colorful, murphy, bw, pastie, paraiso-light, trac, default, fruity
-</span><span class='line'>syntax_style = default
-</span><span class='line'>
-</span><span class='line'># Keybindings: Possible values: emacs, vi
-</span><span class='line'>key_bindings = emacs
-</span><span class='line'>
-</span><span class='line'># MySQL prompt
-</span><span class='line'># \t - Product type (Percona, MySQL, Mariadb)
-</span><span class='line'># \u - Username
-</span><span class='line'># \h - Hostname of the server
-</span><span class='line'># \d - Database name
-</span><span class='line'>prompt = '\t \u@\h:\d&gt; '</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.源码</h1>
-
-<p>Mycli是python开发的，原因是起基于的prompt_toolkit正是python开发的。</p>
-
-<p>prompt_toolkit的git地址：<a href="https://github.com/jonathanslenders/python-prompt-toolkit.git">https://github.com/jonathanslenders/python-prompt-toolkit.git</a></p>
-
-<p>prompt_toolkit使用著名的Pygments来做语法高亮。相信很多博客系统(包括我使用的octopress)也是使用这个来做语法高亮，突然发现世界这么小&hellip;</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/2">&larr; Older</a>
@@ -3617,6 +3839,10 @@ PropertyUtils的实现和BeanUtils的实现基本一致。</li>
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/11/18/libphonenumber/">Libphonenumber</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/09/09/lunecezheng-ti-jia-gou/">Lunece整体架构</a>
       </li>
     
@@ -3632,10 +3858,6 @@ PropertyUtils的实现和BeanUtils的实现基本一致。</li>
         <a href="/blog/2015/08/27/zai-xian-zhen-duan-gong-ju/">在线诊断工具</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2015/08/22/chu-li-sqlchao-shi/">处理sql超时</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -3648,6 +3870,7 @@ PropertyUtils的实现和BeanUtils的实现基本一致。</li>
 <li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/java/'>java (23)</a></li>
+<li><a class='list-group-item' href='/blog/categories/library/'>library (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (12)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>
