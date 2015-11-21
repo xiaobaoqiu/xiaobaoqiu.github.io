@@ -9,7 +9,7 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="写这篇文章的本意是想了解JVM的内存结构,这篇文章基本上是翻译的英文文章，原文在这里.因为涉及到很多专业术语，所有很多地方都贴出了原始的英文词。 1.JVM组成图 下图显示了JVM内部的关键组成元素： 下面从两个部分解释上门这个图，第一部分是每个线程内创建的元素，第二部分是独立于各个线程的公共元素 &hellip;">
+  <meta name="description" content="最近项目中的图片上传那块带来很大麻烦,原因是因为业务逻辑的问题,会导致统一张图片上传很多次(平均5次上传有4次是重复的),导致图片服务器压力很大. 直观想法是使用KV缓存,第一个想到的是Memcached. 其实很长时间之前就学习过一段时间的Memcached,但是一致没有整理,趁这次机会, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -69,6 +69,840 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/09/23/memcached/">Memcached</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-09-23T00:08:56+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2014</span></span> <span class='time'>12:08 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近项目中的图片上传那块带来很大麻烦,原因是因为业务逻辑的问题,会导致统一张图片上传很多次(平均5次上传有4次是重复的),导致图片服务器压力很大.</p>
+
+<p>直观想法是使用KV缓存,第一个想到的是Memcached.</p>
+
+<p>其实很长时间之前就学习过一段时间的Memcached,但是一致没有整理,趁这次机会,整理一下Memcached相关的知识.</p>
+
+<h1>1.Memcached是什么</h1>
+
+<p>Memcached官方:<a href="http://memcached.org/">http://memcached.org/</a></p>
+
+<p>Memcached wiki:<a href="http://code.google.com/p/memcached/wiki/NewStart">http://code.google.com/p/memcached/wiki/NewStart</a></p>
+
+<p>Memcached是一个免费的开源的,高性能的,分布式的内存KV(key-value)缓存系统,一般通过缓解数据库压力来达到加速动态Web应用程序的目的.可以存储任意类型的小数据块,比如数据库查询结果,接口调用结果等.</p>
+
+<p>Memcached可以称之为简单高效.它简单的设计保证了快速发布,使用者开发简单,面临大量数据缓存的时候能够解决很多问题.同时提供了绝大多数流行语言的API接口.</p>
+
+<p>许多Web应用都将数据保存到RDBMS中，应用服务器从中读取数据并在浏览器中显示。 但随着数据量的增大、访问的集中，就会出现RDBMS的负担加重、数据库响应恶化、 网站显示延迟等重大影响。</p>
+
+<p>这时就该memcached大显身手了。一般的使用目的是，通过缓存数据库查询结果，减少数据库访问次数，以提高动态Web应用的速度、提高可扩展性。</p>
+
+<p><img src="/images/memcached/usage.png"></p>
+
+<h1>2.Memcached特性</h1>
+
+<p>memcached作为高速运行的分布式缓存服务器，具有以下的特点:
+1. 协议简单
+2. 基于libevent的事件处理
+3. 内置内存存储方式
+4. memcached不互相通信的分布式
+下面分别介绍.</p>
+
+<h3>2.1协议简单</h3>
+
+<p>Memcached使用简单的基于文本行的协议。因此，通过telnet 也能在memcached上保存数据、取得数据。如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
+</span><span class='line'>Trying 127.0.0.1...
+</span><span class='line'>Connected to 127.0.0.1.
+</span><span class='line'>Escape character is '^]'.
+</span><span class='line'>add myid 1 0 4
+</span><span class='line'>1234
+</span><span class='line'>STORED
+</span><span class='line'>get myid
+</span><span class='line'>VALUE myid 1 4
+</span><span class='line'>1234
+</span><span class='line'>END</span></code></pre></td></tr></table></div></figure>
+
+
+<p>协议文档位于memcached的源代码内,可以参考:
+<a href="https://github.com/memcached/memcached/blob/master/doc/protocol.txt">https://github.com/memcached/memcached/blob/master/doc/protocol.txt</a></p>
+
+<h3>2.2基于libevent的事件处理</h3>
+
+<p>libevent是个程序库，它将Linux的epoll、BSD类操作系统的kqueue等事件处理功能
+封装成统一的接口。即使对服务器的连接数增加，也能发挥O(1)的性能。 memcached使用这个libevent库，因此能在Linux、BSD、Solaris等操作系统上发挥其高性能。</p>
+
+<p>关于libevent参考:
+<a href="http://libevent.org/">http://libevent.org/</a>
+<a href="http://www.kegel.com/c10k.html">http://www.kegel.com/c10k.html</a></p>
+
+<h3>2.3内置内存存储方式</h3>
+
+<p>为了提高性能，memcached中保存的数据都存储在memcached内置的内存存储空间中。由于数据仅存在于内存中，因此重启memcached、重启操作系统会导致全部数据消失。另外，内容容量达到指定值之后，就基于LRU(Least Recently Used)算法自动删除不使用的缓存。</p>
+
+<p>memcached本身是为缓存而设计的服务器，因此并没有过多考虑数据的永久性问题。</p>
+
+<h3>2.4memcached不互相通信的分布式</h3>
+
+<p>memcached虽然号称“分布式”缓存服务器，但服务器端并没有分布式功能。
+各个memcached不会互相通信以共享信息。那么，怎样进行分布式呢？ 这完全取决于客户端的实现。</p>
+
+<p><img src="/images/memcached/client.png"></p>
+
+<h1>3.Memcached安装</h1>
+
+<p>所有可下载版本见:
+<a href="http://code.google.com/p/memcached/wiki/ReleaseNotes">http://code.google.com/p/memcached/wiki/ReleaseNotes</a></p>
+
+<p>直接按照官网安装就可以,下面直接安装最新的版本,需要已经安装了libevent:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>wget http://memcached.org/latest
+</span><span class='line'>tar -zxvf memcached-1.x.x.tar.gz
+</span><span class='line'>cd memcached-1.x.x
+</span><span class='line'>./configure && make && make test && sudo make install</span></code></pre></td></tr></table></div></figure>
+
+
+<p>memcached的命令参数见-h,从中也可以看出memcached的版本:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ memcached -h
+</span><span class='line'>memcached 1.4.14
+</span><span class='line'>-p &lt;num&gt;      TCP监听端口TCP(默认: 11211)
+</span><span class='line'>-U &lt;num&gt;      UDP监听端口TCP(默认: 11211, 0表示关闭)
+</span><span class='line'>-s &lt;file&gt;     用于监听的UNIX套接字路径（禁用网络支持）
+</span><span class='line'>-a &lt;mask&gt;     UNIX套接字访问掩码，八进制数字(default: 0700)
+</span><span class='line'>-l &lt;addr&gt;     监听的IP地址(默认：INADDR_ANY，所有地址), &lt;addr&gt; 形如host:port.
+</span><span class='line'>-d            以守护进程(daemon)形式运行
+</span><span class='line'>-r            最大核心文件(core file)限制
+</span><span class='line'>-u &lt;username&gt; 设定进程所属用户（只有root用户可以使用这个参数）
+</span><span class='line'>-m &lt;num&gt;      最大使用内存,单位MB(默认: 64 MB)
+</span><span class='line'>-M            当内存耗尽时候返回错误 (而不是移除过期项)
+</span><span class='line'>-c &lt;num&gt;      并发连接的最大数目(默认: 1024)
+</span><span class='line'>-k            锁定所有内存页。注意你可以锁定的内存是有上限的.
+</span><span class='line'>              试图分配更多内存会失败的，所以留意启动守护进程时所用的用户可分配的内存上限(不是前面的 -u &lt;username&gt; 参数；在sh下，使用命令"ulimit -S -l NUM_KB"来设置).
+</span><span class='line'>-v            提示信息（在事件循环中打印错误/警告信息）
+</span><span class='line'>-vv           详细信息（还打印客户端命令/响应）
+</span><span class='line'>-vvv          超详细信息（还打印内部状态的变化）
+</span><span class='line'>-h            帮助信息
+</span><span class='line'>-i            打印memcached版本和libevent版本
+</span><span class='line'>-P &lt;file&gt;     将进程id保存在文件中,只在-d选项下有效
+</span><span class='line'>-f &lt;factor&gt;   块大小增长因子(默认: 1.25)
+</span><span class='line'>-n &lt;bytes&gt;    chunk(key+value+flags)的最小空间 (默认: 48)
+</span><span class='line'>              (chunk数据结构本身需要消耗48个字节，所以一个chunk实际消耗的内存是n+48)
+</span><span class='line'>-L            尝试使用大内存页(如果可以的话). 增加内存页大小能够减少页表缓冲(TLB)
+</span><span class='line'>              丢失次数,提高效率.为了从操作系统获取大内存页,memcached会把全部数据项分配到一个大区块
+</span><span class='line'>-D &lt;char&gt;     使用 &lt;char&gt; 作为前缀和ID的分隔符.
+</span><span class='line'>              这个用于按前缀获得状态报告。默认是":"（冒号）.
+</span><span class='line'>              如果指定了这个参数，则状态收集会自动开启；如果没指定，则需要用命令"stats detail on"来开启。
+</span><span class='line'>-t &lt;num&gt;      使用的线程数目 (默认: 4)
+</span><span class='line'>-R            每个事件的最大请求数目,即每个连接处理的最大请求数目(默认: 20)
+</span><span class='line'>-C            禁用CAS
+</span><span class='line'>-b            设置积压队列(backlog queue)的最大限制(默认: 1024)
+</span><span class='line'>-B            绑定协议,可选值：ascii,binary,auto（默认）
+</span><span class='line'>-I            重写每个数据页尺寸。调整数据项最大尺寸(默认: 1mb, min: 1k, max: 128m)
+</span><span class='line'>-S            Turn on Sasl authentication
+</span><span class='line'>-o            Comma separated list of extended or experimental options
+</span><span class='line'>              - (EXPERIMENTAL) maxconns_fast: immediately close new
+</span><span class='line'>                connections if over maxconns limit
+</span><span class='line'>              - hashpower: An integer multiplier for how large the hash
+</span><span class='line'>                table should be. Can be grown at runtime if not big enough.
+</span><span class='line'>                Set this based on "STAT hash_power_level" before a 
+</span><span class='line'>                restart.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>启动memcached时候可以带上这些选项,启动memcached:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ memcached -d</span></code></pre></td></tr></table></div></figure>
+
+
+<p>需要注意的是,还有一个memcached.conf文件存在(通过whereis memcached可以看得到),他是memcached默认的配置参数,其内容就是我们上面介绍的memcached启动参数,我的文件如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># memcached default config file
+</span><span class='line'># 2003 - Jay Bonci &lt;jaybonci@debian.org&gt;
+</span><span class='line'># This configuration file is read by the start-memcached script provided as
+</span><span class='line'># part of the Debian GNU/Linux distribution. 
+</span><span class='line'>
+</span><span class='line'># Run memcached as a daemon. This command is implied, and is not needed for the
+</span><span class='line'># daemon to run. See the README.Debian that comes with this package for more
+</span><span class='line'># information.
+</span><span class='line'># 以守护进程的形似运行
+</span><span class='line'>-d
+</span><span class='line'>
+</span><span class='line'># Log memcached's output to /var/log/memcached
+</span><span class='line'># 日志文件存放位置
+</span><span class='line'>logfile /var/log/memcached.log
+</span><span class='line'>
+</span><span class='line'># Be verbose
+</span><span class='line'># -v
+</span><span class='line'>
+</span><span class='line'># Be even more verbose (print client commands as well)
+</span><span class='line'># -vv
+</span><span class='line'>
+</span><span class='line'># Start with a cap of 64 megs of memory. It's reasonable, and the daemon default
+</span><span class='line'># Note that the daemon will grow to this size, but does not start out holding this much
+</span><span class='line'># memory
+</span><span class='line'># 分配给mencached的内存数目，单位是MB
+</span><span class='line'>-m 256
+</span><span class='line'>
+</span><span class='line'># Default connection port is 11211
+</span><span class='line'># Memcached的监听端口
+</span><span class='line'>-p 11211
+</span><span class='line'>
+</span><span class='line'># Run the daemon as root. The start-memcached will default to running as root if no
+</span><span class='line'># -u command is present in this config file
+</span><span class='line'># 允许memcached的用户
+</span><span class='line'>-u memcache
+</span><span class='line'>
+</span><span class='line'># Specify which IP address to listen on. The default is to listen on all IP addresses
+</span><span class='line'># This parameter is one of the only security measures that memcached has, so make sure
+</span><span class='line'># it's listening on a firewalled interface.
+</span><span class='line'># 监听的服务器IP地址
+</span><span class='line'>-l 127.0.0.1
+</span><span class='line'>
+</span><span class='line'># Limit the number of simultaneous incoming connections. The daemon default is 1024
+</span><span class='line'># -c 1024
+</span><span class='line'>
+</span><span class='line'># Lock down all paged memory. Consult with the README and homepage before you do this
+</span><span class='line'># -k
+</span><span class='line'>
+</span><span class='line'># Return error when memory is exhausted (rather than removing items)
+</span><span class='line'># -M
+</span><span class='line'>
+</span><span class='line'># Maximize core file limit
+</span><span class='line'># -r</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们启动memecached默认会带上这个文件的参数,可以通过ps命令看我们memcached启动的参数:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ ps -ef | grep memcached
+</span><span class='line'>memcache  1241     1  0 10:38 ?        00:00:00 /usr/bin/memcached -m 256 -p 11211 -u memcache -l 127.0.0.1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>可以使用telnet连接上memcached,之后就可以输入memcached的命令了:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
+</span><span class='line'>Trying 127.0.0.1...
+</span><span class='line'>Connected to 127.0.0.1.
+</span><span class='line'>Escape character is '^]'.</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.Memcached命令</h1>
+
+<p>介绍Memcached的常用命令,不断补充中,官方文档参考:
+<a href="https://code.google.com/p/memcached/wiki/NewCommands">https://code.google.com/p/memcached/wiki/NewCommands</a>
+按照命令左右,简单分为存储,删除,自增自减,读取和状态四类命令</p>
+
+<h3>4.1存储命令</h3>
+
+<p>命令:add set replace
+格式:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;command name&gt; &lt;key&gt; &lt;flags&gt; &lt;exptime&gt; &lt;bytes&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;data block&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中参数command name指操作命令,即set/add/replace;key指缓存的键值;flags指客户机使用它存储关于键值对的额外信息,exptime缓存过期时间,单位为秒,0表示永远存储;bytes缓存值的字节数;data block指数据块.</p>
+
+<h5>(1).set:无论如何都添加或更新的命令(key不存在则添加,存在则更新)</h5>
+
+<p>下面的示例包含了key存在和不存在两种情况:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
+</span><span class='line'>Trying 127.0.0.1...
+</span><span class='line'>Connected to 127.0.0.1.
+</span><span class='line'>Escape character is '^]'.
+</span><span class='line'>set name 0 0 11
+</span><span class='line'>baoqiu.xiao
+</span><span class='line'>STORED
+</span><span class='line'>get name
+</span><span class='line'>VALUE name 0 11
+</span><span class='line'>baoqiu.xiao
+</span><span class='line'>END
+</span><span class='line'>set name 0 0 9 
+</span><span class='line'>memcached
+</span><span class='line'>STORED
+</span><span class='line'>get name
+</span><span class='line'>VALUE name 0 9
+</span><span class='line'>memcached
+</span><span class='line'>END</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(2).add:只有数据不存在时添加值的add命令</h5>
+
+<p>已经存在的key是不能再add</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
+</span><span class='line'>Trying 127.0.0.1...
+</span><span class='line'>Connected to 127.0.0.1.
+</span><span class='line'>Escape character is '^]'.
+</span><span class='line'>add sex 0 0 1
+</span><span class='line'>f
+</span><span class='line'>STORED
+</span><span class='line'>add sex 0 0 1
+</span><span class='line'>m
+</span><span class='line'>NOT_STORED</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(3).replace:只有数据存在时替换的replace命令</h5>
+
+<p>只有存在才能replace:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
+</span><span class='line'>Trying 127.0.0.1...
+</span><span class='line'>Connected to 127.0.0.1.
+</span><span class='line'>Escape character is '^]'.
+</span><span class='line'>replace host 0 0 9
+</span><span class='line'>localhost
+</span><span class='line'>NOT_STORED
+</span><span class='line'>add host 0 0 9
+</span><span class='line'>127.0.0.1
+</span><span class='line'>STORED
+</span><span class='line'>get host
+</span><span class='line'>VALUE host 0 9
+</span><span class='line'>127.0.0.1
+</span><span class='line'>END
+</span><span class='line'>replace host 0 0 9
+</span><span class='line'>localhost
+</span><span class='line'>STORED
+</span><span class='line'>get host 
+</span><span class='line'>VALUE host 0 9
+</span><span class='line'>localhost
+</span><span class='line'>END</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>4.2删除命令</h3>
+
+<h5>(1).delete:删除已经存在的数据</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
+</span><span class='line'>Trying 127.0.0.1...
+</span><span class='line'>Connected to 127.0.0.1.
+</span><span class='line'>Escape character is '^]'.
+</span><span class='line'>delete unknow
+</span><span class='line'>NOT_FOUND
+</span><span class='line'>add unknow 0 0 6
+</span><span class='line'>unknow
+</span><span class='line'>STORED
+</span><span class='line'>delete unknow
+</span><span class='line'>DELETED</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>4.3自增自减命令</h3>
+
+<p>incr和decr命令,注意只能在数字类型上进行自增自减操作</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
+</span><span class='line'>Trying 127.0.0.1...
+</span><span class='line'>Connected to 127.0.0.1.
+</span><span class='line'>Escape character is '^]'.
+</span><span class='line'>set age 2 0 2
+</span><span class='line'>25
+</span><span class='line'>STORED
+</span><span class='line'>incr age 1
+</span><span class='line'>26
+</span><span class='line'>incr age 3
+</span><span class='line'>29
+</span><span class='line'>decr age 2
+</span><span class='line'>27
+</span><span class='line'>set name 1 0 11
+</span><span class='line'>baoqiu.xiao
+</span><span class='line'>STORED
+</span><span class='line'>incr name 1
+</span><span class='line'>CLIENT_ERROR cannot increment or decrement non-numeric value</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>4.4读取命令</h3>
+
+<h5>(1).get:获取一条或者多条数据</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
+</span><span class='line'>Trying 127.0.0.1...
+</span><span class='line'>Connected to 127.0.0.1.
+</span><span class='line'>Escape character is '^]'.
+</span><span class='line'>add name 1 0 11
+</span><span class='line'>baoqiu.xiao
+</span><span class='line'>STORED
+</span><span class='line'>add age 2 0 2
+</span><span class='line'>25
+</span><span class='line'>STORED
+</span><span class='line'>get name age
+</span><span class='line'>VALUE name 1 11
+</span><span class='line'>baoqiu.xiao
+</span><span class='line'>VALUE age 2 2
+</span><span class='line'>25
+</span><span class='line'>END</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(2).gets:获取一条或者多条数据</h5>
+
+<p>gets命令比get返回的值多一个数字(类似于版本号)用来判断数据是否发生过改变.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>gets name age
+</span><span class='line'>VALUE name 1 11 12
+</span><span class='line'>baoqiu.xiao
+</span><span class='line'>VALUE age 2 2 13
+</span><span class='line'>25
+</span><span class='line'>END</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(3).cas:意思是check and set</h5>
+
+<p>只有当最后一个参数和gets获取的那个用来判断数据发生改变的那个值相同时才会存储成功，否则返回 exists.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
+</span><span class='line'>Trying 127.0.0.1...
+</span><span class='line'>Connected to 127.0.0.1.
+</span><span class='line'>Escape character is '^]'.
+</span><span class='line'>gets name
+</span><span class='line'>VALUE name 1 11 19
+</span><span class='line'>baoqiu.xiao
+</span><span class='line'>END
+</span><span class='line'>cas name 1 0 9 20
+</span><span class='line'>memcached
+</span><span class='line'>EXISTS
+</span><span class='line'>cas name 1 0 9 19
+</span><span class='line'>memcached
+</span><span class='line'>STORED</span></code></pre></td></tr></table></div></figure>
+
+
+<p>gets返回的版本参数为19,cas的最后一个参数必须为19才能设置成功.</p>
+
+<h3>4.5状态命令</h3>
+
+<h5>(1).stat:显示memcachd状态</h5>
+
+<p>包括使用的内存大小等关键信息,下面包含各个项的意义:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ telnet 127.0.0.1 11211
+</span><span class='line'>Trying 127.0.0.1...
+</span><span class='line'>Connected to 127.0.0.1.
+</span><span class='line'>Escape character is '^]'.
+</span><span class='line'>stats
+</span><span class='line'>STAT pid 1241                   //memcached服务进程的进程ID
+</span><span class='line'>STAT uptime 24026               //memcached服务从启动到当前所经过的时间，单位是秒
+</span><span class='line'>STAT time 1411579124            //memcached服务器所在主机当前系统的时间，单位是秒
+</span><span class='line'>STAT version 1.4.14             //memcached组件的版本
+</span><span class='line'>STAT libevent 2.0.21-stable     //libevent版本
+</span><span class='line'>STAT pointer_size 64            //服务器所在主机操作系统的指针大小，一般为32或64
+</span><span class='line'>STAT rusage_user 0.404722       //进程累计使用用户时间
+</span><span class='line'>STAT rusage_system 0.313086     //进程累计使用系统时间
+</span><span class='line'>STAT curr_connections 5         //当前系统打开的连接数
+</span><span class='line'>STAT total_connections 21       //从memcached服务启动开始，系统打开过的连接总数
+</span><span class='line'>STAT connection_structures 6    //从memcached服务启动到现在，被服务器分配的连接结构数量
+</span><span class='line'>STAT reserved_fds 20            //
+</span><span class='line'>STAT cmd_get 15                 //累积get命令次数
+</span><span class='line'>STAT cmd_set 22                 //累积set命令次数
+</span><span class='line'>STAT cmd_flush 0                //累积flush命令次数
+</span><span class='line'>STAT cmd_touch 0                //
+</span><span class='line'>STAT get_hits 9                 //命中次数,即get成功的次数
+</span><span class='line'>STAT get_misses 6               //miss次数,即get失败的次数
+</span><span class='line'>STAT delete_misses 2            //delete miss次数
+</span><span class='line'>STAT delete_hits 5              //delete 命中次数
+</span><span class='line'>STAT incr_misses 0              //incr miss次数
+</span><span class='line'>STAT incr_hits 2                //incr 命中次数
+</span><span class='line'>STAT decr_misses 0              //decr miss次数
+</span><span class='line'>STAT decr_hits 1                //decr命中次数
+</span><span class='line'>STAT cas_misses 0               //cas命令miss的次数
+</span><span class='line'>STAT cas_hits 1                 //cas命令命中的次数
+</span><span class='line'>STAT cas_badval 1               //使用cas擦拭次数
+</span><span class='line'>STAT touch_hits 0
+</span><span class='line'>STAT touch_misses 0
+</span><span class='line'>STAT auth_cmds 0
+</span><span class='line'>STAT auth_errors 0
+</span><span class='line'>STAT bytes_read 968             //memcached服务器从网络读取的总的字节数
+</span><span class='line'>STAT bytes_written 706          //memcached服务器发送到网络的总的字节数
+</span><span class='line'>STAT limit_maxbytes 268435456   //memcached允许使用的最大字节,256M,见memcached.conf
+</span><span class='line'>STAT accepting_conns 1          //目前使用的连接数
+</span><span class='line'>STAT listen_disabled_num 0
+</span><span class='line'>STAT threads 4                  //工作线程的总数量
+</span><span class='line'>STAT conn_yields 0
+</span><span class='line'>STAT hash_power_level 16
+</span><span class='line'>STAT hash_bytes 524288
+</span><span class='line'>STAT hash_is_expanding 0
+</span><span class='line'>STAT expired_unfetched 0
+</span><span class='line'>STAT evicted_unfetched 0
+</span><span class='line'>STAT bytes 373                  //系统存储缓存对象所使用的存储空间，单位为字节
+</span><span class='line'>STAT curr_items 5               //当前缓存中存放的所有缓存对象的数量,不包括已删除的
+</span><span class='line'>STAT total_items 22             //自启动起所有缓存对象的数量,包括已删除的
+</span><span class='line'>STAT evictions 0                //从缓存移除的缓存对象数目,包括过期和空间不足时LRU移除
+</span><span class='line'>STAT reclaimed 0
+</span><span class='line'>END</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>5.Memcached客户端</h1>
+
+<p>许多语言都实现了连接memcached的客户端,见官网:
+<a href="https://code.google.com/p/memcached/wiki/Clients">https://code.google.com/p/memcached/wiki/Clients</a></p>
+
+<p>主流的语言基本都支持:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>C/C++, PHP, Java, Python, Ruby, Perl, .Net, Erlang, Lua等</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这里以Java为例,典型的三种Client,其中spymemcached和Xmemcached:
+  (1).Memcached-Java-Client
+  <a href="https://github.com/gwhalin/Memcached-Java-Client">https://github.com/gwhalin/Memcached-Java-Client</a>
+  (2).spymemcached
+  <a href="http://code.google.com/p/spymemcached/">http://code.google.com/p/spymemcached/</a>
+  (3).Xmemcached
+  <a href="https://code.google.com/p/xmemcached/">https://code.google.com/p/xmemcached/</a></p>
+
+<h3>5.1性能比较</h3>
+
+<p>java memcached client官方发布的性能对比：<a href="https://github.com/gwhalin/Memcached-Java-Client/wiki/PERFORMANCE">https://github.com/gwhalin/Memcached-Java-Client/wiki/PERFORMANCE</a></p>
+
+<p>XMemcached官方发布的性能对比：<a href="http://xmemcached.googlecode.com/svn/trunk/benchmark/benchmark.html">http://xmemcached.googlecode.com/svn/trunk/benchmark/benchmark.html</a></p>
+
+<p>根据网络资料,Xmemcached是一个不错的选择,无论在低并发还是高并发访问的情况下，都可以保持一个比较优秀的性能表现.</p>
+
+<h3>5.2Xmemcache</h3>
+
+<p>maven支持:<a href="http://mvnrepository.com/artifact/com.googlecode.xmemcached/xmemcached">http://mvnrepository.com/artifact/com.googlecode.xmemcached/xmemcached</a></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;dependency&gt;
+</span><span class='line'>  &lt;groupId&gt;com.googlecode.xmemcached&lt;/groupId&gt;
+</span><span class='line'>  &lt;artifactId&gt;xmemcached&lt;/artifactId&gt;
+</span><span class='line'>  &lt;version&gt;1.4.1&lt;/version&gt;
+</span><span class='line'>&lt;/dependency&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>简单使用:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>//memcached服务的IP及端口号
+</span><span class='line'>String addr="192.168.100.112:11211 192.168.100.113:11211"
+</span><span class='line'>MemcachedClientBuilder builder = new XMemcachedClientBuilder(AddrUtil.getAddresses(addr));
+</span><span class='line'>MemcachedClient client = builder.build();
+</span><span class='line'>
+</span><span class='line'>String cacheKey = buildCacheKey();        //key
+</span><span class='line'>Object cacheObject = buildCacheObject();  //value
+</span><span class='line'>cacheClient.set(cacheKey, exp, cacheObject);  //memcached set</span></code></pre></td></tr></table></div></figure>
+
+
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -3912,673 +4746,6 @@ public int Find(int x) {
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/07/16/java-collection/">Java Collection</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-07-16T21:08:37+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>9:08 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h1>Collections</h1>
-
-<p>Collection的工具类</p>
-
-<h3>List sort</h3>
-
-<p>调用数组的排序,即Arrays.sort,可以自定义Comparator</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="o">&lt;</span><span class="n">T</span> <span class="kd">extends</span> <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">T</span><span class="o">&gt;&gt;</span> <span class="kt">void</span> <span class="nf">sort</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="n">list</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="n">Object</span><span class="o">[]</span> <span class="n">a</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">toArray</span><span class="o">();</span>
-</span><span class='line'>    <span class="n">Arrays</span><span class="o">.</span><span class="na">sort</span><span class="o">(</span><span class="n">a</span><span class="o">);</span>
-</span><span class='line'>    <span class="n">ListIterator</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="n">i</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">listIterator</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="o">;</span> <span class="n">j</span><span class="o">&lt;</span><span class="n">a</span><span class="o">.</span><span class="na">length</span><span class="o">;</span> <span class="n">j</span><span class="o">++)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">i</span><span class="o">.</span><span class="na">next</span><span class="o">();</span>
-</span><span class='line'>        <span class="n">i</span><span class="o">.</span><span class="na">set</span><span class="o">((</span><span class="n">T</span><span class="o">)</span><span class="n">a</span><span class="o">[</span><span class="n">j</span><span class="o">]);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>List binarySearch</h3>
-
-<p>对于随机访问的List(如ArrayList)及数据量比较小的非随机访问List(小于5000),采用基于下标的binarySearch,其他(比较大的非随机访问List),采用基于iterator的binarySearch</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="kt">int</span> <span class="nf">binarySearch</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;?</span> <span class="kd">extends</span> <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">T</span><span class="o">&gt;&gt;</span> <span class="n">list</span><span class="o">,</span> <span class="n">T</span> <span class="n">key</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="c1">//BINARYSEARCH_THRESHOLD = 5000</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">list</span> <span class="k">instanceof</span> <span class="n">RandomAccess</span> <span class="o">||</span> <span class="n">list</span><span class="o">.</span><span class="na">size</span><span class="o">()&lt;</span><span class="n">BINARYSEARCH_THRESHOLD</span><span class="o">)</span>
-</span><span class='line'>            <span class="k">return</span> <span class="n">Collections</span><span class="o">.</span><span class="na">indexedBinarySearch</span><span class="o">(</span><span class="n">list</span><span class="o">,</span> <span class="n">key</span><span class="o">);</span>
-</span><span class='line'>        <span class="k">else</span>
-</span><span class='line'>            <span class="k">return</span> <span class="n">Collections</span><span class="o">.</span><span class="na">iteratorBinarySearch</span><span class="o">(</span><span class="n">list</span><span class="o">,</span> <span class="n">key</span><span class="o">);</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>基于下标的binarySearch,和数组的binarySearch很相似:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="kd">static</span> <span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="nf">indexedBinarySearch</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;?</span> <span class="kd">extends</span> <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">T</span><span class="o">&gt;&gt;</span> <span class="n">list</span><span class="o">,</span> <span class="n">T</span> <span class="n">key</span><span class="o">)</span>
-</span><span class='line'>    <span class="o">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">low</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">high</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">size</span><span class="o">()-</span><span class="mi">1</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">while</span> <span class="o">(</span><span class="n">low</span> <span class="o">&lt;=</span> <span class="n">high</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">mid</span> <span class="o">=</span> <span class="o">(</span><span class="n">low</span> <span class="o">+</span> <span class="n">high</span><span class="o">)</span> <span class="o">&gt;&gt;&gt;</span> <span class="mi">1</span><span class="o">;</span>
-</span><span class='line'>        <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">midVal</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">mid</span><span class="o">);</span>   <span class="c1">//不一定是随机访问的get</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">cmp</span> <span class="o">=</span> <span class="n">midVal</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">cmp</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>            <span class="n">low</span> <span class="o">=</span> <span class="n">mid</span> <span class="o">+</span> <span class="mi">1</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">cmp</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>            <span class="n">high</span> <span class="o">=</span> <span class="n">mid</span> <span class="o">-</span> <span class="mi">1</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">else</span>
-</span><span class='line'>            <span class="k">return</span> <span class="n">mid</span><span class="o">;</span> <span class="c1">// 找到</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>    <span class="k">return</span> <span class="o">-(</span><span class="n">low</span> <span class="o">+</span> <span class="mi">1</span><span class="o">);</span>  <span class="c1">// 没找到</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>采用基于iterator的binarySearch:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="kd">static</span> <span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="nf">iteratorBinarySearch</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;?</span> <span class="kd">extends</span> <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">T</span><span class="o">&gt;&gt;</span> <span class="n">list</span><span class="o">,</span> <span class="n">T</span> <span class="n">key</span><span class="o">)</span>
-</span><span class='line'>    <span class="o">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">low</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">high</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">size</span><span class="o">()-</span><span class="mi">1</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">ListIterator</span><span class="o">&lt;?</span> <span class="kd">extends</span> <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">T</span><span class="o">&gt;&gt;</span> <span class="n">i</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">listIterator</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">while</span> <span class="o">(</span><span class="n">low</span> <span class="o">&lt;=</span> <span class="n">high</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">mid</span> <span class="o">=</span> <span class="o">(</span><span class="n">low</span> <span class="o">+</span> <span class="n">high</span><span class="o">)</span> <span class="o">&gt;&gt;&gt;</span> <span class="mi">1</span><span class="o">;</span>
-</span><span class='line'>        <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">midVal</span> <span class="o">=</span> <span class="n">get</span><span class="o">(</span><span class="n">i</span><span class="o">,</span> <span class="n">mid</span><span class="o">);</span> <span class="c1">//Iterator i开始的第mid个元素</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">cmp</span> <span class="o">=</span> <span class="n">midVal</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">cmp</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>            <span class="n">low</span> <span class="o">=</span> <span class="n">mid</span> <span class="o">+</span> <span class="mi">1</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">cmp</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>            <span class="n">high</span> <span class="o">=</span> <span class="n">mid</span> <span class="o">-</span> <span class="mi">1</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">else</span>
-</span><span class='line'>            <span class="k">return</span> <span class="n">mid</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>    <span class="k">return</span> <span class="o">-(</span><span class="n">low</span> <span class="o">+</span> <span class="mi">1</span><span class="o">);</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>List reverse</h3>
-
-<p>对于随机访问的List(如ArrayList)及数据量比较小的非随机访问List(小于18),采用基于下标的翻转,其他(比较大的非随机访问List),采用基于iterator的翻转</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">reverse</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;?&gt;</span> <span class="n">list</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">size</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">size</span><span class="o">();</span>
-</span><span class='line'>    <span class="c1">//REVERSE_THRESHOLD = 18</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">size</span> <span class="o">&lt;</span> <span class="n">REVERSE_THRESHOLD</span> <span class="o">||</span> <span class="n">list</span> <span class="k">instanceof</span> <span class="n">RandomAccess</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="o">,</span> <span class="n">mid</span><span class="o">=</span><span class="n">size</span><span class="o">&gt;&gt;</span><span class="mi">1</span><span class="o">,</span> <span class="n">j</span><span class="o">=</span><span class="n">size</span><span class="o">-</span><span class="mi">1</span><span class="o">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">mid</span><span class="o">;</span> <span class="n">i</span><span class="o">++,</span> <span class="n">j</span><span class="o">--)</span>
-</span><span class='line'>            <span class="n">swap</span><span class="o">(</span><span class="n">list</span><span class="o">,</span> <span class="n">i</span><span class="o">,</span> <span class="n">j</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">ListIterator</span> <span class="n">fwd</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">listIterator</span><span class="o">();</span>
-</span><span class='line'>        <span class="n">ListIterator</span> <span class="n">rev</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">listIterator</span><span class="o">(</span><span class="n">size</span><span class="o">);</span>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="o">,</span> <span class="n">mid</span><span class="o">=</span><span class="n">list</span><span class="o">.</span><span class="na">size</span><span class="o">()&gt;&gt;</span><span class="mi">1</span><span class="o">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">mid</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">Object</span> <span class="n">tmp</span> <span class="o">=</span> <span class="n">fwd</span><span class="o">.</span><span class="na">next</span><span class="o">();</span>
-</span><span class='line'>            <span class="n">fwd</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">rev</span><span class="o">.</span><span class="na">previous</span><span class="o">());</span>
-</span><span class='line'>            <span class="n">rev</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">tmp</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>List shuffle</h3>
-
-<p>List的打乱顺序,需要一个全局的随机数发生器(Random),打乱的逻辑就是将第i个元素和[0, i)之间的随机位置元素交换.对于随机访问List或者大小很小的List(小于5),直接进行交换,对于比较大的非随机访问List,将其转换为数组再进行shuffle过程.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">shuffle</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;?&gt;</span> <span class="n">list</span><span class="o">,</span> <span class="n">Random</span> <span class="n">rnd</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">size</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">size</span><span class="o">();</span>
-</span><span class='line'>    <span class="c1">//SHUFFLE_THRESHOLD = 5</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">size</span> <span class="o">&lt;</span> <span class="n">SHUFFLE_THRESHOLD</span> <span class="o">||</span> <span class="n">list</span> <span class="k">instanceof</span> <span class="n">RandomAccess</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="n">size</span><span class="o">;</span> <span class="n">i</span><span class="o">&gt;</span><span class="mi">1</span><span class="o">;</span> <span class="n">i</span><span class="o">--)</span>
-</span><span class='line'>            <span class="n">swap</span><span class="o">(</span><span class="n">list</span><span class="o">,</span> <span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="o">,</span> <span class="n">rnd</span><span class="o">.</span><span class="na">nextInt</span><span class="o">(</span><span class="n">i</span><span class="o">));</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">Object</span> <span class="n">arr</span><span class="o">[]</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">toArray</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="c1">// Shuffle array</span>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="n">size</span><span class="o">;</span> <span class="n">i</span><span class="o">&gt;</span><span class="mi">1</span><span class="o">;</span> <span class="n">i</span><span class="o">--)</span>
-</span><span class='line'>            <span class="n">swap</span><span class="o">(</span><span class="n">arr</span><span class="o">,</span> <span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="o">,</span> <span class="n">rnd</span><span class="o">.</span><span class="na">nextInt</span><span class="o">(</span><span class="n">i</span><span class="o">));</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="c1">// Dump array back into list</span>
-</span><span class='line'>        <span class="n">ListIterator</span> <span class="n">it</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">listIterator</span><span class="o">();</span>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="o">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">arr</span><span class="o">.</span><span class="na">length</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">it</span><span class="o">.</span><span class="na">next</span><span class="o">();</span>
-</span><span class='line'>            <span class="n">it</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">arr</span><span class="o">[</span><span class="n">i</span><span class="o">]);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>List fill</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="kt">void</span> <span class="nf">fill</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">list</span><span class="o">,</span> <span class="n">T</span> <span class="n">obj</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">size</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">size</span><span class="o">();</span>
-</span><span class='line'>    <span class="c1">//FILL_THRESHOLD = 25</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">size</span> <span class="o">&lt;</span> <span class="n">FILL_THRESHOLD</span> <span class="o">||</span> <span class="n">list</span> <span class="k">instanceof</span> <span class="n">RandomAccess</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="o">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">size</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span>
-</span><span class='line'>            <span class="n">list</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">i</span><span class="o">,</span> <span class="n">obj</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">ListIterator</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">itr</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">listIterator</span><span class="o">();</span>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="o">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">size</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">itr</span><span class="o">.</span><span class="na">next</span><span class="o">();</span>
-</span><span class='line'>            <span class="n">itr</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">obj</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>List copy</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="kt">void</span> <span class="nf">copy</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">dest</span><span class="o">,</span> <span class="n">List</span><span class="o">&lt;?</span> <span class="kd">extends</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">src</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">srcSize</span> <span class="o">=</span> <span class="n">src</span><span class="o">.</span><span class="na">size</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">srcSize</span> <span class="o">&gt;</span> <span class="n">dest</span><span class="o">.</span><span class="na">size</span><span class="o">())</span>
-</span><span class='line'>        <span class="k">throw</span> <span class="k">new</span> <span class="nf">IndexOutOfBoundsException</span><span class="o">(</span><span class="s">&quot;Source does not fit in dest&quot;</span><span class="o">);</span>
-</span><span class='line'>    <span class="c1">//COPY_THRESHOLD = 10</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">srcSize</span> <span class="o">&lt;</span> <span class="n">COPY_THRESHOLD</span> <span class="o">||</span>
-</span><span class='line'>        <span class="o">(</span><span class="n">src</span> <span class="k">instanceof</span> <span class="n">RandomAccess</span> <span class="o">&amp;&amp;</span> <span class="n">dest</span> <span class="k">instanceof</span> <span class="n">RandomAccess</span><span class="o">))</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="o">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">srcSize</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span>
-</span><span class='line'>            <span class="n">dest</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">i</span><span class="o">,</span> <span class="n">src</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">i</span><span class="o">));</span>
-</span><span class='line'>    <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">ListIterator</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">di</span><span class="o">=</span><span class="n">dest</span><span class="o">.</span><span class="na">listIterator</span><span class="o">();</span>
-</span><span class='line'>    <span class="n">ListIterator</span><span class="o">&lt;?</span> <span class="kd">extends</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">si</span><span class="o">=</span><span class="n">src</span><span class="o">.</span><span class="na">listIterator</span><span class="o">();</span>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="o">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">srcSize</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">di</span><span class="o">.</span><span class="na">next</span><span class="o">();</span>
-</span><span class='line'>            <span class="n">di</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">si</span><span class="o">.</span><span class="na">next</span><span class="o">());</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>Collection min max</h3>
-
-<h3>List rotate</h3>
-
-<p>旋转,可以左旋或者右旋,第二参数为正数表示右旋,负数表示左旋.
-如list = [t, a, n, k, s],则Collections.rotate(list, 1)之后变为[s, t, a, n, k].
-Collections.rotate(list, 1)等效于Collections.rotate(list, -4)</p>
-
-<p>随机访问或者小于100的非随机访问List,采用循环设置的方法.</p>
-
-<p>比较大的非随机访问List采用三次reverse的方法,在编程珠玑中专门介绍了这种方法</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">rotate</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;?&gt;</span> <span class="n">list</span><span class="o">,</span> <span class="kt">int</span> <span class="n">distance</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="c1">//ROTATE_THRESHOLD = 100</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">list</span> <span class="k">instanceof</span> <span class="n">RandomAccess</span> <span class="o">||</span> <span class="n">list</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">&lt;</span> <span class="n">ROTATE_THRESHOLD</span><span class="o">)</span>
-</span><span class='line'>        <span class="n">rotate1</span><span class="o">((</span><span class="n">List</span><span class="o">)</span><span class="n">list</span><span class="o">,</span> <span class="n">distance</span><span class="o">);</span>
-</span><span class='line'>    <span class="k">else</span>
-</span><span class='line'>        <span class="nf">rotate2</span><span class="o">((</span><span class="n">List</span><span class="o">)</span><span class="n">list</span><span class="o">,</span> <span class="n">distance</span><span class="o">);</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="kd">private</span> <span class="kd">static</span> <span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="kt">void</span> <span class="nf">rotate1</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="n">list</span><span class="o">,</span> <span class="kt">int</span> <span class="n">distance</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">size</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">size</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>        <span class="k">return</span><span class="o">;</span>
-</span><span class='line'>    <span class="n">distance</span> <span class="o">=</span> <span class="n">distance</span> <span class="o">%</span> <span class="n">size</span><span class="o">;</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">distance</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>        <span class="n">distance</span> <span class="o">+=</span> <span class="n">size</span><span class="o">;</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">distance</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>        <span class="k">return</span><span class="o">;</span>
-</span><span class='line'>    <span class="c1">//总共肯定只有size次设置</span>
-</span><span class='line'>    <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">cycleStart</span> <span class="o">=</span> <span class="mi">0</span><span class="o">,</span> <span class="n">nMoved</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">nMoved</span> <span class="o">!=</span> <span class="n">size</span><span class="o">;</span> <span class="n">cycleStart</span><span class="o">++)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">T</span> <span class="n">displaced</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">cycleStart</span><span class="o">);</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="n">cycleStart</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">do</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">i</span> <span class="o">+=</span> <span class="n">distance</span><span class="o">;</span>
-</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">i</span> <span class="o">&gt;=</span> <span class="n">size</span><span class="o">)</span>
-</span><span class='line'>                <span class="n">i</span> <span class="o">-=</span> <span class="n">size</span><span class="o">;</span>
-</span><span class='line'>            <span class="n">displaced</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">i</span><span class="o">,</span> <span class="n">displaced</span><span class="o">);</span>
-</span><span class='line'>            <span class="n">nMoved</span> <span class="o">++;</span>
-</span><span class='line'>        <span class="o">}</span> <span class="k">while</span><span class="o">(</span><span class="n">i</span> <span class="o">!=</span> <span class="n">cycleStart</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="kd">private</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">rotate2</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;?&gt;</span> <span class="n">list</span><span class="o">,</span> <span class="kt">int</span> <span class="n">distance</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">size</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">size</span><span class="o">();</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>        <span class="k">return</span><span class="o">;</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">mid</span> <span class="o">=</span>  <span class="o">-</span><span class="n">distance</span> <span class="o">%</span> <span class="n">size</span><span class="o">;</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">mid</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>        <span class="n">mid</span> <span class="o">+=</span> <span class="n">size</span><span class="o">;</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">mid</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
-</span><span class='line'>        <span class="k">return</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">reverse</span><span class="o">(</span><span class="n">list</span><span class="o">.</span><span class="na">subList</span><span class="o">(</span><span class="mi">0</span><span class="o">,</span> <span class="n">mid</span><span class="o">));</span>      <span class="c1">//左侧翻转</span>
-</span><span class='line'>    <span class="n">reverse</span><span class="o">(</span><span class="n">list</span><span class="o">.</span><span class="na">subList</span><span class="o">(</span><span class="n">mid</span><span class="o">,</span> <span class="n">size</span><span class="o">));</span>   <span class="c1">//右侧翻转</span>
-</span><span class='line'>    <span class="n">reverse</span><span class="o">(</span><span class="n">list</span><span class="o">);</span>                      <span class="c1">//全部翻转</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>List replaceAll</h3>
-
-<h3>List indexOfSubList lastIndexOfSubList</h3>
-
-<p>indexOfSubList : target子序列在source序列中第一次出现的位置
-lastIndexOfSubList : target子序列在source序列中最后一次出现的位置</p>
-
-<h3>unmodifiable系列</h3>
-
-<p>指元素不可变更的集合,是对原始集合的一个包装,需要支持原始集合的所有方法.
-unmodifiableCollection,unmodifiableSet,unmodifiableSortedSet,unmodifiableList等
-实现原理都是使用内部类,不支持的操作(如List的add,remove等)直接抛出UnsupportedOperationException异常.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">static</span> <span class="kd">class</span> <span class="nc">UnmodifiableList</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">UnmodifiableCollection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
-</span><span class='line'>                      <span class="kd">implements</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">List</span><span class="o">&lt;?</span> <span class="kd">extends</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">list</span><span class="o">;</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">add</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">,</span> <span class="n">E</span> <span class="n">element</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">throw</span> <span class="k">new</span> <span class="nf">UnsupportedOperationException</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="n">E</span> <span class="nf">remove</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">throw</span> <span class="k">new</span> <span class="nf">UnsupportedOperationException</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>    <span class="c1">//其他方法</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>synchronized系列</h3>
-
-<p>指保证同步的集合,原理是对原始集合的一个包装,另外加上一个mutex,对原始集合每个方法的操作都会用synchronized(mutex)保证同步.
-synchronizedCollection,synchronizedSet,synchronizedSortedSet,synchronizedList等.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="c1">//注意SynchronizedCollection定义了mutex</span>
-</span><span class='line'><span class="n">tatic</span> <span class="kd">class</span> <span class="nc">SynchronizedCollection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">implements</span> <span class="n">Collection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;,</span> <span class="n">Serializable</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">Collection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">c</span><span class="o">;</span>  <span class="c1">// Backing Collection</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">Object</span> <span class="n">mutex</span><span class="o">;</span>     <span class="c1">// Object on which to synchronize</span>
-</span><span class='line'>    <span class="c1">//...</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'><span class="kd">static</span> <span class="kd">class</span> <span class="nc">SynchronizedList</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">SynchronizedCollection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">implements</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">list</span><span class="o">;</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="n">E</span> <span class="nf">get</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="kd">synchronized</span><span class="o">(</span><span class="n">mutex</span><span class="o">)</span> <span class="o">{</span><span class="k">return</span> <span class="n">list</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">index</span><span class="o">);}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="n">E</span> <span class="nf">set</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">,</span> <span class="n">E</span> <span class="n">element</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="kd">synchronized</span><span class="o">(</span><span class="n">mutex</span><span class="o">)</span> <span class="o">{</span><span class="k">return</span> <span class="n">list</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">index</span><span class="o">,</span> <span class="n">element</span><span class="o">);}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>    <span class="c1">//...</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>checked系列</h3>
-
-<p>获取一个集合的保证类型安全的试图,任何一个试图向集合中插入错误类型的元素会抛出ClassCastException异常
-实现原理很简单,构造函数需要传入集合及一个类型(Class),每次插入操作是会额外增加一次类型检查的操作.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">static</span> <span class="kd">class</span> <span class="nc">CheckedCollection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">implements</span> <span class="n">Collection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;,</span> <span class="n">Serializable</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">Collection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">c</span><span class="o">;</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">Class</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">type</span><span class="o">;</span>    <span class="c1">//支持的类型</span>
-</span><span class='line'>    <span class="c1">//类型检查</span>
-</span><span class='line'>    <span class="kt">void</span> <span class="nf">typeCheck</span><span class="o">(</span><span class="n">Object</span> <span class="n">o</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(!</span><span class="n">type</span><span class="o">.</span><span class="na">isInstance</span><span class="o">(</span><span class="n">o</span><span class="o">))</span>
-</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">ClassCastException</span><span class="o">(</span><span class="s">&quot;Attempt to insert &quot;</span> <span class="o">+</span>
-</span><span class='line'>               <span class="n">o</span><span class="o">.</span><span class="na">getClass</span><span class="o">()</span> <span class="o">+</span> <span class="s">&quot; element into collection with element type &quot;</span>
-</span><span class='line'>               <span class="o">+</span> <span class="n">type</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="kd">static</span> <span class="kd">class</span> <span class="nc">CheckedList</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">CheckedCollection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">implements</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
-</span><span class='line'><span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">list</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="n">E</span> <span class="nf">set</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">,</span> <span class="n">E</span> <span class="n">element</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">typeCheck</span><span class="o">(</span><span class="n">element</span><span class="o">);</span> <span class="c1">//类型检查</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">list</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">index</span><span class="o">,</span> <span class="n">element</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">add</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">,</span> <span class="n">E</span> <span class="n">element</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">typeCheck</span><span class="o">(</span><span class="n">element</span><span class="o">);</span>
-</span><span class='line'>        <span class="n">list</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="n">index</span><span class="o">,</span> <span class="n">element</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>    <span class="c1">//...</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>empty系列</h3>
-
-<p>EMPTY_LIST, EMPTY_MAP
-对get和contain等获取元素操作重写.</p>
-
-<h3>singleton系列</h3>
-
-<p>值包含一个元素的聚合
-SingletonSet, singletonList, singletonMap等</p>
-
-<h3>List nCopies</h3>
-
-<p>返回一个包含n个o的List, 用一个类CopiesList实现,特制了get等操作</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="nf">nCopies</span><span class="o">(</span><span class="kt">int</span> <span class="n">n</span><span class="o">,</span> <span class="n">T</span> <span class="n">o</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>Comparator reverseOrder</h3>
-
-<p>获取一个比较器的反向比较器,ReverseComparator实现,实现很简单,compare的顺序颠倒一下</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="kd">static</span> <span class="kd">class</span> <span class="nc">ReverseComparator</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span>
-</span><span class='line'>    <span class="kd">implements</span> <span class="n">Comparator</span><span class="o">&lt;</span><span class="n">Comparable</span><span class="o">&lt;</span><span class="n">Object</span><span class="o">&gt;&gt;,</span> <span class="n">Serializable</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">compare</span><span class="o">(</span><span class="n">Comparable</span><span class="o">&lt;</span><span class="n">Object</span><span class="o">&gt;</span> <span class="n">c1</span><span class="o">,</span> <span class="n">Comparable</span><span class="o">&lt;</span><span class="n">Object</span><span class="o">&gt;</span> <span class="n">c2</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">c2</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">c1</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'><span class="kd">private</span> <span class="kd">static</span> <span class="kd">class</span> <span class="nc">ReverseComparator2</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="kd">implements</span> <span class="n">Comparator</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;,</span>
-</span><span class='line'>        <span class="n">Serializable</span>
-</span><span class='line'><span class="o">{</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="n">Comparator</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="n">cmp</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">ReverseComparator2</span><span class="o">(</span><span class="n">Comparator</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="n">cmp</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">assert</span> <span class="n">cmp</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">cmp</span> <span class="o">=</span> <span class="n">cmp</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">compare</span><span class="o">(</span><span class="n">T</span> <span class="n">t1</span><span class="o">,</span> <span class="n">T</span> <span class="n">t2</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">cmp</span><span class="o">.</span><span class="na">compare</span><span class="o">(</span><span class="n">t2</span><span class="o">,</span> <span class="n">t1</span><span class="o">);</span> <span class="c1">//比较顺序颠倒一下</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>Collection frequency</h3>
-
-<p>集合中对象出现的次数,支持对象为null</p>
-
-<h3>Collection disjoint</h3>
-
-<p>判断两个集合是否无交集,即无相同的元素</p>
-
-<h3>Collection addAll</h3>
-
-<h3>AsLIFOQueue</h3>
-
-<p>即返回Deque的一个后进先出(Last-in-first-out, Lifo)的视图.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">Set</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="nf">newSetFromMap</span><span class="o">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">E</span><span class="o">,</span> <span class="n">Boolean</span><span class="o">&gt;</span> <span class="n">map</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">return</span> <span class="k">new</span> <span class="n">SetFromMap</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;(</span><span class="n">map</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/9">&larr; Older</a>
@@ -4598,6 +4765,10 @@ SingletonSet, singletonList, singletonMap等</p>
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/11/19/memcachedxian-zhi-fang-wen-ip/">Memcached限制访问IP</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/11/18/libphonenumber/">Libphonenumber</a>
       </li>
     
@@ -4611,10 +4782,6 @@ SingletonSet, singletonList, singletonMap等</p>
     
       <li class="post">
         <a href="/blog/2015/09/03/mysql-join/">Mysql Join</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/08/27/zai-xian-zhen-duan-gong-ju/">在线诊断工具</a>
       </li>
     
   </ul>
@@ -4632,7 +4799,7 @@ SingletonSet, singletonList, singletonMap等</p>
 <li><a class='list-group-item' href='/blog/categories/library/'>library (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (12)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (5)</a></li>
 <li><a class='list-group-item' href='/blog/categories/mybatis/'>mybatis (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (11)</a></li>
 <li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>

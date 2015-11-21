@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Memcached | xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/blog/categories/memcached/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2015-11-19T18:31:33+08:00</updated>
+  <updated>2015-11-21T10:01:39+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,60 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Memcached限制访问IP]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/11/19/memcachedxian-zhi-fang-wen-ip/"/>
+    <updated>2015-11-19T18:39:25+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/11/19/memcachedxian-zhi-fang-wen-ip</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.Memcached%20-l%E5%8F%82%E6%95%B0">1.Memcached -l参数</a></li>
+<li><a href="#2.%E4%BD%BF%E7%94%A8iptable">2.使用iptable</a></li>
+</ul>
+
+
+<h2 id="1.Memcached -l参数">1.Memcached -l参数</h2>
+
+
+<p>最近整理了组内使用的Memcached。发现很多问题，其中一个问题就是开发机器测试机器可以直连线上的Memcached。这也是memcached公认的问题：memcached 是一种很简单、有效的协议，但也有其缺点，就是 memcached 自身没有 ACL 控制。</p>
+
+<p>之前一致理解Memcached的-l参数就是限制访问IP作用的。</p>
+
+<h2 id="2.使用iptable">2.使用iptable</h2>
+
+
+<p>ACL 最简单的设置方法就是在网络层，直接拒绝掉你的访问，通过iptable可以实现这个功能。</p>
+
+<p>假如我们的一台 memcached 的机器，想拒绝除了自身之外的访问，假如机器自己IP是：XX.XX.XX.184，那么我们可以以root身份用下面几条命令来达到我们的目的：</p>
+
+<pre><code>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp -s 127.0.0.1 --dport 6666 -j ACCEPT
+[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp -s XX.XX.XX.184 --dport 6666 -j ACCEPT
+[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp --dport 6666 -j REJECT
+
+[baoqiu.xiao@... ~]sudo iptables -L -n --line-number
+Chain INPUT (policy ACCEPT)
+num  target     prot opt source               destination         
+1    ACCEPT     tcp  --  127.0.0.1            0.0.0.0/0           tcp dpt:6666 
+2    ACCEPT     tcp  --  XX.XX.XX.184         0.0.0.0/0           tcp dpt:6666 
+3    REJECT     tcp  --  0.0.0.0/0            0.0.0.0/0           tcp dpt:6666 reject-with icmp-port-unreachable 
+
+Chain FORWARD (policy ACCEPT)
+num  target     prot opt source               destination         
+
+Chain OUTPUT (policy ACCEPT)
+num  target     prot opt source               destination
+</code></pre>
+
+<p>这里使用的是iptables的filter功能，其filter是一种链式结构且有从前往后依次执行。满足某一条filter规则就不往下走了。因此基于这个原则，我们需要将最严格的规则放在最前面。</p>
+
+<p>删除某一条规则，其中的1就是iptables -L -n &ndash;line-number中的num号。</p>
+
+<pre><code>[baoqiu.xiao@... ~]sudo iptables -D INPUT 1
+</code></pre>
+
+<p>可以使用iptables -F 清空所有规则.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Memcached网络模型]]></title>

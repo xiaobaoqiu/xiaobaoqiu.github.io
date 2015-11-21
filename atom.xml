@@ -4,7 +4,7 @@
   <title><![CDATA[xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2015-11-19T18:31:33+08:00</updated>
+  <updated>2015-11-21T10:01:39+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,77 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Memcached限制访问IP]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2015/11/19/memcachedxian-zhi-fang-wen-ip/"/>
+    <updated>2015-11-19T18:39:25+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2015/11/19/memcachedxian-zhi-fang-wen-ip</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.Memcached%20-l%E5%8F%82%E6%95%B0">1.Memcached -l参数</a></li>
+<li><a href="#2.%E4%BD%BF%E7%94%A8iptable">2.使用iptable</a></li>
+</ul>
+
+
+<h2 id="1.Memcached -l参数">1.Memcached -l参数</h2>
+
+
+<p>最近整理了组内使用的Memcached。发现很多问题，其中一个问题就是开发机器测试机器可以直连线上的Memcached。这也是memcached公认的问题：memcached 是一种很简单、有效的协议，但也有其缺点，就是 memcached 自身没有 ACL 控制。</p>
+
+<p>之前一致理解Memcached的-l参数就是限制访问IP作用的。</p>
+
+<h2 id="2.使用iptable">2.使用iptable</h2>
+
+
+<p>ACL 最简单的设置方法就是在网络层，直接拒绝掉你的访问，通过iptable可以实现这个功能。</p>
+
+<p>假如我们的一台 memcached 的机器，想拒绝除了自身之外的访问，假如机器自己IP是：XX.XX.XX.184，那么我们可以以root身份用下面几条命令来达到我们的目的：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp -s 127.0.0.1 --dport 6666 -j ACCEPT
+</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp -s XX.XX.XX.184 --dport 6666 -j ACCEPT
+</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp --dport 6666 -j REJECT
+</span><span class='line'>
+</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -L -n --line-number
+</span><span class='line'>Chain INPUT (policy ACCEPT)
+</span><span class='line'>num  target     prot opt source               destination         
+</span><span class='line'>1    ACCEPT     tcp  --  127.0.0.1            0.0.0.0/0           tcp dpt:6666 
+</span><span class='line'>2    ACCEPT     tcp  --  XX.XX.XX.184         0.0.0.0/0           tcp dpt:6666 
+</span><span class='line'>3    REJECT     tcp  --  0.0.0.0/0            0.0.0.0/0           tcp dpt:6666 reject-with icmp-port-unreachable 
+</span><span class='line'>
+</span><span class='line'>Chain FORWARD (policy ACCEPT)
+</span><span class='line'>num  target     prot opt source               destination         
+</span><span class='line'>
+</span><span class='line'>Chain OUTPUT (policy ACCEPT)
+</span><span class='line'>num  target     prot opt source               destination</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这里使用的是iptables的filter功能，其filter是一种链式结构且有从前往后依次执行。满足某一条filter规则就不往下走了。因此基于这个原则，我们需要将最严格的规则放在最前面。</p>
+
+<p>删除某一条规则，其中的1就是iptables -L -n &ndash;line-number中的num号。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@... ~]sudo iptables -D INPUT 1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>可以使用iptables -F 清空所有规则.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Libphonenumber]]></title>
@@ -41,12 +112,17 @@
 <p>使用的库是Google提供的著名开源库libphonenumber.有的App的手机号码归属地等功能就是使用这个实现的。支持Java， C++ 和 JavaScript。</p>
 
 <p>libphonenumber是一个手机号码工具类,提供了手机号码的格式化,解析,校验等功能.典型的比如:
-(1). 解析手机号码,获取国际码;
-(2). 根据国家代码和手机号,判断手机号是否有效;
-(3). 根据国家代码和手机号,判断手机运营商
-(4). 根据国家代码和手机号,手机归属地</p>
+(1). 解析手机号码,获取国际码;</p>
+
+<p>(2). 根据国家代码和手机号,判断手机号是否有效;</p>
+
+<p>(3). 根据国家代码和手机号,判断手机运营商</p>
+
+<p>(4). 根据国家代码和手机号,手机归属地</p>
 
 <p>Git地址： <a href="https://github.com/googlei18n/libphonenumber">https://github.com/googlei18n/libphonenumber</a></p>
+
+<p>国家码参考：<a href="http://country-code.cl/">http://country-code.cl/</a></p>
 
 <h2 id="2.使用Demo">2.使用Demo</h2>
 
@@ -245,12 +321,12 @@
 </span><span class='line'>    private static final String DEFAULT_COUNTRY = "CN";
 </span><span class='line'>
 </span><span class='line'>    private static final String[] phoneCases = new String[] {
-</span><span class='line'>            "008618612483515",  //中国
-</span><span class='line'>            "00886972777718",   //台湾
-</span><span class='line'>            "006582922994",     //新加坡
-</span><span class='line'>            "15910645718",      //中国
-</span><span class='line'>            "008201074704546",  //Korea
-</span><span class='line'>            "17091008155"       //中国170
+</span><span class='line'>            "00861861****515",  //中国
+</span><span class='line'>            "008869****7718",   //台湾
+</span><span class='line'>            "00658****994",     //新加坡
+</span><span class='line'>            "1591****718",      //中国
+</span><span class='line'>            "00820****704546",  //Korea
+</span><span class='line'>            "1709****155"       //中国170
 </span><span class='line'>    };
 </span><span class='line'>
 </span><span class='line'>    private static final String[] countryCodes = new String[]{
@@ -261,11 +337,11 @@
 </span><span class='line'>            "86"        //中国170
 </span><span class='line'>    };
 </span><span class='line'>    private static final String[] phones = new String[]{
-</span><span class='line'>            "972777718",        //台湾
-</span><span class='line'>            "82922994",         //新加坡
-</span><span class='line'>            "15910645718",      //中国
-</span><span class='line'>            "1074704546",       //Korea
-</span><span class='line'>            "17091008155"       //中国170
+</span><span class='line'>            "972****718",        //台湾
+</span><span class='line'>            "82****94",         //新加坡
+</span><span class='line'>            "1591****718",      //中国
+</span><span class='line'>            "1074****46",       //Korea
+</span><span class='line'>            "1709****155"       //中国170
 </span><span class='line'>    };
 </span><span class='line'>
 </span><span class='line'>    public static final Map&lt;String, String&gt; CHINESE_CARRIER_MAPPER = Maps.newHashMap();
@@ -382,10 +458,9 @@
 <h2 id="3.注意点">3.注意点</h2>
 
 
-<p>1.电话解析的时候需要加上00前缀才能解析成功，比如008615912345678能解析，但是8615912345678不能解析成功；
-2.libphonenumber的基础信息库也是不断更新，比如libphonenumber的7.0.2版本不能解析170号段的电话，7.0.3以后就支持了；</p>
+<p>1.电话解析的时候需要加上00前缀才能解析成功，比如008615912345678能解析，但是8615912345678不能解析成功；</p>
 
-<p>国家码参考：<a href="http://country-code.cl/">http://country-code.cl/</a></p>
+<p>2.libphonenumber的基础信息库也是不断更新，比如libphonenumber的7.0.2版本不能解析170号段的电话，7.0.3以后就支持了；</p>
 ]]></content>
   </entry>
   
@@ -5756,868 +5831,6 @@ You can use next-key locking to implement a uniqueness check in your application
 <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=50520113">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=50520113</a></p>
 
 <p>Mysql锁基础知识 <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=64807317">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=64807317</a></p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[动态数据源]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/06/02/dong-tai-shu-ju-yuan/"/>
-    <updated>2015-06-02T02:42:35+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/06/02/dong-tai-shu-ju-yuan</id>
-    <content type="html"><![CDATA[<h1>1.数据库层面的动态数据源</h1>
-
-<p>比如多个读库(Read),可以配置一个虚拟IP,每次读数据库的请求被均衡的分配到各个读库(使用Keepalived等).</p>
-
-<p>这中方式对应用程序是透明的.</p>
-
-<h1>2.数据库Proxy</h1>
-
-<p>很多现成的数据库Proxy,在Proxy中可以做负载均衡(一般使用LVS,Keepalived等现成应用),权限验证,过滤,业务缓存等控制逻辑.比如:</p>
-
-<pre><code>1.360基于mysql-proxy的Atlas
-Atlas是由 Qihoo 360,Web平台部基础架构团队开发维护的一个基于MySQL协议的数据中间层项目。它是在mysql-proxy 0.8.2版本的基础上，对其进行了优化，增加了一些新的功能特性。360内部使用Atlas运行的mysql业务，每天承载的读写请求数达几十亿条。
-github:https://github.com/Qihoo360/Atlas
-参考:https://github.com/Qihoo360/Atlas/wiki/Atlas%E7%9A%84%E6%9E%B6%E6%9E%84
-
-2.阿里的DRDS
-分布式关系型数据库服务（Distribute Relational Database Service，简称DRDS）是一种水平拆分、可平滑扩缩容、读写分离的在线分布式数据库服务。前身为淘宝开源的TDDL，是近千个应用首选组件，已稳定服务了七年以上。已经商业化.
-参考:http://docs.aliyun.com/?spm=5176.7622920.9.2.qGx2nq#/pub/drds/brief-manual/summary&amp;summary
-
-3.网易的分布式数据库中间件DDB
-DDB（Distributed database）是网易杭研院立项最早，应用最为广泛的后台产品之一，也是国内最早出现的基于现有database之上开发的分布式数据库中间件，目前依然在为网易易信，云音乐，云阅读等大型互联网产品提供稳定的数据库服务。
-参考:http://www.majin163.com/2014/09/24/ddb-introduce/
-
-4.百度DDBS
-</code></pre>
-
-<h1>3.代码层面</h1>
-
-<p>使用Spring实现数据源动态配置,可以在代码层面达到Master-Slave数据库分离的效果.</p>
-
-<p>其实原理很简单,需要做两个工作:</p>
-
-<pre><code>1.实现一个根据不同key使用不同实际DataSource的自定义DataSource;
-2.在请求的ThreadLocal中保存当前请求需要使用的数据库的key;
-</code></pre>
-
-<p>其中第一个工作Spring已经帮我们做了,见类org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource.</p>
-
-<h3>3.1 AbstractRoutingDataSource简介</h3>
-
-<p>下面简单介绍这个类:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-<span class='line-number'>108</span>
-<span class='line-number'>109</span>
-<span class='line-number'>110</span>
-<span class='line-number'>111</span>
-<span class='line-number'>112</span>
-<span class='line-number'>113</span>
-<span class='line-number'>114</span>
-<span class='line-number'>115</span>
-<span class='line-number'>116</span>
-<span class='line-number'>117</span>
-<span class='line-number'>118</span>
-<span class='line-number'>119</span>
-<span class='line-number'>120</span>
-<span class='line-number'>121</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * 抽象的javax.sql.DataSource实现，可以完成基于一个查找key来路由 #getConnection()到某些特性目标DataSourcesd的一个。一般通过绑定线程上下文来决定。
-</span><span class='line'> */
-</span><span class='line'>public abstract class AbstractRoutingDataSource extends AbstractDataSource implements InitializingBean {
-</span><span class='line'>private Map&lt;Object, Object&gt; targetDataSources;
-</span><span class='line'>
-</span><span class='line'>    private Object defaultTargetDataSource;
-</span><span class='line'>
-</span><span class='line'>    private boolean lenientFallback = true;
-</span><span class='line'>
-</span><span class='line'>    private DataSourceLookup dataSourceLookup = new JndiDataSourceLookup();
-</span><span class='line'>
-</span><span class='line'>    private Map&lt;Object, DataSource&gt; resolvedDataSources;
-</span><span class='line'>
-</span><span class='line'>    private DataSource resolvedDefaultDataSource;
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 设置目标DataSources的map映射，其中查找key作为 map的key。
-</span><span class='line'>     * 这个映射的value可以是对象的DataSource实例，或者是一个数据源name的字符串（可以被DataSourceLookup解析）。
-</span><span class='line'>     *
-</span><span class='line'>     * key可以是任意的类型，只要实现了普通的查找处理。
-</span><span class='line'>     * 具体的key表示形式，将会被resolveSpecifiedLookupKey和determineCurrentLookupKey处理
-</span><span class='line'>     *
-</span><span class='line'>     */
-</span><span class='line'>    public void setTargetDataSources(Map&lt;Object, Object&gt; targetDataSources) {
-</span><span class='line'>        this.targetDataSources = targetDataSources;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 设置默认目标数据源。如果我们在map中找不到对应的key时，则会使用这里设置的默认数据源
-</span><span class='line'>     */
-</span><span class='line'>    public void setDefaultTargetDataSource(Object defaultTargetDataSource) {
-</span><span class='line'>        this.defaultTargetDataSource = defaultTargetDataSource;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 指定默认的DataSource，当通过指定的查找key不能找到对应的DataSource。
-</span><span class='line'>     * 如果为false，则直接返回失败，如果为true，则使用默认的数据源。默认为true
-</span><span class='line'>     */
-</span><span class='line'>    public void setLenientFallback(boolean lenientFallback) {
-</span><span class='line'>        this.lenientFallback = lenientFallback;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 设置DataSourceLookup的实现类，该实现类可以把字符串配置的数据源，解析成我们需要的DataSource类.默认使用JndiDataSourceLookup。
-</span><span class='line'>     *
-</span><span class='line'>     * JndiDataSourceLookup方法使用ref bean方式获取配置文件中配置的dataSource数据源，也就是我们一般使用xml中配置datasource的方式就是jndi。
-</span><span class='line'>     */
-</span><span class='line'>    public void setDataSourceLookup(DataSourceLookup dataSourceLookup) {
-</span><span class='line'>        this.dataSourceLookup = (dataSourceLookup != null ? dataSourceLookup : new JndiDataSourceLookup());
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>    * 初始化,将targetDataSources转换成resolvedDataSources
-</span><span class='line'>    */
-</span><span class='line'>    public void afterPropertiesSet() {
-</span><span class='line'>        if (this.targetDataSources == null) {
-</span><span class='line'>            throw new IllegalArgumentException("Property 'targetDataSources' is required");
-</span><span class='line'>        }
-</span><span class='line'>        this.resolvedDataSources = new HashMap&lt;Object, DataSource&gt;(this.targetDataSources.size());
-</span><span class='line'>        for (Map.Entry entry : this.targetDataSources.entrySet()) {
-</span><span class='line'>            Object lookupKey = resolveSpecifiedLookupKey(entry.getKey());
-</span><span class='line'>            DataSource dataSource = resolveSpecifiedDataSource(entry.getValue());
-</span><span class='line'>            this.resolvedDataSources.put(lookupKey, dataSource);
-</span><span class='line'>        }
-</span><span class='line'>        if (this.defaultTargetDataSource != null) {
-</span><span class='line'>            this.resolvedDefaultDataSource = resolveSpecifiedDataSource(this.defaultTargetDataSource);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 根据lookupKey获取map中存放的key值，默认两者是一样的
-</span><span class='line'>     */
-</span><span class='line'>    protected Object resolveSpecifiedLookupKey(Object lookupKey) {
-</span><span class='line'>        return lookupKey;
-</span><span class='line'>    }
-</span><span class='line'>    /**
-</span><span class='line'>     * 转换从获取map中存放的dataSource
-</span><span class='line'>     */
-</span><span class='line'>    protected DataSource resolveSpecifiedDataSource(Object dataSource) throws IllegalArgumentException {
-</span><span class='line'>        if (dataSource instanceof DataSource) {
-</span><span class='line'>            return (DataSource) dataSource;
-</span><span class='line'>        }
-</span><span class='line'>        else if (dataSource instanceof String) {
-</span><span class='line'>            return this.dataSourceLookup.getDataSource((String) dataSource);
-</span><span class='line'>        }
-</span><span class='line'>        else {
-</span><span class='line'>            throw new IllegalArgumentException(
-</span><span class='line'>                    "Illegal data source value - only [javax.sql.DataSource] and String supported: " + dataSource);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>    * 这里就是抽象类给我们实现的接口方法，根据我们的配置上下文，抽象类决定实现哪个连接
-</span><span class='line'>    */
-</span><span class='line'>    public Connection getConnection() throws SQLException {
-</span><span class='line'>        return determineTargetDataSource().getConnection();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public Connection getConnection(String username, String password) throws SQLException {
-</span><span class='line'>        return determineTargetDataSource().getConnection(username, password);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    protected DataSource determineTargetDataSource() {
-</span><span class='line'>        Assert.notNull(this.resolvedDataSources, "DataSource router not initialized");
-</span><span class='line'>        Object lookupKey = determineCurrentLookupKey();
-</span><span class='line'>        DataSource dataSource = this.resolvedDataSources.get(lookupKey);
-</span><span class='line'>        if (dataSource == null && (this.lenientFallback || lookupKey == null)) {
-</span><span class='line'>            dataSource = this.resolvedDefaultDataSource;
-</span><span class='line'>        }
-</span><span class='line'>        if (dataSource == null) {
-</span><span class='line'>            throw new IllegalStateException("Cannot determine target DataSource for lookup key [" + lookupKey + "]");
-</span><span class='line'>        }
-</span><span class='line'>        return dataSource;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>    * 这里是我们使用这个抽象类需要实现的方法，主要就是告诉该抽象类，当前需要使用的数据源的key是什么，这样抽象类就可以知道使用哪个数据库连接
-</span><span class='line'>    */
-</span><span class='line'>    protected abstract Object determineCurrentLookupKey();
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>我们可以继承这个类实现自己的RoutingDataSource,只需要实现determineCurrentLookupKey()方法.下面是一个实现示例,其中DataSourceKeyHolder用来在ThreadLocal中保存key,而我们的RoutingDataSource就可以从ThreadLocal中获取key来决定使用那个具体的数据源:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class RoutingDataSource extends AbstractRoutingDataSource {
-</span><span class='line'>    @Override
-</span><span class='line'>    protected Object determineCurrentLookupKey() {
-</span><span class='line'>        return DataSourceKeyHolder.getDataSource();
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public class DataSourceKeyHolder {
-</span><span class='line'>    private static final ThreadLocal&lt;String&gt; holder = new ThreadLocal&lt;String&gt;();
-</span><span class='line'>
-</span><span class='line'>    public static String getDataSource() {
-</span><span class='line'>        return holder.get();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void putDataSource(String value) {
-</span><span class='line'>        holder.set(value);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void clear(){
-</span><span class='line'>        holder.remove();
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>3.2 自己实现RoutingDataSource</h3>
-
-<p>Spring自带的AbstractRoutingDataSource功能强大,但是略先麻烦(最终使用的其实只有resolvedDataSources这个Map).我们完全可以自己实现一个简单的RoutingDataSource,比如我们要实现读写分离的动态数据库,一个简单实现如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-<span class='line-number'>108</span>
-<span class='line-number'>109</span>
-<span class='line-number'>110</span>
-<span class='line-number'>111</span>
-<span class='line-number'>112</span>
-<span class='line-number'>113</span>
-<span class='line-number'>114</span>
-<span class='line-number'>115</span>
-<span class='line-number'>116</span>
-<span class='line-number'>117</span>
-<span class='line-number'>118</span>
-<span class='line-number'>119</span>
-<span class='line-number'>120</span>
-<span class='line-number'>121</span>
-<span class='line-number'>122</span>
-<span class='line-number'>123</span>
-<span class='line-number'>124</span>
-<span class='line-number'>125</span>
-<span class='line-number'>126</span>
-<span class='line-number'>127</span>
-<span class='line-number'>128</span>
-<span class='line-number'>129</span>
-<span class='line-number'>130</span>
-<span class='line-number'>131</span>
-<span class='line-number'>132</span>
-<span class='line-number'>133</span>
-<span class='line-number'>134</span>
-<span class='line-number'>135</span>
-<span class='line-number'>136</span>
-<span class='line-number'>137</span>
-<span class='line-number'>138</span>
-<span class='line-number'>139</span>
-<span class='line-number'>140</span>
-<span class='line-number'>141</span>
-<span class='line-number'>142</span>
-<span class='line-number'>143</span>
-<span class='line-number'>144</span>
-<span class='line-number'>145</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class RoutingDataSource extends AbstractDataSource implements InitializingBean {
-</span><span class='line'>    /**
-</span><span class='line'>     * 写库, key是String
-</span><span class='line'>     */
-</span><span class='line'>    private Map&lt;String, DataSource&gt; writeDataSourceMap;
-</span><span class='line'>    /**
-</span><span class='line'>     * 读库, key是String
-</span><span class='line'>     */
-</span><span class='line'>    private Map&lt;String, DataSource&gt; readDataSourceMap;
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public Connection getConnection() throws SQLException {
-</span><span class='line'>        //从上下文中获取key
-</span><span class='line'>        ConnectionKey connectionKey = ConnectionKeyHolder.get();
-</span><span class='line'>        try {
-</span><span class='line'>            //默认情况,返回随机一个写库
-</span><span class='line'>            if (connectionKey == null) {
-</span><span class='line'>                return fetchConnection(writeDataSourceMap, null);
-</span><span class='line'>            }
-</span><span class='line'>
-</span><span class='line'>            //只读
-</span><span class='line'>            if (connectionKey.getType().equals(ConnectionKey.READ)) {
-</span><span class='line'>                return fetchConnection(readDataSourceMap, connectionKey.getKey());
-</span><span class='line'>            }
-</span><span class='line'>
-</span><span class='line'>            //可读可写
-</span><span class='line'>            if (connectionKey.getType().equals(ConnectionKey.READ_WRITE)) {
-</span><span class='line'>                return fetchConnection(writeDataSourceMap, connectionKey.getKey());
-</span><span class='line'>            }
-</span><span class='line'>        } catch (Exception e) {
-</span><span class='line'>            logger.error("getConnectionError", e);
-</span><span class='line'>            if (e instanceof SQLException) {
-</span><span class='line'>                throw (SQLException) e;
-</span><span class='line'>            } else {
-</span><span class='line'>                throw new SQLException(e);
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        // impossible code
-</span><span class='line'>        throw new IllegalArgumentException("invalid connection type: " + connectionKey.getType() + ", key: "
-</span><span class='line'>                + connectionKey.getKey());
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 根据key从对应的Map中获取数据库连接
-</span><span class='line'>     *
-</span><span class='line'>     * @param dbSourceMap
-</span><span class='line'>     * @param key
-</span><span class='line'>     * @return
-</span><span class='line'>     * @throws SQLException
-</span><span class='line'>     */
-</span><span class='line'>    private Connection fetchConnection(final Map&lt;String, DataSource&gt; dbSourceMap, String key) throws SQLException {
-</span><span class='line'>        if (key == null || key.length() == 0) { // null key, return a random read connection
-</span><span class='line'>            key = randomKey(dbSourceMap);
-</span><span class='line'>        }
-</span><span class='line'>        if (dbSourceMap.get(key) == null) {
-</span><span class='line'>            key = randomKey(dbSourceMap);
-</span><span class='line'>        }
-</span><span class='line'>        return dbSourceMap.get(key).getConnection();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 随机获取一个Key
-</span><span class='line'>     * @return
-</span><span class='line'>     */
-</span><span class='line'>    private String randomKey(final Map&lt;String, DataSource&gt; dbSourceMap) {
-</span><span class='line'>        String[] keys = dbSourceMap.keySet().toArray(new String[0]);
-</span><span class='line'>        int size = dbSourceMap.size();
-</span><span class='line'>        int rand = new Random().nextInt(size);
-</span><span class='line'>        return keys[rand];
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public Connection getConnection(String username, String password) throws SQLException {
-</span><span class='line'>        throw new UnsupportedOperationException();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public void afterPropertiesSet() throws Exception {
-</span><span class='line'>        Preconditions.checkArgument(MapUtils.isNotEmpty(writeDataSourceMap));
-</span><span class='line'>        Preconditions.checkArgument(MapUtils.isNotEmpty(readDataSourceMap));
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setWriteDataSource(Map&lt;String, DataSource&gt; writeDataSourceMap) {
-</span><span class='line'>        this.writeDataSourceMap = writeDataSourceMap;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setReadDataSourceMap(Map&lt;String, DataSource&gt; readDataSourceMap) {
-</span><span class='line'>        this.readDataSourceMap = readDataSourceMap;
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public class ConnectionKey {
-</span><span class='line'>    /**
-</span><span class='line'>     * 读库,只读
-</span><span class='line'>     */
-</span><span class='line'>    public static final String READ = "R";
-</span><span class='line'>    /**
-</span><span class='line'>     * 写库,可读可写
-</span><span class='line'>     */
-</span><span class='line'>    public static final String READ_WRITE = "RW";
-</span><span class='line'>
-</span><span class='line'>    private String type;
-</span><span class='line'>    private String key;
-</span><span class='line'>
-</span><span class='line'>    public ConnectionKey() {
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public ConnectionKey(String type, String key) {
-</span><span class='line'>        this.type = type;
-</span><span class='line'>        this.key = key;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public String getType() {
-</span><span class='line'>        return type;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public String getKey() {
-</span><span class='line'>        return key;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setType(String type) {
-</span><span class='line'>        this.type = type;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setKey(String key) {
-</span><span class='line'>        this.key = key;
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public class ConnectionKeyHolder {
-</span><span class='line'>    private static ThreadLocal&lt;ConnectionKey&gt; connType = new ThreadLocal&lt;ConnectionKey&gt;();
-</span><span class='line'>
-</span><span class='line'>    public static void set(ConnectionKey type) {
-</span><span class='line'>        connType.set(type);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static ConnectionKey get() {
-</span><span class='line'>        return connType.get();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void release() {
-</span><span class='line'>        connType.remove();
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>3.3 使用实现动态数据源</h3>
-
-<p>以我们自己实现的为例子,我们简单展示一下如何使用Spring加上AOP使用我们的动态数据源.</p>
-
-<p>首先定义使用读库和使用写库的注解:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'>* 使用读库的注解,value()代表key
-</span><span class='line'>*/
-</span><span class='line'>@Target({ ElementType.TYPE, ElementType.METHOD })
-</span><span class='line'>@Retention(RetentionPolicy.RUNTIME)
-</span><span class='line'>@Documented
-</span><span class='line'>public @interface Read {
-</span><span class='line'>    String value() default "";
-</span><span class='line'>}
-</span><span class='line'>/**
-</span><span class='line'>* 使用写库的注解,value()代表key
-</span><span class='line'>*/
-</span><span class='line'>@Target({ ElementType.TYPE, ElementType.METHOD })
-</span><span class='line'>@Retention(RetentionPolicy.RUNTIME)
-</span><span class='line'>@Documented
-</span><span class='line'>public @interface Write {
-</span><span class='line'>    String value() default "";
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>然后定义Aspect,逻辑很简单,只是在执行我们的业务逻辑之前给线程上文写入ConnectionKey信息:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class RoutingAop {
-</span><span class='line'>
-</span><span class='line'>    protected Logger log = LoggerFactory.getLogger(getClass());
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 解析读库的注解
-</span><span class='line'>     *
-</span><span class='line'>     * @param pjp
-</span><span class='line'>     * @param read
-</span><span class='line'>     * @return
-</span><span class='line'>     * @throws Throwable
-</span><span class='line'>     */
-</span><span class='line'>    public Object aroundRead(ProceedingJoinPoint pjp, Read read) throws Throwable {
-</span><span class='line'>        ConnectionKey origType = ConnectionKeyHolder.get();
-</span><span class='line'>        try {
-</span><span class='line'>            ConnectionKey newType = ConnectionKey.buildReadConnectionKey(read.value());
-</span><span class='line'>            ConnectionKeyHolder.set(newType);
-</span><span class='line'>            return pjp.proceed();
-</span><span class='line'>        } catch (Throwable throwable) {
-</span><span class='line'>            log.warn("error while processing read method", throwable);
-</span><span class='line'>            throw throwable;
-</span><span class='line'>        } finally {
-</span><span class='line'>            if (origType != null) {
-</span><span class='line'>                ConnectionKeyHolder.set(origType);
-</span><span class='line'>            } else {
-</span><span class='line'>                ConnectionKeyHolder.release();
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 解析写库的注解
-</span><span class='line'>     *
-</span><span class='line'>     * @param pjp
-</span><span class='line'>     * @param write
-</span><span class='line'>     * @return
-</span><span class='line'>     * @throws Throwable
-</span><span class='line'>     */
-</span><span class='line'>    public Object aroundWrite(ProceedingJoinPoint pjp, Write write) throws Throwable {
-</span><span class='line'>        ConnectionKey origType = ConnectionKeyHolder.get();
-</span><span class='line'>        try {
-</span><span class='line'>            ConnectionKey newType = ConnectionKey.buildWriteConnectionKey(write.value());
-</span><span class='line'>            ConnectionKeyHolder.set(newType);
-</span><span class='line'>            return pjp.proceed();
-</span><span class='line'>        } catch (Throwable throwable) {
-</span><span class='line'>            log.warn("error while processing write method", throwable);
-</span><span class='line'>            throw throwable;
-</span><span class='line'>        } finally {
-</span><span class='line'>            if (origType != null) {
-</span><span class='line'>                ConnectionKeyHolder.set(origType);
-</span><span class='line'>            } else {
-</span><span class='line'>                ConnectionKeyHolder.release();
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>在Spring配置文件中定义好各个读库和各个写库,定义我们的RoutingDataSource的bean,之后扫描注解就可以了:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;!-- DataSource 写库  --&gt;
-</span><span class='line'>&lt;bean id="writeDataSource" class="..."&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;!-- DataSource 读库  --&gt;
-</span><span class='line'>&lt;bean id="readDataSource" class="..."&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;bean id="routingDataSource" class="com.Xxx.RoutingDataSource"&gt;
-</span><span class='line'>    &lt;property name="writeDataSourceMap"&gt;
-</span><span class='line'>        &lt;map key-type="java.lang.String" value-type="javax.sql.DataSource"&gt;
-</span><span class='line'>            &lt;entry key="write1" value-ref="writeDataSource"/&gt;
-</span><span class='line'>        &lt;/map&gt;
-</span><span class='line'>    &lt;/property&gt;
-</span><span class='line'>    &lt;property name="readDataSourceMap"&gt;
-</span><span class='line'>        &lt;map key-type="java.lang.String" value-type="javax.sql.DataSource"&gt;
-</span><span class='line'>            &lt;entry key="read1" value-ref="readDataSource"/&gt;
-</span><span class='line'>        &lt;/map&gt;
-</span><span class='line'>    &lt;/property&gt;
-</span><span class='line'>&lt;/bean&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;bean id="routingAop" class="com.Xxx.RoutingAop"/&gt;
-</span><span class='line'>&lt;!-- 定义Read Write注解扫描  --&gt;
-</span><span class='line'>&lt;aop:config&gt;
-</span><span class='line'>    &lt;aop:aspect ref="routingAop"&gt;
-</span><span class='line'>        &lt;aop:around method="aroundRead" arg-names="read" pointcut="@annotation(read) &amp;&amp; execution(public * com.Xxx.controller.*.*(..))" /&gt;
-</span><span class='line'>    &lt;/aop:aspect&gt;
-</span><span class='line'>
-</span><span class='line'>    &lt;aop:aspect ref="routingAop"&gt;
-</span><span class='line'>        &lt;aop:around method="aroundWrite" arg-names="write" pointcut="@annotation(write) &amp;&amp; execution(public * com.Xxx.controller.*.*(..)) " /&gt;
-</span><span class='line'>    &lt;/aop:aspect&gt;
-</span><span class='line'>&lt;/aop:config&gt;
-</span></code></pre></td></tr></table></div></figure>
-
 ]]></content>
   </entry>
   

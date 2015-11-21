@@ -9,7 +9,11 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="相信很多同学都喜欢使用命令行和Mysql交互而不喜欢各种图形化的客户端，我也是其中之一。 使用命令行交互的一个缺点就是没有自动补全等功能，很多时候忘记字段叫什么，不得不去看一下见表语句。 现在Mycli帮我们搞定这个问题了。Mycli是一个自带自动补全和语法高亮的Mysql客户端， &hellip;">
+  <meta name="description" content="1.toString实现 测试不同的toString实现方式的效率，目前包括的case： 1.String的+连接生成；
+2.StringBuilder生成；
+3.StringBuffer生成；
+4.Guava的ToStringHelper生成；
+5.Apache.commons. &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -69,6 +73,1274 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/08/03/fan-she-de-xiao-lu/">反射的效率</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-08-03T20:54:57+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>8:54 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><h1>1.toString实现</h1>
+
+<p>测试不同的toString实现方式的效率，目前包括的case：</p>
+
+<pre><code>1.String的+连接生成；
+2.StringBuilder生成；
+3.StringBuffer生成；
+4.Guava的ToStringHelper生成；
+5.Apache.commons.lang3的lang3的ToStringBuilder生成;
+6.Apache.commons.lang3的ReflectionToStringBuilder生成;
+</code></pre>
+
+<p>toString的对象包含各种类型的属性：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private int age;
+</span><span class='line'>
+</span><span class='line'>private String name;
+</span><span class='line'>
+</span><span class='line'>private String address;
+</span><span class='line'>
+</span><span class='line'>private List&lt;String&gt; phone;
+</span><span class='line'>
+</span><span class='line'>private BigDecimal salary;
+</span><span class='line'>
+</span><span class='line'>private Map&lt;String, Object&gt; attrs;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>各个toString的实现版本，其中ReflectionToStringBuilder是我们项目中使用最多的，因为它最简单：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 使用字符串+
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String concatToString() {
+</span><span class='line'>    return "Person{" +
+</span><span class='line'>            "age=" + age +
+</span><span class='line'>            ", name='" + name + '\'' +
+</span><span class='line'>            ", address='" + address + '\'' +
+</span><span class='line'>            ", phone=" + phone +
+</span><span class='line'>            ", salary=" + salary +
+</span><span class='line'>            ", attrs=" + attrs +
+</span><span class='line'>            '}';
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 使用StringBuilder
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String stringBuilderToString() {
+</span><span class='line'>    StringBuilder builder = new StringBuilder("Person{");
+</span><span class='line'>    builder.append("age=").append(age)
+</span><span class='line'>            .append(", name='").append(name).append("'")
+</span><span class='line'>            .append(", address='").append(address).append("'")
+</span><span class='line'>            .append(", phone=").append(phone)
+</span><span class='line'>            .append(", salary=").append(salary)
+</span><span class='line'>            .append(", attrs=").append(attrs)
+</span><span class='line'>            .append("}");
+</span><span class='line'>    return builder.toString();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 使用StringBuffer
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String stringBufferToString() {
+</span><span class='line'>    StringBuffer buffer = new StringBuffer("Person{");
+</span><span class='line'>    buffer.append("age=").append(age)
+</span><span class='line'>            .append(", name='").append(name).append("'")
+</span><span class='line'>            .append(", address='").append(address).append("'")
+</span><span class='line'>            .append(", phone=").append(phone)
+</span><span class='line'>            .append(", salary=").append(salary)
+</span><span class='line'>            .append(", attrs=").append(attrs)
+</span><span class='line'>            .append("}");
+</span><span class='line'>    return buffer.toString();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * Guava的Objects,即ToStringHelper
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String toStringHelperToString() {
+</span><span class='line'>    return Objects.toStringHelper(this)
+</span><span class='line'>            .add("age", age)
+</span><span class='line'>            .add("name", name)
+</span><span class='line'>            .add("address", address)
+</span><span class='line'>            .add("phone", phone)
+</span><span class='line'>            .add("salary", salary)
+</span><span class='line'>            .add("attrs", attrs)
+</span><span class='line'>            .toString();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * apache.commons.lang3的ToStringBuilder
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String toStringBuilderToString() {
+</span><span class='line'>    return new ToStringBuilder(this)
+</span><span class='line'>            .append("age", age)
+</span><span class='line'>            .append("name", name)
+</span><span class='line'>            .append("address", address)
+</span><span class='line'>            .append("phone", phone)
+</span><span class='line'>            .append("salary", salary)
+</span><span class='line'>            .append("attrs", attrs)
+</span><span class='line'>            .toString();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * apache.commons.lang3的ReflectionToStringBuilder
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String reflectionToStringBuilderToString() {
+</span><span class='line'>    return ReflectionToStringBuilder.reflectionToString(this, ToStringStyle.SIMPLE_STYLE);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>OS是Ubuntu 14.04 LTS版本，Java版本是1.7.0_80。跑1000次，记录最大最小平均时间:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Concat Min(微秒)=25.385
+</span><span class='line'>Concat Max(微秒)=2218.851
+</span><span class='line'>Concat Avg(微秒)=56.728432999999995
+</span><span class='line'>
+</span><span class='line'>StringBuilder Min(微秒)=22.501
+</span><span class='line'>StringBuilder Max(微秒)=6934.066
+</span><span class='line'>StringBuilder Avg(微秒)=50.724183
+</span><span class='line'>
+</span><span class='line'>StringBuffer Min(微秒)=29.553
+</span><span class='line'>StringBuffer Max(微秒)=3159.808
+</span><span class='line'>StringBuffer Avg(微秒)=64.113464
+</span><span class='line'>
+</span><span class='line'>ToStringHelper Min(微秒)=44.893
+</span><span class='line'>ToStringHelper Max(微秒)=9503.836
+</span><span class='line'>ToStringHelper Avg(微秒)=112.351293
+</span><span class='line'>
+</span><span class='line'>ToStringBuilder Min(微秒)=62.806
+</span><span class='line'>ToStringBuilder Max(微秒)=20228.186
+</span><span class='line'>ToStringBuilder Avg(微秒)=194.728656
+</span><span class='line'>
+</span><span class='line'>ReflectionToStringBuilder Min(微秒)=37.057
+</span><span class='line'>ReflectionToStringBuilder Max(微秒)=11402.172
+</span><span class='line'>ReflectionToStringBuilder Avg(微秒)=219.219879</span></code></pre></td></tr></table></div></figure>
+
+
+<p>整理成表格，数据如下：</p>
+
+<table>
+<thead>
+<tr>
+<th style="text-align:center;">toString策略 </th>
+<th style="text-align:center;"> 平均(微秒) </th>
+<th style="text-align:center;"> 最大(微秒) </th>
+<th style="text-align:center;"> 最小(微秒)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">Concat </td>
+<td style="text-align:center;">56.728433  </td>
+<td style="text-align:center;">2218.851 </td>
+<td style="text-align:center;"> 25.385</td>
+</tr>
+<tr>
+<td style="text-align:center;">StringBuilder </td>
+<td style="text-align:center;">50.724183  </td>
+<td style="text-align:center;">6934.066 </td>
+<td style="text-align:center;"> 22.501</td>
+</tr>
+<tr>
+<td style="text-align:center;">StringBuffer </td>
+<td style="text-align:center;">64.113464  </td>
+<td style="text-align:center;">3159.808 </td>
+<td style="text-align:center;"> 29.553</td>
+</tr>
+<tr>
+<td style="text-align:center;">ToStringHelper </td>
+<td style="text-align:center;">112.351293  </td>
+<td style="text-align:center;">9503.836 </td>
+<td style="text-align:center;"> 44.893</td>
+</tr>
+<tr>
+<td style="text-align:center;">ToStringBuilder </td>
+<td style="text-align:center;">194.728656  </td>
+<td style="text-align:center;">20228.186 </td>
+<td style="text-align:center;"> 62.806</td>
+</tr>
+<tr>
+<td style="text-align:center;">ReflectionToStringBuilder </td>
+<td style="text-align:center;">219.219879  </td>
+<td style="text-align:center;">11402.172 </td>
+<td style="text-align:center;"> 37.057</td>
+</tr>
+</tbody>
+</table>
+
+
+<p>通过上面的数据，concat和StringBuilder及StringBuffer的速度差不多。其他集中语法糖普遍慢一些，我们最常用的ReflectionToStringBuilder实际上是最慢的一个版本。</p>
+
+<h3>1.1 实现原理</h3>
+
+<p>简单分析一下各个toString方式的实现原理。</p>
+
+<ul>
+<li>1.Concat</li>
+</ul>
+
+
+<p>没什么说的，使用的是字符串的拼接。</p>
+
+<ul>
+<li>2.StringBuilder</li>
+</ul>
+
+
+<p>内部使用char数组，每次append都会先检查数组空间释放足够，不够的话先申请一块临时数组，大小是原来的两倍大小，再用Arrays.copyOf将数据拷贝。</p>
+
+<ul>
+<li>3.StringBuffer</li>
+</ul>
+
+
+<p>和StringBuilder一样，也是继承自AbstractStringBuilder类，唯一区别是为了保证线程安全，变更数据的方法都加上了synchronized关键字。</p>
+
+<ul>
+<li>4.ToStringHelper</li>
+</ul>
+
+
+<p>Guava的ToStringHelper内部实现是一个简单链表，每个链表节点包含name，value以及下一个节点的指针。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private static final class ValueHolder {
+</span><span class='line'>        String name;
+</span><span class='line'>        Object value;
+</span><span class='line'>        Objects.ToStringHelper.ValueHolder next;
+</span><span class='line'>
+</span><span class='line'>        private ValueHolder() {
+</span><span class='line'>        }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ToStringHelper类持有链表头节点和尾节点。每次调用add都是在链表尾部加一个节点，toString() 的时候遍历整个链表讲内容加到一个StringBuilder中。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static final class ToStringHelper {
+</span><span class='line'>    private final String className;
+</span><span class='line'>    private Objects.ToStringHelper.ValueHolder holderHead;
+</span><span class='line'>    private Objects.ToStringHelper.ValueHolder holderTail;
+</span><span class='line'>
+</span><span class='line'>    public Objects.ToStringHelper add(String name, long value) {
+</span><span class='line'>        return this.addHolder(name, String.valueOf(value));
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private Objects.ToStringHelper addHolder(String name, @Nullable Object value) {
+</span><span class='line'>        Objects.ToStringHelper.ValueHolder valueHolder = this.addHolder();
+</span><span class='line'>        valueHolder.value = value;
+</span><span class='line'>        valueHolder.name = (String)Preconditions.checkNotNull(name);
+</span><span class='line'>        return this;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private Objects.ToStringHelper.ValueHolder addHolder() {
+</span><span class='line'>        Objects.ToStringHelper.ValueHolder valueHolder = new Objects.ToStringHelper.ValueHolder();
+</span><span class='line'>        this.holderTail = this.holderTail.next = valueHolder;
+</span><span class='line'>        return valueHolder;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>5.ToStringBuilder</li>
+</ul>
+
+
+<p>ToStringBuilder内部使用一个StringBuffer，默认大小为512.另外一个style设定来toString的样式，每次执行append都跳转到对应的ToStringStyle的append函数实现上，并将当前的StringBuffer带过去(StringBuffer来存储数据，ToStringStyle来保证格式)：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class ToStringBuilder implements Builder&lt;String&gt; {
+</span><span class='line'>    private static volatile ToStringStyle defaultStyle;
+</span><span class='line'>    private final StringBuffer buffer;
+</span><span class='line'>    private final Object object;
+</span><span class='line'>    private final ToStringStyle style;
+</span><span class='line'>
+</span><span class='line'>    static {
+</span><span class='line'>    defaultStyle = ToStringStyle.DEFAULT_STYLE;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public ToStringBuilder append(String fieldName, int value) {
+</span><span class='line'>        this.style.append(this.buffer, fieldName, value);
+</span><span class='line'>        return this;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ToStringStyle的append实现，每个append都很简单，就是往StringBuffer中append数据：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public void append(StringBuffer buffer, String fieldName, int value) {
+</span><span class='line'>    this.appendFieldStart(buffer, fieldName);
+</span><span class='line'>    this.appendDetail(buffer, fieldName, value);
+</span><span class='line'>    this.appendFieldEnd(buffer, fieldName);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>protected void appendDetail(StringBuffer buffer, String fieldName, int value) {
+</span><span class='line'>    buffer.append(value);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>6.ReflectionToStringBuilder</li>
+</ul>
+
+
+<p>ReflectionToStringBuilder实际上是继承自ToStringBuilder，每次都构建一个ReflectionToStringBuilder对象，toString的实现是使用反射完成，首先反射当前类的所以属性，再逐级往上获取父类并反射获取其属性,每拿到一个属性，调用一次ToStringBuilder的append方法：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static &lt;T&gt; String toString(
+</span><span class='line'>        final T object, final ToStringStyle style, final boolean outputTransients,
+</span><span class='line'>        final boolean outputStatics, final Class&lt;? super T&gt; reflectUpToClass) {
+</span><span class='line'>    return new ReflectionToStringBuilder(object, style, null, reflectUpToClass, outputTransients, outputStatics)
+</span><span class='line'>            .toString();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public String toString() {
+</span><span class='line'>        if (this.getObject() == null) {
+</span><span class='line'>            return this.getStyle().getNullText();
+</span><span class='line'>        }
+</span><span class='line'>        Class&lt;?&gt; clazz = this.getObject().getClass();
+</span><span class='line'>        this.appendFieldsIn(clazz);
+</span><span class='line'>        while (clazz.getSuperclass() != null && clazz != this.getUpToClass()) {
+</span><span class='line'>            clazz = clazz.getSuperclass();
+</span><span class='line'>            this.appendFieldsIn(clazz);
+</span><span class='line'>        }
+</span><span class='line'>        return super.toString();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    protected void appendFieldsIn(final Class&lt;?&gt; clazz) {
+</span><span class='line'>        if (clazz.isArray()) {
+</span><span class='line'>            this.reflectionAppendArray(this.getObject());
+</span><span class='line'>            return;
+</span><span class='line'>        }
+</span><span class='line'>        final Field[] fields = clazz.getDeclaredFields();
+</span><span class='line'>        AccessibleObject.setAccessible(fields, true);
+</span><span class='line'>        for (final Field field : fields) {
+</span><span class='line'>            final String fieldName = field.getName();
+</span><span class='line'>            if (this.accept(field)) {
+</span><span class='line'>                try {
+</span><span class='line'>                    // Warning: Field.get(Object) creates wrappers objects
+</span><span class='line'>                    // for primitive types.
+</span><span class='line'>                    final Object fieldValue = this.getValue(field);
+</span><span class='line'>                    this.append(fieldName, fieldValue);
+</span><span class='line'>                } catch (final IllegalAccessException ex) {
+</span><span class='line'>                    //this can't happen. Would get a Security exception
+</span><span class='line'>                    // instead
+</span><span class='line'>                    //throw a runtime exception in case the impossible
+</span><span class='line'>                    // happens.
+</span><span class='line'>                    throw new InternalError("Unexpected IllegalAccessException: " + ex.getMessage());
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.beanCopy</h1>
+
+<p>beanCopy由很多种方式，Spring和Apache都有实现版本，这里测试各个版本的性能.包括：</p>
+
+<pre><code>1.原始的get/set
+2.Spring的BeanUtils
+3.cglib的BeanCopier
+4.apache的BeanUtils
+5.apache的PropertyUtils
+</code></pre>
+
+<p>原因是前段时间项目上很简单的接口时间很慢，最后同事跟到的问题是使用Spring的beanCopy方式，因为接口涉及上百个bean的属性拷贝，因此比较明显的反应了各种beancopy实现方式的差异；我们最常用的应该是Spring版本的BeanUtils。apache的BeanUtils的设计有点反人类(第一个参数是dest，第二个参数是source)。</p>
+
+<p>各个包的版本：</p>
+
+<pre><code>1.Spring : 3.2.1
+2.cglib : 3.1
+3.commons-beanutils : 1.9.2
+</code></pre>
+
+<p>各种方式的实现很简单：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class GetSetCopy {
+</span><span class='line'>    public static HotelVo copy(HotelEntity entity) {
+</span><span class='line'>        HotelVo vo = new HotelVo();
+</span><span class='line'>        vo.setId(entity.getId());
+</span><span class='line'>        vo.setName(entity.getName());
+</span><span class='line'>        vo.setAddress(entity.getAddress());
+</span><span class='line'>        vo.setPhone(entity.getPhone());
+</span><span class='line'>        vo.setCreateTime(entity.getCreateTime());
+</span><span class='line'>        vo.setUpdateTime(entity.getUpdateTime());
+</span><span class='line'>        vo.setPrice(entity.getPrice());
+</span><span class='line'>        vo.setKp(entity.getKp());
+</span><span class='line'>
+</span><span class='line'>        return vo;
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class ApacheBeanUtilsCopy {
+</span><span class='line'>    public static HotelVo copy(HotelEntity entity) throws Exception {
+</span><span class='line'>        HotelVo vo = new HotelVo();
+</span><span class='line'>        BeanUtils.copyProperties(vo, entity);
+</span><span class='line'>        return vo;
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class ApachePropertyUtilsCopy {
+</span><span class='line'>    public static HotelVo copy(HotelEntity entity) throws Exception {
+</span><span class='line'>        HotelVo vo = new HotelVo();
+</span><span class='line'>        PropertyUtils.copyProperties(vo, entity);
+</span><span class='line'>        return vo;
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class CglibBeanCopy {
+</span><span class='line'>    public static HotelVo copy(HotelEntity entity) {
+</span><span class='line'>        HotelVo vo = new HotelVo();
+</span><span class='line'>        BeanCopier copier = BeanCopier.create(entity.getClass(), HotelVo.class, false);
+</span><span class='line'>        copier.copy(entity, vo, null);
+</span><span class='line'>        return vo;
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class SpringBeanUtilsCopy {
+</span><span class='line'>    public static HotelVo copy(HotelEntity entity) {
+</span><span class='line'>        HotelVo vo = new HotelVo();
+</span><span class='line'>        BeanUtils.copyProperties(entity, vo);
+</span><span class='line'>        return vo;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>测试的一个结果，每个copy运行10000次(各个Copy的第一次copy都很慢，跑10000次基本可以抹平这些差异)：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>GetSetCopy Min(微秒)=1.466
+</span><span class='line'>GetSetCopy Max(微秒)=804.236
+</span><span class='line'>GetSetCopy Avg(微秒)=1.7923529
+</span><span class='line'>
+</span><span class='line'>Spring-BeanUtils Min(微秒)=3.339
+</span><span class='line'>Spring-BeanUtils Max(微秒)=99795.719
+</span><span class='line'>Spring-BeanUtils Avg(微秒)=28.2915534
+</span><span class='line'>
+</span><span class='line'>Apache-BeanUtils Min(微秒)=9.812
+</span><span class='line'>Apache-BeanUtils Max(微秒)=92416.696
+</span><span class='line'>Apache-BeanUtils Avg(微秒)=79.0868131
+</span><span class='line'>
+</span><span class='line'>Apache-PropertyUtils Min(微秒)=7.083
+</span><span class='line'>Apache-PropertyUtils Max(微秒)=6405.457
+</span><span class='line'>Apache-PropertyUtils Avg(微秒)=22.114272
+</span><span class='line'>
+</span><span class='line'>Cglib-BeanCopy Min(微秒)=7.707
+</span><span class='line'>Cglib-BeanCopy Max(微秒)=156932.173
+</span><span class='line'>Cglib-BeanCopy Avg(微秒)=33.135989</span></code></pre></td></tr></table></div></figure>
+
+
+<table>
+<thead>
+<tr>
+<th style="text-align:center;">copy策略 </th>
+<th style="text-align:center;"> 平均(微秒) </th>
+<th style="text-align:center;"> 最大(微秒) </th>
+<th style="text-align:center;"> 最小(微秒)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">GetSet </td>
+<td style="text-align:center;">1.7923529  </td>
+<td style="text-align:center;">804.236 </td>
+<td style="text-align:center;"> 1.466</td>
+</tr>
+<tr>
+<td style="text-align:center;">Spring-BeanUtils </td>
+<td style="text-align:center;">28.2915534  </td>
+<td style="text-align:center;">99795.719</td>
+<td style="text-align:center;"> 3.339</td>
+</tr>
+<tr>
+<td style="text-align:center;">Apache-BeanUtils </td>
+<td style="text-align:center;">79.0868131 </td>
+<td style="text-align:center;">6405.457 </td>
+<td style="text-align:center;"> 9.812</td>
+</tr>
+<tr>
+<td style="text-align:center;">Apache-PropertyUtils </td>
+<td style="text-align:center;">22.114272  </td>
+<td style="text-align:center;">9503.836 </td>
+<td style="text-align:center;"> 7.083</td>
+</tr>
+<tr>
+<td style="text-align:center;">Cglib-BeanCopy </td>
+<td style="text-align:center;">33.135989  </td>
+<td style="text-align:center;">156932.173</td>
+<td style="text-align:center;"> 7.707</td>
+</tr>
+</tbody>
+</table>
+
+
+<p>原始的get/set是最快的，而且是快一个数量级。Apache-BeanUtils是最慢的。Spring-BeanUtils的性能还是比其他几个强一些（这是个错觉，其实Cglib-BeanCopy比Spring-BeanUtils快，见下面的分析）。</p>
+
+<h3>2.1 实现原理</h3>
+
+<p>简单分析一下各个bean copy方式的实现原理。</p>
+
+<ul>
+<li>1.原始的get/set</li>
+</ul>
+
+
+<p>没什么好说的，最原始。</p>
+
+<ul>
+<li>2.Spring的BeanUtils</li>
+</ul>
+
+
+<p>Spring的BeanUtils可以使用String [] ignoreProperties 指定忽略某些属性的复制，当我们需要手动处理一些特定属性的时候挺有用。</p>
+
+<p>copyProperties的原理很我们想想的一样：</p>
+
+<pre><code>1.获取target类的属性列表；
+2.循环遍历target属性，对每个属性，如果由write方法并且不在ignoreProperties里面，调用soure对应属性的read方法获取属性值，再调用target的write方法；
+</code></pre>
+
+<p>细节：</p>
+
+<pre><code>1.缓存
+获取target类的属性列表的时候有缓存，见CachedIntrospectionResults类。这也再一定成都上解释了为什么第一次调用会慢一些。
+2.Accessible
+注意，source的read和target的write方法可以不是Accessible的，即可以是private等修饰的方法；
+3.浅拷贝
+注意其拷贝是浅拷贝。
+</code></pre>
+
+<p>大致的代码(精简了一些)：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private static void copyProperties(Object source, Object target, Class&lt;?&gt; editable, String[] ignoreProperties) throws BeansException {
+</span><span class='line'>
+</span><span class='line'>        PropertyDescriptor[] targetPds = getPropertyDescriptors(actualEditable);    //获取target的属性描述符，有缓存
+</span><span class='line'>        List ignoreList = ignoreProperties != null?Arrays.asList(ignoreProperties):null;
+</span><span class='line'>        PropertyDescriptor[] arr$ = targetPds;
+</span><span class='line'>        int len$ = targetPds.length;
+</span><span class='line'>
+</span><span class='line'>        for(int i$ = 0; i$ &lt; len$; ++i$) {
+</span><span class='line'>            PropertyDescriptor targetPd = arr$[i$];
+</span><span class='line'>            if(targetPd.getWriteMethod() != null && (ignoreProperties == null || !ignoreList.contains(targetPd.getName()))) {   //有write方法并且不在ignoreProperties中
+</span><span class='line'>                PropertyDescriptor sourcePd = getPropertyDescriptor(source.getClass(), targetPd.getName());
+</span><span class='line'>                if(sourcePd != null && sourcePd.getReadMethod() != null) {
+</span><span class='line'>                    try {
+</span><span class='line'>                        Method ex = sourcePd.getReadMethod();   //获取source的read方法
+</span><span class='line'>                        if(!Modifier.isPublic(ex.getDeclaringClass().getModifiers())) {
+</span><span class='line'>                            ex.setAccessible(true);
+</span><span class='line'>                        }
+</span><span class='line'>
+</span><span class='line'>                        Object value = ex.invoke(source, new Object[0]);    //调用source的read方法获取属性对应的value
+</span><span class='line'>                        Method writeMethod = targetPd.getWriteMethod();
+</span><span class='line'>                        if(!Modifier.isPublic(writeMethod.getDeclaringClass().getModifiers())) {
+</span><span class='line'>                            writeMethod.setAccessible(true);
+</span><span class='line'>                        }
+</span><span class='line'>
+</span><span class='line'>                        writeMethod.invoke(target, new Object[]{value});    //调用target的write方法
+</span><span class='line'>                    } catch (Throwable var15) {
+</span><span class='line'>                        throw new FatalBeanException("Could not copy properties from source to target", var15);
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>3.cglib的BeanCopier</li>
+</ul>
+
+
+<p>BeanCopier是CGLIB包中的一个工具类，使用基于动态代理机制的方式进行Bean Copy。因为使用生成的子类中的方法进行属性复制，所以会比使用反射机制的复制在效率上会高出很多。前面一直想写一片代理方面的Blog，一直没完成，尽量他会补上，到时候会分析CGLIB的原理。</p>
+
+<p>我们这里的测试结果显示BeanCopier还不如Spring的BeanUtils，原因说BeanCopier.create的创建效率会比较低，所以在使用过程中建议将 BeanCopier.create 创建的对象声明为 static，避免使用中每次都去创建新的 BeanCopier 对象。我测试中发现，如果我们只显示的调用一次create方法，发现起速度明显快于Spring的BeanUtils(起最小值甚至小于get/set方式的最小值)：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>GetSetCopy Min(微秒)=1.46
+</span><span class='line'>GetSetCopy Max(微秒)=2149.855
+</span><span class='line'>GetSetCopy Avg(微秒)=2.0715596
+</span><span class='line'>
+</span><span class='line'>Spring-BeanUtils Min(微秒)=3.669
+</span><span class='line'>Spring-BeanUtils Max(微秒)=101262.127
+</span><span class='line'>Spring-BeanUtils Avg(微秒)=29.613658
+</span><span class='line'>
+</span><span class='line'>Apache-BeanUtils Min(微秒)=10.174
+</span><span class='line'>Apache-BeanUtils Max(微秒)=80342.749
+</span><span class='line'>Apache-BeanUtils Avg(微秒)=82.383995
+</span><span class='line'>
+</span><span class='line'>Apache-PropertyUtils Min(微秒)=5.468
+</span><span class='line'>Apache-PropertyUtils Max(微秒)=17185.561
+</span><span class='line'>Apache-PropertyUtils Avg(微秒)=26.5104518
+</span><span class='line'>
+</span><span class='line'>Cglib-BeanCopy Min(微秒)=0.745
+</span><span class='line'>Cglib-BeanCopy Max(微秒)=130832.581
+</span><span class='line'>Cglib-BeanCopy Avg(微秒)=14.6252958</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>4.apache的BeanUtils</li>
+</ul>
+
+
+<p>主要代码大致如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException {
+</span><span class='line'>    BeanUtilsBean.getInstance().copyProperties(dest, orig);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException {
+</span><span class='line'>        int i;
+</span><span class='line'>        String name;
+</span><span class='line'>        Object e;
+</span><span class='line'>        if(orig instanceof DynaBean) {  //DynaBean ？？
+</span><span class='line'>            DynaProperty[] origDescriptors = ((DynaBean)orig).getDynaClass().getDynaProperties(); 
+</span><span class='line'>
+</span><span class='line'>            for(i = 0; i &lt; origDescriptors.length; ++i) {
+</span><span class='line'>                name = origDescriptors[i].getName();
+</span><span class='line'>                if(this.getPropertyUtils().isReadable(orig, name) && this.getPropertyUtils().isWriteable(dest, name)) {
+</span><span class='line'>                    e = ((DynaBean)orig).get(name);
+</span><span class='line'>                    this.copyProperty(dest, name, e);
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        } else if(orig instanceof Map) {    //原始数据是一个Map，即支持从一个Map到target属性的拷贝
+</span><span class='line'>            Map var8 = (Map)orig;
+</span><span class='line'>            Iterator var10 = var8.entrySet().iterator();
+</span><span class='line'>
+</span><span class='line'>            while(var10.hasNext()) {
+</span><span class='line'>                Entry var11 = (Entry)var10.next();
+</span><span class='line'>                String var12 = (String)var11.getKey();
+</span><span class='line'>                if(this.getPropertyUtils().isWriteable(dest, var12)) {
+</span><span class='line'>                    this.copyProperty(dest, var12, var11.getValue());
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        } else { 
+</span><span class='line'>            PropertyDescriptor[] var9 = this.getPropertyUtils().getPropertyDescriptors(orig);   //获取target的属性描述符，有缓存
+</span><span class='line'>
+</span><span class='line'>            for(i = 0; i &lt; var9.length; ++i) {
+</span><span class='line'>                name = var9[i].getName();
+</span><span class='line'>                //要求source的read方法是Accessible，target的write方法是Accessible
+</span><span class='line'>                if(!"class".equals(name) && this.getPropertyUtils().isReadable(orig, name) && this.getPropertyUtils().isWriteable(dest, name)) {
+</span><span class='line'>                    try {
+</span><span class='line'>                        e = this.getPropertyUtils().getSimpleProperty(orig, name);  //获取source对应属性的value
+</span><span class='line'>                        this.copyProperty(dest, name, e);   //设置target对应属性
+</span><span class='line'>                    } catch (NoSuchMethodException var7) {
+</span><span class='line'>                        ;
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>细节：</p>
+
+<pre><code>1.BeanUtilsBean实例
+BeanUtilsBean需要第一次new实例，因此第一次调用会慢一些。
+2.缓存
+获取target类的属性列表的时候有缓存，见BeanIntrospectionData类。这也再一定成都上解释了为什么第一次调用会慢一些。
+3.Accessible
+注意，source的read和target的write方法要求都是Accessible的；
+4.浅拷贝
+其拷贝是浅拷贝。
+</code></pre>
+
+<ul>
+<li>5.apache的PropertyUtils
+PropertyUtils的实现和BeanUtils的实现基本一致。</li>
+</ul>
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException {
+</span><span class='line'>    PropertyUtilsBean.getInstance().copyProperties(dest, orig);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException {
+</span><span class='line'>        int i;
+</span><span class='line'>        String name;
+</span><span class='line'>        Object e;
+</span><span class='line'>        if(orig instanceof DynaBean) {
+</span><span class='line'>            DynaProperty[] origDescriptors = ((DynaBean)orig).getDynaClass().getDynaProperties();
+</span><span class='line'>
+</span><span class='line'>            for(i = 0; i &lt; origDescriptors.length; ++i) {
+</span><span class='line'>                name = origDescriptors[i].getName();
+</span><span class='line'>                if(this.isReadable(orig, name) && this.isWriteable(dest, name)) {
+</span><span class='line'>                    try {
+</span><span class='line'>                        e = ((DynaBean)orig).get(name);
+</span><span class='line'>                        if(dest instanceof DynaBean) {
+</span><span class='line'>                            ((DynaBean)dest).set(name, e);
+</span><span class='line'>                        } else {
+</span><span class='line'>                            this.setSimpleProperty(dest, name, e);
+</span><span class='line'>                        }
+</span><span class='line'>                    } catch (NoSuchMethodException var9) {
+</span><span class='line'>                        if(this.log.isDebugEnabled()) {
+</span><span class='line'>                            this.log.debug("Error writing to \'" + name + "\' on class \'" + dest.getClass() + "\'", var9);
+</span><span class='line'>                        }
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        } else if(orig instanceof Map) {    //sorcce是一个Map
+</span><span class='line'>            Iterator var10 = ((Map)orig).entrySet().iterator();
+</span><span class='line'>
+</span><span class='line'>            while(true) {
+</span><span class='line'>                Entry var12;
+</span><span class='line'>                do {
+</span><span class='line'>                    if(!var10.hasNext()) {
+</span><span class='line'>                        return;
+</span><span class='line'>                    }
+</span><span class='line'>
+</span><span class='line'>                    var12 = (Entry)var10.next();
+</span><span class='line'>                    name = (String)var12.getKey();
+</span><span class='line'>                } while(!this.isWriteable(dest, name)); //要求target对应属性是Accessible的
+</span><span class='line'>
+</span><span class='line'>                try {
+</span><span class='line'>                    if(dest instanceof DynaBean) {
+</span><span class='line'>                        ((DynaBean)dest).set(name, var12.getValue());
+</span><span class='line'>                    } else {
+</span><span class='line'>                        this.setSimpleProperty(dest, name, var12.getValue());
+</span><span class='line'>                    }
+</span><span class='line'>                } catch (NoSuchMethodException var8) {
+</span><span class='line'>                    if(this.log.isDebugEnabled()) {
+</span><span class='line'>                        this.log.debug("Error writing to \'" + name + "\' on class \'" + dest.getClass() + "\'", var8);
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        } else {
+</span><span class='line'>            PropertyDescriptor[] var11 = this.getPropertyDescriptors(orig); //获取target对象属性的描述符，有缓存
+</span><span class='line'>
+</span><span class='line'>            for(i = 0; i &lt; var11.length; ++i) {
+</span><span class='line'>                name = var11[i].getName();
+</span><span class='line'>                if(this.isReadable(orig, name) && this.isWriteable(dest, name)) {   //要求source的read方法是Accessible，target的write方法是Accessible
+</span><span class='line'>                    try {
+</span><span class='line'>                        e = this.getSimpleProperty(orig, name); //获取source对应属性的值
+</span><span class='line'>                        if(dest instanceof DynaBean) {
+</span><span class='line'>                            ((DynaBean)dest).set(name, e);
+</span><span class='line'>                        } else {
+</span><span class='line'>                            this.setSimpleProperty(dest, name, e);  //设置target对应属性的值
+</span><span class='line'>                        }
+</span><span class='line'>                    } catch (NoSuchMethodException var7) {
+</span><span class='line'>                        if(this.log.isDebugEnabled()) {
+</span><span class='line'>                            this.log.debug("Error writing to \'" + name + "\' on class \'" + dest.getClass() + "\'", var7);
+</span><span class='line'>                        }
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.问题</h1>
+
+<p>碰到一个小问题，因为涉及到同一个方法的多次调用，发现第一次调用的时间远大于后面的调用：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>GetSetCopy-1(微秒) : 1114.744
+</span><span class='line'>GetSetCopy-2(微秒) : 2.087
+</span><span class='line'>GetSetCopy-3(微秒) : 1.684
+</span><span class='line'>GetSetCopy-4(微秒) : 1.694
+</span><span class='line'>GetSetCopy-5(微秒) : 1.828
+</span><span class='line'>GetSetCopy-6(微秒) : 1.742
+</span><span class='line'>GetSetCopy-7(微秒) : 1.705
+</span><span class='line'>GetSetCopy-8(微秒) : 1.68
+</span><span class='line'>GetSetCopy-9(微秒) : 1.669
+</span><span class='line'>GetSetCopy-10(微秒) : 1.693</span></code></pre></td></tr></table></div></figure>
+
+
+<p>怀疑：</p>
+
+<pre><code>1.GetSetCopy类的初始化；
+2.拷贝的目标对象类(这里即HotelVo)初始化；
+3.方法调用的缓存；
+</code></pre>
+
+<p>尝试发现如果调用前先显示的new一个GetSetCopy对象和一个HotelVo对象，可以将第一次的时间下降到50微妙左右。如果再外面显示的调用一次copy方法，则循环内的第一次copy会降到和其他次的拷贝时间一样。</p>
+
+<h3>3.1 原理</h3>
+
+<p>待补充，会涉及到JVM一些JIT的优化等问题，自己也很期待到底什么原因&hellip;</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2448,888 +3720,6 @@ You can use next-key locking to implement a uniqueness check in your application
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/06/02/dong-tai-shu-ju-yuan/">动态数据源</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-06-02T02:42:35+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>2</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>2:42 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h1>1.数据库层面的动态数据源</h1>
-
-<p>比如多个读库(Read),可以配置一个虚拟IP,每次读数据库的请求被均衡的分配到各个读库(使用Keepalived等).</p>
-
-<p>这中方式对应用程序是透明的.</p>
-
-<h1>2.数据库Proxy</h1>
-
-<p>很多现成的数据库Proxy,在Proxy中可以做负载均衡(一般使用LVS,Keepalived等现成应用),权限验证,过滤,业务缓存等控制逻辑.比如:</p>
-
-<pre><code>1.360基于mysql-proxy的Atlas
-Atlas是由 Qihoo 360,Web平台部基础架构团队开发维护的一个基于MySQL协议的数据中间层项目。它是在mysql-proxy 0.8.2版本的基础上，对其进行了优化，增加了一些新的功能特性。360内部使用Atlas运行的mysql业务，每天承载的读写请求数达几十亿条。
-github:https://github.com/Qihoo360/Atlas
-参考:https://github.com/Qihoo360/Atlas/wiki/Atlas%E7%9A%84%E6%9E%B6%E6%9E%84
-
-2.阿里的DRDS
-分布式关系型数据库服务（Distribute Relational Database Service，简称DRDS）是一种水平拆分、可平滑扩缩容、读写分离的在线分布式数据库服务。前身为淘宝开源的TDDL，是近千个应用首选组件，已稳定服务了七年以上。已经商业化.
-参考:http://docs.aliyun.com/?spm=5176.7622920.9.2.qGx2nq#/pub/drds/brief-manual/summary&amp;summary
-
-3.网易的分布式数据库中间件DDB
-DDB（Distributed database）是网易杭研院立项最早，应用最为广泛的后台产品之一，也是国内最早出现的基于现有database之上开发的分布式数据库中间件，目前依然在为网易易信，云音乐，云阅读等大型互联网产品提供稳定的数据库服务。
-参考:http://www.majin163.com/2014/09/24/ddb-introduce/
-
-4.百度DDBS
-</code></pre>
-
-<h1>3.代码层面</h1>
-
-<p>使用Spring实现数据源动态配置,可以在代码层面达到Master-Slave数据库分离的效果.</p>
-
-<p>其实原理很简单,需要做两个工作:</p>
-
-<pre><code>1.实现一个根据不同key使用不同实际DataSource的自定义DataSource;
-2.在请求的ThreadLocal中保存当前请求需要使用的数据库的key;
-</code></pre>
-
-<p>其中第一个工作Spring已经帮我们做了,见类org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource.</p>
-
-<h3>3.1 AbstractRoutingDataSource简介</h3>
-
-<p>下面简单介绍这个类:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-<span class='line-number'>108</span>
-<span class='line-number'>109</span>
-<span class='line-number'>110</span>
-<span class='line-number'>111</span>
-<span class='line-number'>112</span>
-<span class='line-number'>113</span>
-<span class='line-number'>114</span>
-<span class='line-number'>115</span>
-<span class='line-number'>116</span>
-<span class='line-number'>117</span>
-<span class='line-number'>118</span>
-<span class='line-number'>119</span>
-<span class='line-number'>120</span>
-<span class='line-number'>121</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * 抽象的javax.sql.DataSource实现，可以完成基于一个查找key来路由 #getConnection()到某些特性目标DataSourcesd的一个。一般通过绑定线程上下文来决定。
-</span><span class='line'> */
-</span><span class='line'>public abstract class AbstractRoutingDataSource extends AbstractDataSource implements InitializingBean {
-</span><span class='line'>private Map&lt;Object, Object&gt; targetDataSources;
-</span><span class='line'>
-</span><span class='line'>    private Object defaultTargetDataSource;
-</span><span class='line'>
-</span><span class='line'>    private boolean lenientFallback = true;
-</span><span class='line'>
-</span><span class='line'>    private DataSourceLookup dataSourceLookup = new JndiDataSourceLookup();
-</span><span class='line'>
-</span><span class='line'>    private Map&lt;Object, DataSource&gt; resolvedDataSources;
-</span><span class='line'>
-</span><span class='line'>    private DataSource resolvedDefaultDataSource;
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 设置目标DataSources的map映射，其中查找key作为 map的key。
-</span><span class='line'>     * 这个映射的value可以是对象的DataSource实例，或者是一个数据源name的字符串（可以被DataSourceLookup解析）。
-</span><span class='line'>     *
-</span><span class='line'>     * key可以是任意的类型，只要实现了普通的查找处理。
-</span><span class='line'>     * 具体的key表示形式，将会被resolveSpecifiedLookupKey和determineCurrentLookupKey处理
-</span><span class='line'>     *
-</span><span class='line'>     */
-</span><span class='line'>    public void setTargetDataSources(Map&lt;Object, Object&gt; targetDataSources) {
-</span><span class='line'>        this.targetDataSources = targetDataSources;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 设置默认目标数据源。如果我们在map中找不到对应的key时，则会使用这里设置的默认数据源
-</span><span class='line'>     */
-</span><span class='line'>    public void setDefaultTargetDataSource(Object defaultTargetDataSource) {
-</span><span class='line'>        this.defaultTargetDataSource = defaultTargetDataSource;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 指定默认的DataSource，当通过指定的查找key不能找到对应的DataSource。
-</span><span class='line'>     * 如果为false，则直接返回失败，如果为true，则使用默认的数据源。默认为true
-</span><span class='line'>     */
-</span><span class='line'>    public void setLenientFallback(boolean lenientFallback) {
-</span><span class='line'>        this.lenientFallback = lenientFallback;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 设置DataSourceLookup的实现类，该实现类可以把字符串配置的数据源，解析成我们需要的DataSource类.默认使用JndiDataSourceLookup。
-</span><span class='line'>     *
-</span><span class='line'>     * JndiDataSourceLookup方法使用ref bean方式获取配置文件中配置的dataSource数据源，也就是我们一般使用xml中配置datasource的方式就是jndi。
-</span><span class='line'>     */
-</span><span class='line'>    public void setDataSourceLookup(DataSourceLookup dataSourceLookup) {
-</span><span class='line'>        this.dataSourceLookup = (dataSourceLookup != null ? dataSourceLookup : new JndiDataSourceLookup());
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>    * 初始化,将targetDataSources转换成resolvedDataSources
-</span><span class='line'>    */
-</span><span class='line'>    public void afterPropertiesSet() {
-</span><span class='line'>        if (this.targetDataSources == null) {
-</span><span class='line'>            throw new IllegalArgumentException("Property 'targetDataSources' is required");
-</span><span class='line'>        }
-</span><span class='line'>        this.resolvedDataSources = new HashMap&lt;Object, DataSource&gt;(this.targetDataSources.size());
-</span><span class='line'>        for (Map.Entry entry : this.targetDataSources.entrySet()) {
-</span><span class='line'>            Object lookupKey = resolveSpecifiedLookupKey(entry.getKey());
-</span><span class='line'>            DataSource dataSource = resolveSpecifiedDataSource(entry.getValue());
-</span><span class='line'>            this.resolvedDataSources.put(lookupKey, dataSource);
-</span><span class='line'>        }
-</span><span class='line'>        if (this.defaultTargetDataSource != null) {
-</span><span class='line'>            this.resolvedDefaultDataSource = resolveSpecifiedDataSource(this.defaultTargetDataSource);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 根据lookupKey获取map中存放的key值，默认两者是一样的
-</span><span class='line'>     */
-</span><span class='line'>    protected Object resolveSpecifiedLookupKey(Object lookupKey) {
-</span><span class='line'>        return lookupKey;
-</span><span class='line'>    }
-</span><span class='line'>    /**
-</span><span class='line'>     * 转换从获取map中存放的dataSource
-</span><span class='line'>     */
-</span><span class='line'>    protected DataSource resolveSpecifiedDataSource(Object dataSource) throws IllegalArgumentException {
-</span><span class='line'>        if (dataSource instanceof DataSource) {
-</span><span class='line'>            return (DataSource) dataSource;
-</span><span class='line'>        }
-</span><span class='line'>        else if (dataSource instanceof String) {
-</span><span class='line'>            return this.dataSourceLookup.getDataSource((String) dataSource);
-</span><span class='line'>        }
-</span><span class='line'>        else {
-</span><span class='line'>            throw new IllegalArgumentException(
-</span><span class='line'>                    "Illegal data source value - only [javax.sql.DataSource] and String supported: " + dataSource);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>    * 这里就是抽象类给我们实现的接口方法，根据我们的配置上下文，抽象类决定实现哪个连接
-</span><span class='line'>    */
-</span><span class='line'>    public Connection getConnection() throws SQLException {
-</span><span class='line'>        return determineTargetDataSource().getConnection();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public Connection getConnection(String username, String password) throws SQLException {
-</span><span class='line'>        return determineTargetDataSource().getConnection(username, password);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    protected DataSource determineTargetDataSource() {
-</span><span class='line'>        Assert.notNull(this.resolvedDataSources, "DataSource router not initialized");
-</span><span class='line'>        Object lookupKey = determineCurrentLookupKey();
-</span><span class='line'>        DataSource dataSource = this.resolvedDataSources.get(lookupKey);
-</span><span class='line'>        if (dataSource == null && (this.lenientFallback || lookupKey == null)) {
-</span><span class='line'>            dataSource = this.resolvedDefaultDataSource;
-</span><span class='line'>        }
-</span><span class='line'>        if (dataSource == null) {
-</span><span class='line'>            throw new IllegalStateException("Cannot determine target DataSource for lookup key [" + lookupKey + "]");
-</span><span class='line'>        }
-</span><span class='line'>        return dataSource;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>    * 这里是我们使用这个抽象类需要实现的方法，主要就是告诉该抽象类，当前需要使用的数据源的key是什么，这样抽象类就可以知道使用哪个数据库连接
-</span><span class='line'>    */
-</span><span class='line'>    protected abstract Object determineCurrentLookupKey();
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>我们可以继承这个类实现自己的RoutingDataSource,只需要实现determineCurrentLookupKey()方法.下面是一个实现示例,其中DataSourceKeyHolder用来在ThreadLocal中保存key,而我们的RoutingDataSource就可以从ThreadLocal中获取key来决定使用那个具体的数据源:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class RoutingDataSource extends AbstractRoutingDataSource {
-</span><span class='line'>    @Override
-</span><span class='line'>    protected Object determineCurrentLookupKey() {
-</span><span class='line'>        return DataSourceKeyHolder.getDataSource();
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public class DataSourceKeyHolder {
-</span><span class='line'>    private static final ThreadLocal&lt;String&gt; holder = new ThreadLocal&lt;String&gt;();
-</span><span class='line'>
-</span><span class='line'>    public static String getDataSource() {
-</span><span class='line'>        return holder.get();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void putDataSource(String value) {
-</span><span class='line'>        holder.set(value);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void clear(){
-</span><span class='line'>        holder.remove();
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>3.2 自己实现RoutingDataSource</h3>
-
-<p>Spring自带的AbstractRoutingDataSource功能强大,但是略先麻烦(最终使用的其实只有resolvedDataSources这个Map).我们完全可以自己实现一个简单的RoutingDataSource,比如我们要实现读写分离的动态数据库,一个简单实现如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-<span class='line-number'>108</span>
-<span class='line-number'>109</span>
-<span class='line-number'>110</span>
-<span class='line-number'>111</span>
-<span class='line-number'>112</span>
-<span class='line-number'>113</span>
-<span class='line-number'>114</span>
-<span class='line-number'>115</span>
-<span class='line-number'>116</span>
-<span class='line-number'>117</span>
-<span class='line-number'>118</span>
-<span class='line-number'>119</span>
-<span class='line-number'>120</span>
-<span class='line-number'>121</span>
-<span class='line-number'>122</span>
-<span class='line-number'>123</span>
-<span class='line-number'>124</span>
-<span class='line-number'>125</span>
-<span class='line-number'>126</span>
-<span class='line-number'>127</span>
-<span class='line-number'>128</span>
-<span class='line-number'>129</span>
-<span class='line-number'>130</span>
-<span class='line-number'>131</span>
-<span class='line-number'>132</span>
-<span class='line-number'>133</span>
-<span class='line-number'>134</span>
-<span class='line-number'>135</span>
-<span class='line-number'>136</span>
-<span class='line-number'>137</span>
-<span class='line-number'>138</span>
-<span class='line-number'>139</span>
-<span class='line-number'>140</span>
-<span class='line-number'>141</span>
-<span class='line-number'>142</span>
-<span class='line-number'>143</span>
-<span class='line-number'>144</span>
-<span class='line-number'>145</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class RoutingDataSource extends AbstractDataSource implements InitializingBean {
-</span><span class='line'>    /**
-</span><span class='line'>     * 写库, key是String
-</span><span class='line'>     */
-</span><span class='line'>    private Map&lt;String, DataSource&gt; writeDataSourceMap;
-</span><span class='line'>    /**
-</span><span class='line'>     * 读库, key是String
-</span><span class='line'>     */
-</span><span class='line'>    private Map&lt;String, DataSource&gt; readDataSourceMap;
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public Connection getConnection() throws SQLException {
-</span><span class='line'>        //从上下文中获取key
-</span><span class='line'>        ConnectionKey connectionKey = ConnectionKeyHolder.get();
-</span><span class='line'>        try {
-</span><span class='line'>            //默认情况,返回随机一个写库
-</span><span class='line'>            if (connectionKey == null) {
-</span><span class='line'>                return fetchConnection(writeDataSourceMap, null);
-</span><span class='line'>            }
-</span><span class='line'>
-</span><span class='line'>            //只读
-</span><span class='line'>            if (connectionKey.getType().equals(ConnectionKey.READ)) {
-</span><span class='line'>                return fetchConnection(readDataSourceMap, connectionKey.getKey());
-</span><span class='line'>            }
-</span><span class='line'>
-</span><span class='line'>            //可读可写
-</span><span class='line'>            if (connectionKey.getType().equals(ConnectionKey.READ_WRITE)) {
-</span><span class='line'>                return fetchConnection(writeDataSourceMap, connectionKey.getKey());
-</span><span class='line'>            }
-</span><span class='line'>        } catch (Exception e) {
-</span><span class='line'>            logger.error("getConnectionError", e);
-</span><span class='line'>            if (e instanceof SQLException) {
-</span><span class='line'>                throw (SQLException) e;
-</span><span class='line'>            } else {
-</span><span class='line'>                throw new SQLException(e);
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        // impossible code
-</span><span class='line'>        throw new IllegalArgumentException("invalid connection type: " + connectionKey.getType() + ", key: "
-</span><span class='line'>                + connectionKey.getKey());
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 根据key从对应的Map中获取数据库连接
-</span><span class='line'>     *
-</span><span class='line'>     * @param dbSourceMap
-</span><span class='line'>     * @param key
-</span><span class='line'>     * @return
-</span><span class='line'>     * @throws SQLException
-</span><span class='line'>     */
-</span><span class='line'>    private Connection fetchConnection(final Map&lt;String, DataSource&gt; dbSourceMap, String key) throws SQLException {
-</span><span class='line'>        if (key == null || key.length() == 0) { // null key, return a random read connection
-</span><span class='line'>            key = randomKey(dbSourceMap);
-</span><span class='line'>        }
-</span><span class='line'>        if (dbSourceMap.get(key) == null) {
-</span><span class='line'>            key = randomKey(dbSourceMap);
-</span><span class='line'>        }
-</span><span class='line'>        return dbSourceMap.get(key).getConnection();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 随机获取一个Key
-</span><span class='line'>     * @return
-</span><span class='line'>     */
-</span><span class='line'>    private String randomKey(final Map&lt;String, DataSource&gt; dbSourceMap) {
-</span><span class='line'>        String[] keys = dbSourceMap.keySet().toArray(new String[0]);
-</span><span class='line'>        int size = dbSourceMap.size();
-</span><span class='line'>        int rand = new Random().nextInt(size);
-</span><span class='line'>        return keys[rand];
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public Connection getConnection(String username, String password) throws SQLException {
-</span><span class='line'>        throw new UnsupportedOperationException();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public void afterPropertiesSet() throws Exception {
-</span><span class='line'>        Preconditions.checkArgument(MapUtils.isNotEmpty(writeDataSourceMap));
-</span><span class='line'>        Preconditions.checkArgument(MapUtils.isNotEmpty(readDataSourceMap));
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setWriteDataSource(Map&lt;String, DataSource&gt; writeDataSourceMap) {
-</span><span class='line'>        this.writeDataSourceMap = writeDataSourceMap;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setReadDataSourceMap(Map&lt;String, DataSource&gt; readDataSourceMap) {
-</span><span class='line'>        this.readDataSourceMap = readDataSourceMap;
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public class ConnectionKey {
-</span><span class='line'>    /**
-</span><span class='line'>     * 读库,只读
-</span><span class='line'>     */
-</span><span class='line'>    public static final String READ = "R";
-</span><span class='line'>    /**
-</span><span class='line'>     * 写库,可读可写
-</span><span class='line'>     */
-</span><span class='line'>    public static final String READ_WRITE = "RW";
-</span><span class='line'>
-</span><span class='line'>    private String type;
-</span><span class='line'>    private String key;
-</span><span class='line'>
-</span><span class='line'>    public ConnectionKey() {
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public ConnectionKey(String type, String key) {
-</span><span class='line'>        this.type = type;
-</span><span class='line'>        this.key = key;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public String getType() {
-</span><span class='line'>        return type;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public String getKey() {
-</span><span class='line'>        return key;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setType(String type) {
-</span><span class='line'>        this.type = type;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setKey(String key) {
-</span><span class='line'>        this.key = key;
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public class ConnectionKeyHolder {
-</span><span class='line'>    private static ThreadLocal&lt;ConnectionKey&gt; connType = new ThreadLocal&lt;ConnectionKey&gt;();
-</span><span class='line'>
-</span><span class='line'>    public static void set(ConnectionKey type) {
-</span><span class='line'>        connType.set(type);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static ConnectionKey get() {
-</span><span class='line'>        return connType.get();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void release() {
-</span><span class='line'>        connType.remove();
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>3.3 使用实现动态数据源</h3>
-
-<p>以我们自己实现的为例子,我们简单展示一下如何使用Spring加上AOP使用我们的动态数据源.</p>
-
-<p>首先定义使用读库和使用写库的注解:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'>* 使用读库的注解,value()代表key
-</span><span class='line'>*/
-</span><span class='line'>@Target({ ElementType.TYPE, ElementType.METHOD })
-</span><span class='line'>@Retention(RetentionPolicy.RUNTIME)
-</span><span class='line'>@Documented
-</span><span class='line'>public @interface Read {
-</span><span class='line'>    String value() default "";
-</span><span class='line'>}
-</span><span class='line'>/**
-</span><span class='line'>* 使用写库的注解,value()代表key
-</span><span class='line'>*/
-</span><span class='line'>@Target({ ElementType.TYPE, ElementType.METHOD })
-</span><span class='line'>@Retention(RetentionPolicy.RUNTIME)
-</span><span class='line'>@Documented
-</span><span class='line'>public @interface Write {
-</span><span class='line'>    String value() default "";
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>然后定义Aspect,逻辑很简单,只是在执行我们的业务逻辑之前给线程上文写入ConnectionKey信息:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class RoutingAop {
-</span><span class='line'>
-</span><span class='line'>    protected Logger log = LoggerFactory.getLogger(getClass());
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 解析读库的注解
-</span><span class='line'>     *
-</span><span class='line'>     * @param pjp
-</span><span class='line'>     * @param read
-</span><span class='line'>     * @return
-</span><span class='line'>     * @throws Throwable
-</span><span class='line'>     */
-</span><span class='line'>    public Object aroundRead(ProceedingJoinPoint pjp, Read read) throws Throwable {
-</span><span class='line'>        ConnectionKey origType = ConnectionKeyHolder.get();
-</span><span class='line'>        try {
-</span><span class='line'>            ConnectionKey newType = ConnectionKey.buildReadConnectionKey(read.value());
-</span><span class='line'>            ConnectionKeyHolder.set(newType);
-</span><span class='line'>            return pjp.proceed();
-</span><span class='line'>        } catch (Throwable throwable) {
-</span><span class='line'>            log.warn("error while processing read method", throwable);
-</span><span class='line'>            throw throwable;
-</span><span class='line'>        } finally {
-</span><span class='line'>            if (origType != null) {
-</span><span class='line'>                ConnectionKeyHolder.set(origType);
-</span><span class='line'>            } else {
-</span><span class='line'>                ConnectionKeyHolder.release();
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 解析写库的注解
-</span><span class='line'>     *
-</span><span class='line'>     * @param pjp
-</span><span class='line'>     * @param write
-</span><span class='line'>     * @return
-</span><span class='line'>     * @throws Throwable
-</span><span class='line'>     */
-</span><span class='line'>    public Object aroundWrite(ProceedingJoinPoint pjp, Write write) throws Throwable {
-</span><span class='line'>        ConnectionKey origType = ConnectionKeyHolder.get();
-</span><span class='line'>        try {
-</span><span class='line'>            ConnectionKey newType = ConnectionKey.buildWriteConnectionKey(write.value());
-</span><span class='line'>            ConnectionKeyHolder.set(newType);
-</span><span class='line'>            return pjp.proceed();
-</span><span class='line'>        } catch (Throwable throwable) {
-</span><span class='line'>            log.warn("error while processing write method", throwable);
-</span><span class='line'>            throw throwable;
-</span><span class='line'>        } finally {
-</span><span class='line'>            if (origType != null) {
-</span><span class='line'>                ConnectionKeyHolder.set(origType);
-</span><span class='line'>            } else {
-</span><span class='line'>                ConnectionKeyHolder.release();
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>在Spring配置文件中定义好各个读库和各个写库,定义我们的RoutingDataSource的bean,之后扫描注解就可以了:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;!-- DataSource 写库  --&gt;
-</span><span class='line'>&lt;bean id="writeDataSource" class="..."&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;!-- DataSource 读库  --&gt;
-</span><span class='line'>&lt;bean id="readDataSource" class="..."&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;bean id="routingDataSource" class="com.Xxx.RoutingDataSource"&gt;
-</span><span class='line'>    &lt;property name="writeDataSourceMap"&gt;
-</span><span class='line'>        &lt;map key-type="java.lang.String" value-type="javax.sql.DataSource"&gt;
-</span><span class='line'>            &lt;entry key="write1" value-ref="writeDataSource"/&gt;
-</span><span class='line'>        &lt;/map&gt;
-</span><span class='line'>    &lt;/property&gt;
-</span><span class='line'>    &lt;property name="readDataSourceMap"&gt;
-</span><span class='line'>        &lt;map key-type="java.lang.String" value-type="javax.sql.DataSource"&gt;
-</span><span class='line'>            &lt;entry key="read1" value-ref="readDataSource"/&gt;
-</span><span class='line'>        &lt;/map&gt;
-</span><span class='line'>    &lt;/property&gt;
-</span><span class='line'>&lt;/bean&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;bean id="routingAop" class="com.Xxx.RoutingAop"/&gt;
-</span><span class='line'>&lt;!-- 定义Read Write注解扫描  --&gt;
-</span><span class='line'>&lt;aop:config&gt;
-</span><span class='line'>    &lt;aop:aspect ref="routingAop"&gt;
-</span><span class='line'>        &lt;aop:around method="aroundRead" arg-names="read" pointcut="@annotation(read) &amp;&amp; execution(public * com.Xxx.controller.*.*(..))" /&gt;
-</span><span class='line'>    &lt;/aop:aspect&gt;
-</span><span class='line'>
-</span><span class='line'>    &lt;aop:aspect ref="routingAop"&gt;
-</span><span class='line'>        &lt;aop:around method="aroundWrite" arg-names="write" pointcut="@annotation(write) &amp;&amp; execution(public * com.Xxx.controller.*.*(..)) " /&gt;
-</span><span class='line'>    &lt;/aop:aspect&gt;
-</span><span class='line'>&lt;/aop:config&gt;
-</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/3">&larr; Older</a>
@@ -3349,6 +3739,10 @@ DDB（Distributed database）是网易杭研院立项最早，应用最为广泛
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/11/19/memcachedxian-zhi-fang-wen-ip/">Memcached限制访问IP</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/11/18/libphonenumber/">Libphonenumber</a>
       </li>
     
@@ -3362,10 +3756,6 @@ DDB（Distributed database）是网易杭研院立项最早，应用最为广泛
     
       <li class="post">
         <a href="/blog/2015/09/03/mysql-join/">Mysql Join</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/08/27/zai-xian-zhen-duan-gong-ju/">在线诊断工具</a>
       </li>
     
   </ul>
@@ -3383,7 +3773,7 @@ DDB（Distributed database）是网易杭研院立项最早，应用最为广泛
 <li><a class='list-group-item' href='/blog/categories/library/'>library (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (12)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (5)</a></li>
 <li><a class='list-group-item' href='/blog/categories/mybatis/'>mybatis (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (11)</a></li>
 <li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
