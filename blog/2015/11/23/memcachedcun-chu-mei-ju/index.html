@@ -5,11 +5,36 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>Crate服务load飙高 - xiaobaoqiu Blog</title>
+  <title>Memcached存储枚举 - xiaobaoqiu Blog</title>
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="前段时间搜索处理个P3的故障,原因是用户输入超级长的搜索字段,导致crate服务器load飙高,进而对外服务失败. 持续时间约10分钟.但是对我而言,最大的问题是这10分钟内,对crate服务器我什么都做不了.经过这次问题,准备好好看看crate以及背后ES的源码. 虽然解决方案是限制用户输入( &hellip;">
+  <meta name="description" content="今天发布线上碰到一个小问题，Memcached存储的数据类型包括枚举的时候，当修改枚举的包路径之后，会出现问题。
+异常信息如下，比较直观，就是数据的反序列化失败： 1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -18,7 +43,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   
-  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/07/16/cratefu-wu-loadbiao-gao/">
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/11/23/memcachedcun-chu-mei-ju/">
   <link href="/favicon.png" rel="icon">
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
   
@@ -72,7 +97,7 @@
   
   <header>
     
-      <h1 class="entry-title">Crate服务load飙高</h1>
+      <h1 class="entry-title">Memcached存储枚举</h1>
     
     
       <p class="meta">
@@ -81,37 +106,15 @@
 
 
 
-<time class='entry-date' datetime='2015-07-16T05:02:20+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:02 am</span></time>
+<time class='entry-date' datetime='2015-11-23T20:48:42+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>8:48 pm</span></time>
         
       </p>
     
   </header>
 
 
-<div class="entry-content"><p>前段时间搜索处理个P3的故障,原因是用户输入超级长的搜索字段,导致crate服务器load飙高,进而对外服务失败.</p>
-
-<p>持续时间约10分钟.但是对我而言,最大的问题是这10分钟内,对crate服务器我什么都做不了.经过这次问题,准备好好看看crate以及背后ES的源码.</p>
-
-<p>虽然解决方案是限制用户输入(这一点和google以及百度做法是一样的,百度的查询限制在38个汉字以内).</p>
-
-<h1>1.like查询</h1>
-
-<p>有问题的字段是name字段,使用crate的简单的like查询.根据官方文档,crate的like查询支持两种通配符:</p>
-
-<pre><code>% : 0个或者多个字符
-_ : 单个字符
-</code></pre>
-
-<p>需要注意的注意,使用like查询可能导致慢查询.特别是当使用前置通配符开头的like查询.因为这种情况下crate需要去迭代所有行,而不能使用索引.
-如果向获取更好的性能,可以考虑使用全文索引.</p>
-
-<p>like参考:<a href="https://crate.io/docs/en/latest/sql/queries.html#like">https://crate.io/docs/en/latest/sql/queries.html#like</a></p>
-
-<p>全文索引参考: <a href="https://crate.io/docs/en/latest/sql/fulltext.html">https://crate.io/docs/en/latest/sql/fulltext.html</a> <a href="https://crate.io/docs/en/latest/sql/ddl.html#fulltext-indices">https://crate.io/docs/en/latest/sql/ddl.html#fulltext-indices</a></p>
-
-<h1>2.crate符取异常日志</h1>
-
-<p>这里贴一下当时crate服务器的异常:</p>
+<div class="entry-content"><p>今天发布线上碰到一个小问题，Memcached存储的数据类型包括枚举的时候，当修改枚举的包路径之后，会出现问题。
+异常信息如下，比较直观，就是数据的反序列化失败：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -147,43 +150,68 @@ _ : 单个字符
 <span class='line-number'>32</span>
 <span class='line-number'>33</span>
 <span class='line-number'>34</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>org.elasticsearch.index.query.QueryParsingException: [merchant_sea] Failed to parse
-</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parseQuery(IndexQueryParserService.java:370)
-</span><span class='line'>        at org.elasticsearch.action.count.TransportCountAction.shardOperation(TransportCountAction.java:187)
-</span><span class='line'>        at org.elasticsearch.action.count.CrateTransportCountAction.shardOperation(CrateTransportCountAction.java:119)
-</span><span class='line'>        at org.elasticsearch.action.count.CrateTransportCountAction.shardOperation(CrateTransportCountAction.java:49)
-</span><span class='line'>        at org.elasticsearch.action.support.broadcast.TransportBroadcastOperationAction$AsyncBroadcastAction$1.run(TransportBroadcastOperationAction.java:171)
-</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
-</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
-</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)
-</span><span class='line'>Caused by: org.apache.lucene.util.automaton.TooComplexToDeterminizeException: Determinizing automaton would result in more than 10000 states.
-</span><span class='line'>        at org.apache.lucene.util.automaton.Operations.determinize(Operations.java:743)
-</span><span class='line'>        at org.apache.lucene.util.automaton.RunAutomaton.&lt;init&gt;(RunAutomaton.java:138)
-</span><span class='line'>        at org.apache.lucene.util.automaton.ByteRunAutomaton.&lt;init&gt;(ByteRunAutomaton.java:32)
-</span><span class='line'>        at org.apache.lucene.util.automaton.CompiledAutomaton.&lt;init&gt;(CompiledAutomaton.java:203)
-</span><span class='line'>        at org.apache.lucene.search.AutomatonQuery.&lt;init&gt;(AutomatonQuery.java:84)
-</span><span class='line'>        at org.apache.lucene.search.AutomatonQuery.&lt;init&gt;(AutomatonQuery.java:65)
-</span><span class='line'>        at org.apache.lucene.search.WildcardQuery.&lt;init&gt;(WildcardQuery.java:57)
-</span><span class='line'>        at org.elasticsearch.index.query.WildcardQueryParser.parse(WildcardQueryParser.java:106)
-</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
-</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
-</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
-</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
-</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
-</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.innerParse(IndexQueryParserService.java:382)
-</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parse(IndexQueryParserService.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parse(IndexQueryParserService.java:276)
-</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parseQuery(IndexQueryParserService.java:354)
-</span><span class='line'>        ... 7 more</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[2015-11-23 18:04:45 ERROR net.rubyeye.xmemcached.transcoders.BaseSerializingTranscoder:113] Caught CNFE decoding 944 bytes of data
+</span><span class='line'>java.lang.ClassNotFoundException: Xxx.Xxx.Xxx.Xxx.RoomStatus
+</span><span class='line'>        at org.apache.catalina.loader.WebappClassLoader.loadClass(WebappClassLoader.java:1702) ~[catalina.jar:7.0.47]
+</span><span class='line'>        at org.apache.catalina.loader.WebappClassLoader.loadClass(WebappClassLoader.java:1547) ~[catalina.jar:7.0.47]
+</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.BaseSerializingTranscoder$1.resolveClass(BaseSerializingTranscoder.java:102) ~[xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at java.io.ObjectInputStream.readNonProxyDesc(ObjectInputStream.java:1612) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readClassDesc(ObjectInputStream.java:1517) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readEnum(ObjectInputStream.java:1725) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1347) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.defaultReadFields(ObjectInputStream.java:1990) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readSerialData(ObjectInputStream.java:1915) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readOrdinaryObject(ObjectInputStream.java:1798) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1350) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readObject(ObjectInputStream.java:370) ~[na:1.7.0_45]
+</span><span class='line'>        at java.util.ArrayList.readObject(ArrayList.java:771) ~[na:1.7.0_45]
+</span><span class='line'>        at sun.reflect.GeneratedMethodAccessor41.invoke(Unknown Source) ~[na:na]
+</span><span class='line'>        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43) ~[na:1.7.0_45]
+</span><span class='line'>        at java.lang.reflect.Method.invoke(Method.java:606) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectStreamClass.invokeReadObject(ObjectStreamClass.java:1017) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readSerialData(ObjectInputStream.java:1893) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readOrdinaryObject(ObjectInputStream.java:1798) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1350) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.defaultReadFields(ObjectInputStream.java:1990) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readSerialData(ObjectInputStream.java:1915) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readOrdinaryObject(ObjectInputStream.java:1798) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1350) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readObject(ObjectInputStream.java:370) ~[na:1.7.0_45]
+</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.BaseSerializingTranscoder.deserialize(BaseSerializingTranscoder.java:106) ~[xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.SerializingTranscoder.decode0(SerializingTranscoder.java:92) [xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.SerializingTranscoder.decode(SerializingTranscoder.java:86) [xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.fetch0(XMemcachedClient.java:630) [xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.get0(XMemcachedClient.java:1030) [xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.get(XMemcachedClient.java:988) [xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.get(XMemcachedClient.java:999) [xmemcached-1.4.1.jar:na]</span></code></pre></td></tr></table></div></figure>
 
 
-<h1>3.背后的原理</h1>
+<p>场景如下：</p>
+
+<ol>
+<li>Memcached已经有数据，数据中包含RoomStatus数据；</li>
+<li>修改了枚举的包路径，发布线上；</li>
+<li>从Cache中读取之前的数据会出现枚举反序列化异常；</li>
+</ol>
+
+
+<p>在本地代码中重现了一下问题，并看了一下使用枚举的情况下其他可能处心问题的场景，结论如下（前提是Cache中已经存在使用RoomStatus数据）：</p>
+
+<ol>
+<li>修改包路径，会导致get数据反序列化失败，java.lang.ClassNotFoundException: Xxx.Xxx.Xxx.Xxx.RoomStatus；</li>
+<li>RoomStatus增加项，正常；</li>
+<li>RoomStatus减少项(已Cache数据中未使用到的项)，正常；</li>
+<li>RoomStatus减少项(已Cache数据中使用到的项)，异常：enum constant Xxx does not exist in Xxx.Xxx.Xxx.Xxx.RoomStatus；</li>
+</ol>
+
+
+<p>综上，在Memcached中cache包含枚举的数据时候，建议如下：</p>
+
+<ol>
+<li>不要修改枚举的包路径；</li>
+<li>不要删除枚举中的数据；</li>
+</ol>
+
 </div>
 
 
@@ -199,12 +227,12 @@ _ : 单个字符
 
 
 
-<time class='entry-date' datetime='2015-07-16T05:02:20+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:02 am</span></time>
+<time class='entry-date' datetime='2015-11-23T20:48:42+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>8:48 pm</span></time>
       
 
 <span class="categories">
   
-    <a class='category' href='/blog/categories/search/'>search</a>
+    <a class='category' href='/blog/categories/memcached/'>memcached</a>
   
 </span>
 
@@ -213,7 +241,7 @@ _ : 单个字符
     
       <div class="sharing">
   
-  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/07/16/cratefu-wu-loadbiao-gao/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/07/16/cratefu-wu-loadbiao-gao/" >Tweet</a>
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/11/23/memcachedcun-chu-mei-ju/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/11/23/memcachedcun-chu-mei-ju/" >Tweet</a>
   
   
   
@@ -222,10 +250,8 @@ _ : 单个字符
     
     <p class="meta">
       
-        <a class="basic-alignment left" href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/" title="Previous Post: 系统当前用户">&laquo; 系统当前用户</a>
+        <a class="basic-alignment left" href="/blog/2015/11/21/ju-bu-min-gan-hash/" title="Previous Post: 局部敏感Hash">&laquo; 局部敏感Hash</a>
       
-      
-        <a class="basic-alignment right" href="/blog/2015/07/17/fen-ci/" title="Next Post: 分词">分词 &raquo;</a>
       
     </p>
   </footer>
