@@ -184,6 +184,94 @@ _ : 单个字符
 
 
 <h1>3.背后的原理</h1>
+
+<p>查询的第一步是query词的解析，这里使用的like查询，查询类型是通配符的查询(WildcardQuery)。WildcardQuery主要处理三种情况：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  /** 匹配字符串 */
+</span><span class='line'>  public static final char WILDCARD_STRING = '*';
+</span><span class='line'>
+</span><span class='line'>  /** 匹配单个字符 */
+</span><span class='line'>  public static final char WILDCARD_CHAR = '?';
+</span><span class='line'>
+</span><span class='line'>  /** 转义符 */
+</span><span class='line'>  public static final char WILDCARD_ESCAPE = '\\';</span></code></pre></td></tr></table></div></figure>
+
+
+<p>WildcardQuery继承自AutomatonQuery，AutomatonQuery实现了有限状态机匹配的搜索(记得算法导论上有介绍，和KMP算法同时出现的)。</p>
+
+<p>构造AutomatonQuery的时候有一个参数maxDeterminizedStates，意义是构造出来的状态机的最大状态个数。默认值是Operations.DEFAULT_MAX_DETERMINIZED_STATES:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public AutomatonQuery(final Term term, Automaton automaton) {
+</span><span class='line'>    this(term, automaton, Operations.DEFAULT_MAX_DETERMINIZED_STATES);
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'>   * Create a new AutomatonQuery from an {@link Automaton}.
+</span><span class='line'>   * 
+</span><span class='line'>   * @param term Term containing field and possibly some pattern structure. The
+</span><span class='line'>   *        term text is ignored.
+</span><span class='line'>   * @param automaton Automaton to run, terms that are accepted are considered a
+</span><span class='line'>   *        match.
+</span><span class='line'>   * @param maxDeterminizedStates maximum number of states in the resulting
+</span><span class='line'>   *   automata.  If the automata would need more than this many states
+</span><span class='line'>   *   TooComplextToDeterminizeException is thrown.  Higher number require more
+</span><span class='line'>   *   space but can process more complex automata.
+</span><span class='line'>   */
+</span><span class='line'>  public AutomatonQuery(final Term term, Automaton automaton, int maxDeterminizedStates) {
+</span><span class='line'>    super(term.field());
+</span><span class='line'>    this.term = term;
+</span><span class='line'>    this.automaton = automaton;
+</span><span class='line'>    this.compiled = new CompiledAutomaton(automaton, null, true, maxDeterminizedStates);
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Operations.DEFAULT_MAX_DETERMINIZED_STATES的真实值为10000</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>final public class Operations {
+</span><span class='line'>  /**
+</span><span class='line'>   * Default maximum number of states that {@link Operations#determinize} should create.
+</span><span class='line'>   */
+</span><span class='line'>  public static final int DEFAULT_MAX_DETERMINIZED_STATES = 10000;
+</span><span class='line'>  ...
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
 </div>
 
 
