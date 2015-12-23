@@ -9,10 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近会重新看一下Tomcat的源代码，整理一些东西，包括但不限于： 1.Tomcat架构
-2.Tomcat启动过程
-3.请求在Tomcat中的流转
-4.Tomcat目录结构与配置 这里会首先简单介绍一些Tomcat的知识。后面会逐渐详细介绍。 &hellip;">
+  <meta name="description" content="最近项目组遇到的慢查询比较多，大家的慢查询意识逐渐有了，同事做的工作中使用到的优化慢查询的方法分享，这里简单总结一些，便于以后使用。 通常这些优化方式是组合使用的。 1.合理使用索引 1.1 一个表只会使用一个索引 假设customer表有两个索引： 1
+2 KEY ` &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -72,6 +70,135 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/03/14/mysqlyou-hua/">Mysql优化</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-03-14T05:02:34+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>14</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:02 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近项目组遇到的慢查询比较多，大家的慢查询意识逐渐有了，同事做的工作中使用到的优化慢查询的方法分享，这里简单总结一些，便于以后使用。</p>
+
+<p>通常这些优化方式是组合使用的。</p>
+
+<h1>1.合理使用索引</h1>
+
+<h3>1.1 一个表只会使用一个索引</h3>
+
+<p>假设customer表有两个索引：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  KEY `idx_create_time` (`create_time`) USING BTREE,
+</span><span class='line'>  KEY `idx_city` (`city`)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>sql语句的where条件包含create_time和city</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where city = 'beijing' and create_time &gt; '2015-01-01';</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个sql语句只会走一个索引。</p>
+
+<h3>1.2 索引区分度越大越好</h3>
+
+<p>索引的区分读越大越好，可以使用show index from table看表的索引情况。</p>
+
+<h3>1.3 行数越少越好</h3>
+
+<p>执行计划中sql搜索的行数(rows)越小越好。</p>
+
+<h3>1.4 查询条件字段不要套函数，无法使用索引</h3>
+
+<p>比如下面这个sql是不走索引的</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where left(city, 2) = 'be';</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.不要复合条件查询</h1>
+
+<p>将复合条件根据规则转换为单个条件，避免多个字段去or。</p>
+
+<p>比如我们在city上面建立了索引，但是我们没有在name上建立索引，下面这个sql会走全表而不走索引</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where city = 'beijing' or name = 'beijing';</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.减少join</h1>
+
+<p>利用Mybatis的动态SQL，保证同一时刻JOIN的表最少。即满足某一个条件的时候才join。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>select * from customer
+</span><span class='line'>&lt;if test="conditions.name != null and conditions.name != ''"&gt;
+</span><span class='line'>    join user on user.id = customer.user_id
+</span><span class='line'>&lt;/if&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.分步查询</h1>
+
+<p>比如一个sql需要大量的join，并且每个join表的数据量都很大，这时候，尝试将单独的sql拆分成多个sql。</p>
+
+<p>我们可以从搜索条件入手，不包含搜索条件的表一定可以拆分成单独的sql。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>select *
+</span><span class='line'>from A
+</span><span class='line'>join B on ...
+</span><span class='line'>join C on ...
+</span><span class='line'>join D on ...
+</span><span class='line'>join E on ...
+</span><span class='line'>where
+</span><span class='line'>A.name = ...
+</span><span class='line'>and B.city = ...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这是可以考虑对C，D，E表的查询单独拆分出来。</p>
+
+<h1>5.合理使用Cache</h1>
+
+<p>通常根据条件Count比较耗时，可以将Count数Cache，比如list接口的count通常成千上万，count数只是用来展示页数，这时候可以考虑缓存下来，但是需要考虑好缓存策略。</p>
+
+<h1>6.业务逻辑上优化</h1>
+
+<p>当我们使用上述步骤无法优化时，可以考虑从逻辑上优化。</p>
+
+<p>比如join很多个表查询的时候，我们需要确认应用方所有的字段都需要，通常减少字段能让我们少join表。</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1490,203 +1617,6 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/01/16/linuxwang-qia-su-du/">Linux网卡速度</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-01-16T18:58:54+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:58 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近项目的图片服务器从公司的服务器下载图片做裁剪等操作的时候，老是存在超时的问题</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>java.net.SocketTimeoutException: Read timed out
-</span><span class='line'>    at java.net.SocketInputStream.socketRead0(Native Method) ~[na:1.7.0_51]
-</span><span class='line'>    at java.net.SocketInputStream.read(SocketInputStream.java:152) ~[na:1.7.0_51]
-</span><span class='line'>    at java.net.SocketInputStream.read(SocketInputStream.java:122) ~[na:1.7.0_51]
-</span><span class='line'>    at java.io.BufferedInputStream.read1(BufferedInputStream.java:273) ~[na:1.7.0_51]
-</span><span class='line'>    at java.io.BufferedInputStream.read(BufferedInputStream.java:334) ~[na:1.7.0_51]
-</span><span class='line'>    at sun.net.www.MeteredStream.read(MeteredStream.java:134) ~[na:1.7.0_51]
-</span><span class='line'>    at java.io.FilterInputStream.read(FilterInputStream.java:133) ~[na:1.7.0_51]</span></code></pre></td></tr></table></div></figure>
-
-
-<p>手动wget图片一切正常，但是速度还不如本地机器，于是想看一下服务器的网卡信息。下面用本机作为示例：</p>
-
-<h1>1.使用ifconfig找到网卡：</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>eth0      Link encap:以太网  硬件地址 f0:1f:af:27:58:8d  
-</span><span class='line'>          inet 地址:192.168.138.99  广播:192.168.139.255  掩码:255.255.254.0
-</span><span class='line'>          inet6 地址: fe80::f21f:afff:fe27:588d/64 Scope:Link
-</span><span class='line'>          UP BROADCAST RUNNING MULTICAST  MTU:1500  跃点数:1
-</span><span class='line'>          接收数据包:696848 错误:0 丢弃:0 过载:0 帧数:0
-</span><span class='line'>          发送数据包:334077 错误:0 丢弃:0 过载:0 载波:0
-</span><span class='line'>          碰撞:0 发送队列长度:1000 
-</span><span class='line'>          接收字节:486532283 (486.5 MB)  发送字节:49164276 (49.1 MB)
-</span><span class='line'>          中断:18 
-</span><span class='line'>
-</span><span class='line'>lo        Link encap:本地环回  
-</span><span class='line'>          inet 地址:127.0.0.1  掩码:255.0.0.0
-</span><span class='line'>          inet6 地址: ::1/128 Scope:Host
-</span><span class='line'>          UP LOOPBACK RUNNING  MTU:65536  跃点数:1
-</span><span class='line'>          接收数据包:14772 错误:0 丢弃:0 过载:0 帧数:0
-</span><span class='line'>          发送数据包:14772 错误:0 丢弃:0 过载:0 载波:0
-</span><span class='line'>          碰撞:0 发送队列长度:0 
-</span><span class='line'>          接收字节:1329005 (1.3 MB)  发送字节:1329005 (1.3 MB)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.查看网卡是否被识别及型号</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ lspci | grep Ethernet
-</span><span class='line'>0c:00.0 Ethernet controller: Broadcom Corporation NetXtreme BCM5761 Gigabit Ethernet PCIe (rev 10)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.使用ethtool工具查看网卡的详细信息：</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo ethtool eth0
-</span><span class='line'>[sudo] password for xiaobaoqiu: 
-</span><span class='line'>Settings for eth0:
-</span><span class='line'>    Supported ports: [ TP ]
-</span><span class='line'>    Supported link modes:   10baseT/Half 10baseT/Full 
-</span><span class='line'>                            100baseT/Half 100baseT/Full 
-</span><span class='line'>                            1000baseT/Half 1000baseT/Full 
-</span><span class='line'>    Supported pause frame use: No
-</span><span class='line'>    Supports auto-negotiation: Yes
-</span><span class='line'>    Advertised link modes:  10baseT/Half 10baseT/Full 
-</span><span class='line'>                            100baseT/Half 100baseT/Full 
-</span><span class='line'>                            1000baseT/Half 1000baseT/Full 
-</span><span class='line'>    Advertised pause frame use: Symmetric
-</span><span class='line'>    Advertised auto-negotiation: Yes
-</span><span class='line'>    Link partner advertised link modes:  10baseT/Half 10baseT/Full 
-</span><span class='line'>                                         100baseT/Half 100baseT/Full 
-</span><span class='line'>    Link partner advertised pause frame use: No
-</span><span class='line'>    Link partner advertised auto-negotiation: Yes
-</span><span class='line'>    Speed: 100Mb/s      #网卡速度
-</span><span class='line'>    Duplex: Full        #全双工
-</span><span class='line'>    Port: Twisted Pair  #网络类型-双绞线
-</span><span class='line'>    PHYAD: 1
-</span><span class='line'>    Transceiver: internal
-</span><span class='line'>    Auto-negotiation: on
-</span><span class='line'>    MDI-X: on
-</span><span class='line'>    Supports Wake-on: g
-</span><span class='line'>    Wake-on: g          #唤醒起用（远程关机开机需设置）
-</span><span class='line'>    Current message level: 0x000000ff (255)
-</span><span class='line'>                   drv probe link timer ifdown ifup rx_err tx_err
-</span><span class='line'>    Link detected: yes  #链路检测</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.查看网卡的连接状态</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo mii-tool eth0
-</span><span class='line'>eth0: negotiated 100baseTx-FD, link ok</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>5.网卡数据包收发统计</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo ethtool -S eth0
-</span><span class='line'>NIC statistics:
-</span><span class='line'>     rx_octets: 494545915
-</span><span class='line'>     rx_fragments: 0
-</span><span class='line'>     rx_ucast_packets: 437748
-</span><span class='line'>     rx_mcast_packets: 147474
-</span><span class='line'>     rx_bcast_packets: 128799
-</span><span class='line'>     rx_fcs_errors: 0
-</span><span class='line'>     rx_align_errors: 0
-</span><span class='line'>     rx_xon_pause_rcvd: 0
-</span><span class='line'>     rx_xoff_pause_rcvd: 0
-</span><span class='line'>     ...</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/6">&larr; Older</a>
@@ -1706,6 +1636,10 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a>
       </li>
     
@@ -1719,10 +1653,6 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
     
       <li class="post">
         <a href="/blog/2015/11/18/libphonenumber/">Libphonenumber</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/09/09/lunecezheng-ti-jia-gou/">Lunece整体架构</a>
       </li>
     
   </ul>
@@ -1745,6 +1675,7 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 <li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (11)</a></li>
 <li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/protobuf/'>protobuf (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (8)</a></li>

@@ -9,8 +9,10 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="这里包括两种容器: CopyOnWriteArrayList
-CopyOnWriteArraySet 1.CopyOnWriteArrayList CopyOnWriteArrayList类是一个线程安全的List接口的实现，在该类的内部进行元素的写操作时，底层的数组将被完整的复制， &hellip;">
+  <meta name="description" content="包括四种容器： ConcurrentHashMap
+ConcurrentLinkedQueue
+ConcurrentMap
+ConcurrentNavigableMap 其中ConcurrentLinkedQueue是并发环境下非阻塞算法的典型实现。 1.ConcurrentMap &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -70,6 +72,416 @@ CopyOnWriteArraySet 1.CopyOnWriteArrayList CopyOnWriteArrayList类是一个线�
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/12/23/javabing-fa-rong-qi-zhi-concurrent/">Java并发容器之Concurrent</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-12-23T05:56:45+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2014</span></span> <span class='time'>5:56 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>包括四种容器：</p>
+
+<pre><code>ConcurrentHashMap
+ConcurrentLinkedQueue
+ConcurrentMap
+ConcurrentNavigableMap
+</code></pre>
+
+<p>其中ConcurrentLinkedQueue是并发环境下非阻塞算法的典型实现。</p>
+
+<h1>1.ConcurrentMap</h1>
+
+<p>ConcurrentMap是继承Map的一种interface，定义了一下几个api接口：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">interface</span> <span class="nc">ConcurrentMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span> <span class="n">V</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">Map</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span> <span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">V</span> <span class="nf">putIfAbsent</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">);</span>
+</span><span class='line'>    <span class="kt">boolean</span> <span class="nf">remove</span><span class="o">(</span><span class="n">Object</span> <span class="n">key</span><span class="o">,</span> <span class="n">Object</span> <span class="n">value</span><span class="o">);</span>
+</span><span class='line'>    <span class="kt">boolean</span> <span class="nf">replace</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">,</span> <span class="n">V</span> <span class="n">oldValue</span><span class="o">,</span> <span class="n">V</span> <span class="n">newValue</span><span class="o">);</span>
+</span><span class='line'>    <span class="n">V</span> <span class="nf">replace</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.ConcurrentNavigableMap</h1>
+
+<p>ConcurrentNavigableMap是继承ConcurrentMap的一种interface。</p>
+
+<p>我们从SortedMap接口开始锁说，因为ConcurrentNavigableMap继承自NavigableMap，而NavigableMap继承自SortedMap。</p>
+
+<h3>2.1 SortedMap</h3>
+
+<p>实现SortedMap接口的类有排序功能，SortedMap相比普通Map提供了几个特殊的接口：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">interface</span> <span class="nc">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">Map</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回key在 [fromKey, toKey)之间的子map的视图</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">subMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="n">K</span> <span class="n">toKey</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回key严格小于toKey的子map视图</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">headMap</span><span class="o">(</span><span class="n">K</span> <span class="n">toKey</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回key大于等于fromKey的子map视图</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">tailMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回map中第一个key</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">K</span> <span class="nf">firstKey</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回map中最后一个key</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">K</span> <span class="nf">lastKey</span><span class="o">();</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2.2 NavigableMap</h3>
+
+<p>NavigableMap扩展的 SortedMap，具有了针对给定搜索目标返回最接近匹配项的导航方法。方法 lowerEntry、floorEntry、ceilingEntry 和 higherEntry 分别返回与小于、小于等于、大于等于、大于给定键的键关联的 Map.Entry 对象，如果不存在这样的键，则返回 null。类似地，方法 lowerKey、floorKey、ceilingKey 和 higherKey 只返回关联的键。</p>
+
+<p>可以按照键的升序或降序访问和遍历 NavigableMap。descendingMap 方法返回映射的一个视图，该视图表示的所有关系方法和方向方法都是逆向的。升序操作和视图的性能很可能比降序操作和视图的性能要好。</p>
+
+<p>此接口还定义了 firstEntry、pollFirstEntry、lastEntry 和 pollLastEntry 方法，它们返回和/或移除最小和最大的映射关系（如果存在），否则返回 null。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">interface</span> <span class="nc">NavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回Map中严格小于给定key的最大的Entry，不存在则返回null</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">lowerEntry</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回Map中严格小于给定key的最大的key，不存在则返回null</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">K</span> <span class="nf">lowerKey</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回Map中小于等于给定key的最大的Entry，不存在则返回null</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">floorEntry</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回Map中小于等于给定key的最大key，不存在则返回null</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">K</span> <span class="nf">floorKey</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回大于等于给定key的最小的Entry，不存在返回null</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">ceilingEntry</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回大于等于给定key的最小的key，不存在返回null</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">K</span> <span class="nf">ceilingKey</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回严格大于给定key的最小的Entry，不存在返回null</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">higherEntry</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回严格大于给定key的最小的key，不存在返回null</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">K</span> <span class="nf">higherKey</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回Map中key最小的Entry，不存在则返回null</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">firstEntry</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回Map中key最大的Entry，不存在则返回null</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">lastEntry</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 删除并返回Map中key最小的Entry</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">pollFirstEntry</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 删除并返回Map中key最大的Entry</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">pollLastEntry</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回当前Map的降序的视图</span>
+</span><span class='line'><span class="cm">     * 注意，降序Map依靠当前Map实现，因此改变当前Map或者这个降序Map都会反映在彼此上</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">NavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">descendingMap</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回当前Map的Key集合的试图</span>
+</span><span class='line'><span class="cm">     * 改变当前Map或者这个Set都会影响彼此</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">NavigableSet</span><span class="o">&lt;</span><span class="n">K</span><span class="o">&gt;</span> <span class="nf">navigableKeySet</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回当前Map的降序顺序的Key集合的试图</span>
+</span><span class='line'><span class="cm">     * 和navigableKeySet一样，改变当前Map或者这个降序Set都会影响彼此</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">NavigableSet</span><span class="o">&lt;</span><span class="n">K</span><span class="o">&gt;</span> <span class="nf">descendingKeySet</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回key在[fromKey, toKey]之间的试图，如果fromInclusive为true，结果中包含fromKey</span>
+</span><span class='line'><span class="cm">     * 对应Entity，如果toInclusive为跳入额， 则结果中包含了toKey对应Entity</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">NavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">subMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">fromInclusive</span><span class="o">,</span>
+</span><span class='line'>                             <span class="n">K</span> <span class="n">toKey</span><span class="o">,</span>   <span class="kt">boolean</span> <span class="n">toInclusive</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回key小于(如果inclusive为true，则包括等于)toKey的视图</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">NavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">headMap</span><span class="o">(</span><span class="n">K</span> <span class="n">toKey</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">inclusive</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 返回key大于(如果inclusive为true，则包括等于)fromKey的视图</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="n">NavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">tailMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">inclusive</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>同时NavigableMap也包含了三个返回SortedMap的接口</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">subMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="n">K</span> <span class="n">toKey</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">headMap</span><span class="o">(</span><span class="n">K</span> <span class="n">toKey</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">tailMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2.3 ConcurrentNavigableMap</h3>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">ConcurrentNavigableMap继承了ConcurrentMap和NavigableMap两个接口</span><span class="err">：</span>
+</span><span class='line'><span class="kd">public</span> <span class="kd">interface</span> <span class="nc">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="kd">extends</span> <span class="n">ConcurrentMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;,</span> <span class="n">NavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span>
+</span><span class='line'><span class="o">{</span>
+</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">subMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">fromInclusive</span><span class="o">,</span>
+</span><span class='line'>                                       <span class="n">K</span> <span class="n">toKey</span><span class="o">,</span>   <span class="kt">boolean</span> <span class="n">toInclusive</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">headMap</span><span class="o">(</span><span class="n">K</span> <span class="n">toKey</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">inclusive</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">tailMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">inclusive</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">subMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">,</span> <span class="n">K</span> <span class="n">toKey</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">headMap</span><span class="o">(</span><span class="n">K</span> <span class="n">toKey</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">tailMap</span><span class="o">(</span><span class="n">K</span> <span class="n">fromKey</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">descendingMap</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="n">NavigableSet</span><span class="o">&lt;</span><span class="n">K</span><span class="o">&gt;</span> <span class="nf">navigableKeySet</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">NavigableSet</span><span class="o">&lt;</span><span class="n">K</span><span class="o">&gt;</span> <span class="nf">keySet</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="n">NavigableSet</span><span class="o">&lt;</span><span class="n">K</span><span class="o">&gt;</span> <span class="nf">descendingKeySet</span><span class="o">();</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.ConcurrentLinkedQueue</h1>
+
+<p>ConcurrentLinkedQueue是非阻塞算法的典型实现，因此单独写了一篇。</p>
+
+<p><a href="http://xiaobaoqiu.github.io/blog/2014/12/24/concurrentlinkedqueue/">http://xiaobaoqiu.github.io/blog/2014/12/24/concurrentlinkedqueue/</a></p>
+
+<h1>4.ConcurrentHashMap</h1>
+
+<p>ConcurrentHashMap值得研究，也单独写了一篇。</p>
+
+<p><a href="http://xiaobaoqiu.github.io/blog/2014/12/24/concurrenthashmap/">http://xiaobaoqiu.github.io/blog/2014/12/24/concurrenthashmap/</a></p>
+
+<h1>5.参考</h1>
+
+<p><a href="https://www.ibm.com/developerworks/cn/java/j-lo-concurrent/">https://www.ibm.com/developerworks/cn/java/j-lo-concurrent/</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -5409,1127 +5821,6 @@ Time passed in ms: 6454
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/11/03/memcachedwang-luo-mo-xing/">Memcached网络模型</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-11-03T18:59:33+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2014</span></span> <span class='time'>6:59 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>这篇文章的目的是学习Memcached网络模型相关的源代码.</p>
-
-<p>Memcached采用了很典型的Master-Worker模型，采用的是多线程而不是多进程. 主线程(Master)接收连接, 然后把连接平分派给工作线程(Worker),工作线程处理业务逻辑.</p>
-
-<p>核心的共享数据是消息队列，主线程会把收到的事件请求放入队列，随后调度程序会选择一个空闲的Worker线程来从队列中取出事件请求进行处理.</p>
-
-<h1>1.libevent简介</h1>
-
-<p>Memcached使用libevent实现事件循环，libevent在Linux环境下默认采用epoll作为IO多路复用方法.
-用户线程使用libevent则通常按以下步骤：
-    (1).用户线程通过event_init()函数创建一个event_base对象。event_base对象管理所有注册到自己内部的IO事件。多线程环境下，event_base对象不能被多个线程共享，即一个event_base对象只能对应一个线程。
-    (2).然后该线程通过event_add函数，将与自己感兴趣的文件描述符相关的IO事件，注册到event_base对象，同时指定事件发生时所要调用的事件处理函数（event handler）。服务器程序通常监听套接字（socket）的可读事件。比如，服务器线程注册套接字sock1的EV_READ事件，并指定event_handler1()为该事件的回调函数。libevent将IO事件封装成struct event类型对象，事件类型用EV_READ/EV_WRITE等常量标志。
-    (3).注册完事件之后，线程调用event_base_loop进入循环监听（monitor）状态。该循环内部会调用epoll等IO复用函数进入阻塞状态，直到描述符上发生自己感兴趣的事件。此时，线程会调用事先指定的回调函数处理该事件。例如，当套接字sock1发生可读事件，即sock1的内核buff中已有可读数据时，被阻塞的线程立即返回（wake up）并调用event_handler1()函数来处理该次事件。
-    (4).处理完这次监听获得的事件后，线程再次进入阻塞状态并监听，直到下次事件发生。</p>
-
-<h1>2.Memcached网络模型</h1>
-
-<p>大致的图示如下:</p>
-
-<p><img src="/images/memcached/memcached-libevent.jpg"></p>
-
-<h3>2.1主要数据结构</h3>
-
-<p>首先是CQ_ITEM, CQ_ITEM实际上是主线程accept后返回的已建立连接的fd的封装:</p>
-
-<figure class='code'><figcaption><span>thread.c</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/* An item in the connection queue. */</span>
-</span><span class='line'><span class="k">typedef</span> <span class="k">struct</span> <span class="n">conn_queue_item</span> <span class="n">CQ_ITEM</span><span class="p">;</span>
-</span><span class='line'><span class="k">struct</span> <span class="n">conn_queue_item</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">int</span>               <span class="n">sfd</span><span class="p">;</span>
-</span><span class='line'>    <span class="k">enum</span> <span class="n">conn_states</span>  <span class="n">init_state</span><span class="p">;</span>
-</span><span class='line'>    <span class="kt">int</span>               <span class="n">event_flags</span><span class="p">;</span>
-</span><span class='line'>    <span class="kt">int</span>               <span class="n">read_buffer_size</span><span class="p">;</span>
-</span><span class='line'>    <span class="k">enum</span> <span class="n">network_transport</span>     <span class="n">transport</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">CQ_ITEM</span>          <span class="o">*</span><span class="n">next</span><span class="p">;</span>
-</span><span class='line'><span class="p">};</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>CQ是一个管理CQ_ITEM的单向链表:</p>
-
-<figure class='code'><figcaption><span>thread.c</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/* A connection queue. */</span>
-</span><span class='line'><span class="k">typedef</span> <span class="k">struct</span> <span class="n">conn_queue</span> <span class="n">CQ</span><span class="p">;</span>
-</span><span class='line'><span class="k">struct</span> <span class="n">conn_queue</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">CQ_ITEM</span> <span class="o">*</span><span class="n">head</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">CQ_ITEM</span> <span class="o">*</span><span class="n">tail</span><span class="p">;</span>
-</span><span class='line'>    <span class="kt">pthread_mutex_t</span> <span class="n">lock</span><span class="p">;</span>
-</span><span class='line'><span class="p">};</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>LIBEVENT_THREAD是Memcached对线程结构的封装,每个线程都包含一个CQ队列，一条通知管道pipe
-和一个libevent的实例event_base :</p>
-
-<figure class='code'><figcaption><span>thread.c</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">pthread_t</span> <span class="n">thread_id</span><span class="p">;</span>        <span class="cm">/* unique ID of this thread */</span>
-</span><span class='line'>    <span class="k">struct</span> <span class="n">event_base</span> <span class="o">*</span><span class="n">base</span><span class="p">;</span>    <span class="cm">/* libevent handle this thread uses */</span>
-</span><span class='line'>    <span class="k">struct</span> <span class="n">event</span> <span class="n">notify_event</span><span class="p">;</span>  <span class="cm">/* listen event for notify pipe */</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">notify_receive_fd</span><span class="p">;</span>      <span class="cm">/* receiving end of notify pipe */</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">notify_send_fd</span><span class="p">;</span>         <span class="cm">/* sending end of notify pipe */</span>
-</span><span class='line'>    <span class="k">struct</span> <span class="n">thread_stats</span> <span class="n">stats</span><span class="p">;</span>  <span class="cm">/* Stats generated by this thread */</span>
-</span><span class='line'>    <span class="k">struct</span> <span class="n">conn_queue</span> <span class="o">*</span><span class="n">new_conn_queue</span><span class="p">;</span> <span class="cm">/* CQ队列 */</span>
-</span><span class='line'>    <span class="kt">cache_t</span> <span class="o">*</span><span class="n">suffix_cache</span><span class="p">;</span>      <span class="cm">/* suffix cache */</span>
-</span><span class='line'>    <span class="kt">uint8_t</span> <span class="n">item_lock_type</span><span class="p">;</span>     <span class="cm">/* use fine-grained or global item lock */</span>
-</span><span class='line'><span class="p">}</span> <span class="n">LIBEVENT_THREAD</span><span class="p">;</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.2主流程</h3>
-
-<p>在memcached.c的main函数中展示了客户端请求处理的主流程:</p>
-
-<p><strong>(1).对主线程的libevent做了初始化</strong></p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/* initialize main thread libevent instance */</span>
-</span><span class='line'> <span class="n">main_base</span> <span class="o">=</span> <span class="n">event_init</span><span class="p">();</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p><strong>(2).初始化所有的线程(包括Master和Worker线程),并启动</strong></p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/* start up worker threads if MT mode */</span>
-</span><span class='line'><span class="n">thread_init</span><span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">num_threads</span><span class="p">,</span> <span class="n">main_base</span><span class="p">);</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中settings.num_threads表示线程数目,默认是4个:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">settings</span><span class="p">.</span><span class="n">num_threads</span> <span class="o">=</span> <span class="mi">4</span><span class="p">;</span>         <span class="cm">/* N workers */</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>下面简单分析thread_init的核心代码(thread.c):</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/*</span>
-</span><span class='line'><span class="cm"> * Initializes the thread subsystem, creating various worker threads.</span>
-</span><span class='line'><span class="cm"> *</span>
-</span><span class='line'><span class="cm"> * nthreads  Number of worker event handler threads to spawn</span>
-</span><span class='line'><span class="cm"> * main_base Event base for main thread</span>
-</span><span class='line'><span class="cm"> */</span>
-</span><span class='line'><span class="kt">void</span> <span class="nf">thread_init</span><span class="p">(</span><span class="kt">int</span> <span class="n">nthreads</span><span class="p">,</span> <span class="k">struct</span> <span class="n">event_base</span> <span class="o">*</span><span class="n">main_base</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="p">...</span><span class="c1">//省略若干代码</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//threads的声明在thread.c头部,用于保存所有的线程</span>
-</span><span class='line'>    <span class="n">threads</span> <span class="o">=</span> <span class="n">calloc</span><span class="p">(</span><span class="n">nthreads</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">LIBEVENT_THREAD</span><span class="p">));</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="o">!</span> <span class="n">threads</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">perror</span><span class="p">(</span><span class="s">&quot;Can&#39;t allocate thread descriptors&quot;</span><span class="p">);</span>
-</span><span class='line'>        <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">dispatcher_thread</span><span class="p">.</span><span class="n">base</span> <span class="o">=</span> <span class="n">main_base</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">dispatcher_thread</span><span class="p">.</span><span class="n">thread_id</span> <span class="o">=</span> <span class="n">pthread_self</span><span class="p">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">nthreads</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">fds</span><span class="p">[</span><span class="mi">2</span><span class="p">];</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">pipe</span><span class="p">(</span><span class="n">fds</span><span class="p">))</span> <span class="p">{</span>    <span class="c1">//创建管道</span>
-</span><span class='line'>            <span class="n">perror</span><span class="p">(</span><span class="s">&quot;Can&#39;t create notify pipe&quot;</span><span class="p">);</span>
-</span><span class='line'>            <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="n">threads</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">notify_receive_fd</span> <span class="o">=</span> <span class="n">fds</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>  <span class="c1">//读端</span>
-</span><span class='line'>        <span class="n">threads</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">notify_send_fd</span> <span class="o">=</span> <span class="n">fds</span><span class="p">[</span><span class="mi">1</span><span class="p">];</span>     <span class="c1">//写端</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="c1">//创建所有workers线程的libevent实例</span>
-</span><span class='line'>        <span class="n">setup_thread</span><span class="p">(</span><span class="o">&amp;</span><span class="n">threads</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span>
-</span><span class='line'>        <span class="cm">/* Reserve three fds for the libevent base, and two for the pipe */</span>
-</span><span class='line'>        <span class="n">stats</span><span class="p">.</span><span class="n">reserved_fds</span> <span class="o">+=</span> <span class="mi">5</span><span class="p">;</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//创建线程</span>
-</span><span class='line'>    <span class="cm">/* Create threads after we&#39;ve done all the libevent setup. */</span>
-</span><span class='line'>    <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">nthreads</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">create_worker</span><span class="p">(</span><span class="n">worker_libevent</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">threads</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//等待所有线程启动起来之后,这个函数再返回</span>
-</span><span class='line'>    <span class="cm">/* Wait for all the threads to set themselves up before returning. */</span>
-</span><span class='line'>    <span class="n">pthread_mutex_lock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">init_lock</span><span class="p">);</span>
-</span><span class='line'>    <span class="n">wait_for_thread_registration</span><span class="p">(</span><span class="n">nthreads</span><span class="p">);</span>
-</span><span class='line'>    <span class="n">pthread_mutex_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">init_lock</span><span class="p">);</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>thread_init首先malloc线程的空间，然后第一个threads作为主线程，其余都是workers线程
-然后为每个线程创建一个pipe，这个pipe被用来作为主线程通知workers线程有新的连接到达.</p>
-
-<p>其中pipe()函数用于创建管道,管道两端可分别用描述字fds[0]以及fds[1]来描述.需要注意的是，管道的两端是固定的。即一端只能用于读，由描述字fds[0]表示，称其为管道读端；另一端则只能用于写，由描述字fds[1]来表示，称其为管道写端.</p>
-
-<p>setup_thread主要是创建所有workers线程的libevent实例（主线程的libevent实例在main函数中已经建立）,setup_thread()的代码如下:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/*</span>
-</span><span class='line'><span class="cm"> * Set up a thread&#39;s information.</span>
-</span><span class='line'><span class="cm"> */</span>
-</span><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">setup_thread</span><span class="p">(</span><span class="n">LIBEVENT_THREAD</span> <span class="o">*</span><span class="n">me</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">me</span><span class="o">-&gt;</span><span class="n">base</span> <span class="o">=</span> <span class="n">event_init</span><span class="p">();</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="o">!</span> <span class="n">me</span><span class="o">-&gt;</span><span class="n">base</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Can&#39;t allocate event base</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
-</span><span class='line'>        <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//注意这里只有notify_receive_fd,即读端口</span>
-</span><span class='line'>    <span class="cm">/* Listen for notifications from other threads */</span>
-</span><span class='line'>    <span class="n">event_set</span><span class="p">(</span><span class="o">&amp;</span><span class="n">me</span><span class="o">-&gt;</span><span class="n">notify_event</span><span class="p">,</span> <span class="n">me</span><span class="o">-&gt;</span><span class="n">notify_receive_fd</span><span class="p">,</span>
-</span><span class='line'>              <span class="n">EV_READ</span> <span class="o">|</span> <span class="n">EV_PERSIST</span><span class="p">,</span> <span class="n">thread_libevent_process</span><span class="p">,</span> <span class="n">me</span><span class="p">);</span>
-</span><span class='line'>    <span class="n">event_base_set</span><span class="p">(</span><span class="n">me</span><span class="o">-&gt;</span><span class="n">base</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">me</span><span class="o">-&gt;</span><span class="n">notify_event</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">event_add</span><span class="p">(</span><span class="o">&amp;</span><span class="n">me</span><span class="o">-&gt;</span><span class="n">notify_event</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Can&#39;t monitor libevent notify pipe</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
-</span><span class='line'>        <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">me</span><span class="o">-&gt;</span><span class="n">new_conn_queue</span> <span class="o">=</span> <span class="n">malloc</span><span class="p">(</span><span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">conn_queue</span><span class="p">));</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">me</span><span class="o">-&gt;</span><span class="n">new_conn_queue</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">perror</span><span class="p">(</span><span class="s">&quot;Failed to allocate memory for connection queue&quot;</span><span class="p">);</span>
-</span><span class='line'>        <span class="n">exit</span><span class="p">(</span><span class="n">EXIT_FAILURE</span><span class="p">);</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>    <span class="n">cq_init</span><span class="p">(</span><span class="n">me</span><span class="o">-&gt;</span><span class="n">new_conn_queue</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="p">...</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>这里会为所有worker thread线程注册与notify_event_fd描述符有关的IO事件，这里的notify_event_fd描述符是该worker thread线程与main thread线程通信的管道的接收端(读)描述符。通过注册与该描述符有关的IO事件，worker thread线程就能监听main thread线程发给自己的数据(即事件).</p>
-
-<p>注意这里event_set中的thread_libevent_process参数,其意义在于监听Worker线程与main thread线程通信的管道上的可读事件，并指定用thread_libevent_process()函数处理该事件,即每次管道读端有数据刻度,即触发thread_libevent_process过程.</p>
-
-<p>thread_libevent_process的代码如下,其中最重要的一个就是数据为c的,后续会详细分析这块代码.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/*</span>
-</span><span class='line'><span class="cm"> * Processes an incoming &quot;handle a new connection&quot; item. This is called when</span>
-</span><span class='line'><span class="cm"> * input arrives on the libevent wakeup pipe.</span>
-</span><span class='line'><span class="cm"> */</span>
-</span><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">thread_libevent_process</span><span class="p">(</span><span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">short</span> <span class="n">which</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">arg</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">LIBEVENT_THREAD</span> <span class="o">*</span><span class="n">me</span> <span class="o">=</span> <span class="n">arg</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">CQ_ITEM</span> <span class="o">*</span><span class="n">item</span><span class="p">;</span>
-</span><span class='line'>    <span class="kt">char</span> <span class="n">buf</span><span class="p">[</span><span class="mi">1</span><span class="p">];</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//从管道中读数据</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">buf</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">)</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">verbose</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>
-</span><span class='line'>            <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Can&#39;t read from libevent pipe</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">switch</span> <span class="p">(</span><span class="n">buf</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="p">{</span>
-</span><span class='line'>    <span class="k">case</span> <span class="sc">&#39;c&#39;</span><span class="o">:</span>   <span class="c1">//c表示有新的连接请求被主线程分配到当前Worker线程</span>
-</span><span class='line'>    <span class="n">item</span> <span class="o">=</span> <span class="n">cq_pop</span><span class="p">(</span><span class="n">me</span><span class="o">-&gt;</span><span class="n">new_conn_queue</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="nb">NULL</span> <span class="o">!=</span> <span class="n">item</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">conn</span> <span class="o">*</span><span class="n">c</span> <span class="o">=</span> <span class="n">conn_new</span><span class="p">(</span><span class="n">item</span><span class="o">-&gt;</span><span class="n">sfd</span><span class="p">,</span> <span class="n">item</span><span class="o">-&gt;</span><span class="n">init_state</span><span class="p">,</span> <span class="n">item</span><span class="o">-&gt;</span><span class="n">event_flags</span><span class="p">,</span>
-</span><span class='line'>                           <span class="n">item</span><span class="o">-&gt;</span><span class="n">read_buffer_size</span><span class="p">,</span> <span class="n">item</span><span class="o">-&gt;</span><span class="n">transport</span><span class="p">,</span> <span class="n">me</span><span class="o">-&gt;</span><span class="n">base</span><span class="p">);</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">c</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>            <span class="k">if</span> <span class="p">(</span><span class="n">IS_UDP</span><span class="p">(</span><span class="n">item</span><span class="o">-&gt;</span><span class="n">transport</span><span class="p">))</span> <span class="p">{</span>
-</span><span class='line'>                <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Can&#39;t listen for events on UDP socket</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
-</span><span class='line'>                <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
-</span><span class='line'>            <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
-</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">verbose</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>                    <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Can&#39;t listen for events on fd %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
-</span><span class='line'>                        <span class="n">item</span><span class="o">-&gt;</span><span class="n">sfd</span><span class="p">);</span>
-</span><span class='line'>                <span class="p">}</span>
-</span><span class='line'>                <span class="n">close</span><span class="p">(</span><span class="n">item</span><span class="o">-&gt;</span><span class="n">sfd</span><span class="p">);</span>
-</span><span class='line'>            <span class="p">}</span>
-</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">c</span><span class="o">-&gt;</span><span class="kr">thread</span> <span class="o">=</span> <span class="n">me</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>        <span class="n">cqi_free</span><span class="p">(</span><span class="n">item</span><span class="p">);</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>        <span class="k">break</span><span class="p">;</span>
-</span><span class='line'>    <span class="cm">/* we were told to flip the lock type and report in */</span>
-</span><span class='line'>    <span class="k">case</span> <span class="sc">&#39;l&#39;</span><span class="o">:</span>
-</span><span class='line'>        <span class="p">...</span>
-</span><span class='line'>    <span class="k">case</span> <span class="sc">&#39;g&#39;</span><span class="o">:</span>
-</span><span class='line'>        <span class="p">...</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>thread_init函数中create_worker实际上就是真正启动了线程, create_worker的代码如下:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/*</span>
-</span><span class='line'><span class="cm"> * Creates a worker thread.</span>
-</span><span class='line'><span class="cm"> */</span>
-</span><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">create_worker</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">func</span><span class="p">)(</span><span class="kt">void</span> <span class="o">*</span><span class="p">),</span> <span class="kt">void</span> <span class="o">*</span><span class="n">arg</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="kt">pthread_t</span>       <span class="kr">thread</span><span class="p">;</span>
-</span><span class='line'>    <span class="kt">pthread_attr_t</span>  <span class="n">attr</span><span class="p">;</span>
-</span><span class='line'>    <span class="kt">int</span>             <span class="n">ret</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">pthread_attr_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">attr</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">if</span> <span class="p">((</span><span class="n">ret</span> <span class="o">=</span> <span class="n">pthread_create</span><span class="p">(</span><span class="o">&amp;</span><span class="kr">thread</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">attr</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">arg</span><span class="p">))</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Can&#39;t create thread: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
-</span><span class='line'>                <span class="n">strerror</span><span class="p">(</span><span class="n">ret</span><span class="p">));</span>
-</span><span class='line'>        <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>pthread_create是创建线程函数,第三个参数是线程运行函数的起始地址,这里即worker_libevent函数,该方法执行event_base_loop启动该线程的libevent.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/*</span>
-</span><span class='line'><span class="cm"> * Worker thread: main event loop</span>
-</span><span class='line'><span class="cm"> */</span>
-</span><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="o">*</span><span class="nf">worker_libevent</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="n">arg</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">LIBEVENT_THREAD</span> <span class="o">*</span><span class="n">me</span> <span class="o">=</span> <span class="n">arg</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/* Any per-thread setup can happen here; thread_init() will block until</span>
-</span><span class='line'><span class="cm">     * all threads have finished initializing.</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/* set an indexable thread-specific memory item for the lock type.</span>
-</span><span class='line'><span class="cm">     * this could be unnecessary if we pass the conn *c struct through</span>
-</span><span class='line'><span class="cm">     * all item_lock calls...</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="n">me</span><span class="o">-&gt;</span><span class="n">item_lock_type</span> <span class="o">=</span> <span class="n">ITEM_LOCK_GRANULAR</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">pthread_setspecific</span><span class="p">(</span><span class="n">item_lock_type_key</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">me</span><span class="o">-&gt;</span><span class="n">item_lock_type</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">register_thread_initialized</span><span class="p">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">event_base_loop</span><span class="p">(</span><span class="n">me</span><span class="o">-&gt;</span><span class="n">base</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
-</span><span class='line'>    <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>这里我们需要记住每个workers线程目前只在自己线程的管道的读端有数据时可读时触发，并调用
-thread_libevent_process方法.</p>
-
-<p><strong>(3).主线程调用</strong></p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/* create the listening socket, bind it, and init */</span>
-</span><span class='line'><span class="n">server_sockets</span><span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">port</span><span class="p">,</span> <span class="n">tcp_transport</span><span class="p">,</span> <span class="n">portnumber_file</span><span class="p">)</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>在worker thread线程启动后，main thread线程就要创建监听套接字（listening socket）来等待客户端连接请求。这个方法主要是封装了创建监听socket，绑定地址，设置非阻塞模式并注册监听socket的libevent 读事件等一系列操作.</p>
-
-<p>套接字被封装成conn对象，表示与客户端的连接,定义十分庞大(见memcached.h).</p>
-
-<p>端口号默认是11211:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">settings</span><span class="p">.</span><span class="n">port</span> <span class="o">=</span> <span class="mi">11211</span><span class="p">;</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>server_sockets函数主要调用server_socket()函数:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/**</span>
-</span><span class='line'><span class="cm"> * Create a socket and bind it to a specific port number</span>
-</span><span class='line'><span class="cm"> * @param interface the interface to bind to</span>
-</span><span class='line'><span class="cm"> * @param port the port number to bind to</span>
-</span><span class='line'><span class="cm"> * @param transport the transport protocol (TCP / UDP)</span>
-</span><span class='line'><span class="cm"> * @param portnumber_file A filepointer to write the port numbers to</span>
-</span><span class='line'><span class="cm"> *        when they are successfully added to the list of ports we</span>
-</span><span class='line'><span class="cm"> *        listen on.</span>
-</span><span class='line'><span class="cm"> */</span>
-</span><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">server_socket</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">interface</span><span class="p">,</span>
-</span><span class='line'>                         <span class="kt">int</span> <span class="n">port</span><span class="p">,</span>
-</span><span class='line'>                         <span class="k">enum</span> <span class="n">network_transport</span> <span class="n">transport</span><span class="p">,</span>
-</span><span class='line'>                         <span class="kt">FILE</span> <span class="o">*</span><span class="n">portnumber_file</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="p">...</span><span class="c1">//省略若干代码</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//主机名到地址解析,结果存在ai中,为addrinfo的链表</span>
-</span><span class='line'>    <span class="n">error</span><span class="o">=</span> <span class="n">getaddrinfo</span><span class="p">(</span><span class="n">interface</span><span class="p">,</span> <span class="n">port_buf</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">hints</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">ai</span><span class="p">);</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">error</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">error</span> <span class="o">!=</span> <span class="n">EAI_SYSTEM</span><span class="p">)</span>
-</span><span class='line'>          <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;getaddrinfo(): %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">gai_strerror</span><span class="p">(</span><span class="n">error</span><span class="p">));</span>
-</span><span class='line'>        <span class="k">else</span>
-</span><span class='line'>          <span class="n">perror</span><span class="p">(</span><span class="s">&quot;getaddrinfo()&quot;</span><span class="p">);</span>
-</span><span class='line'>        <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">for</span> <span class="p">(</span><span class="n">next</span><span class="o">=</span> <span class="n">ai</span><span class="p">;</span> <span class="n">next</span><span class="p">;</span> <span class="n">next</span><span class="o">=</span> <span class="n">next</span><span class="o">-&gt;</span><span class="n">ai_next</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">conn</span> <span class="o">*</span><span class="n">listen_conn_add</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">((</span><span class="n">sfd</span> <span class="o">=</span> <span class="n">new_socket</span><span class="p">(</span><span class="n">next</span><span class="p">))</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>   <span class="c1">//创建socket</span>
-</span><span class='line'>            <span class="cm">/* getaddrinfo can return &quot;junk&quot; addresses,</span>
-</span><span class='line'><span class="cm">             * we make sure at least one works before erroring.</span>
-</span><span class='line'><span class="cm">             */</span>
-</span><span class='line'>            <span class="k">if</span> <span class="p">(</span><span class="n">errno</span> <span class="o">==</span> <span class="n">EMFILE</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>                <span class="cm">/* ...unless we&#39;re out of fds */</span>
-</span><span class='line'>                <span class="n">perror</span><span class="p">(</span><span class="s">&quot;server_socket&quot;</span><span class="p">);</span>
-</span><span class='line'>                <span class="n">exit</span><span class="p">(</span><span class="n">EX_OSERR</span><span class="p">);</span>
-</span><span class='line'>            <span class="p">}</span>
-</span><span class='line'>            <span class="k">continue</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>        <span class="c1">//IPV4地址,设置socket选项</span>
-</span><span class='line'>        <span class="n">setsockopt</span><span class="p">(</span><span class="n">sfd</span><span class="p">,</span> <span class="n">SOL_SOCKET</span><span class="p">,</span> <span class="n">SO_REUSEADDR</span><span class="p">,</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="o">&amp;</span><span class="n">flags</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">flags</span><span class="p">));</span>
-</span><span class='line'>        <span class="p">...</span><span class="c1">//省略若干代码</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="c1">//socket和地址绑定</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">bind</span><span class="p">(</span><span class="n">sfd</span><span class="p">,</span> <span class="n">next</span><span class="o">-&gt;</span><span class="n">ai_addr</span><span class="p">,</span> <span class="n">next</span><span class="o">-&gt;</span><span class="n">ai_addrlen</span><span class="p">)</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>            <span class="k">if</span> <span class="p">(</span><span class="n">errno</span> <span class="o">!=</span> <span class="n">EADDRINUSE</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>                <span class="n">perror</span><span class="p">(</span><span class="s">&quot;bind()&quot;</span><span class="p">);</span>
-</span><span class='line'>                <span class="n">close</span><span class="p">(</span><span class="n">sfd</span><span class="p">);</span>
-</span><span class='line'>                <span class="n">freeaddrinfo</span><span class="p">(</span><span class="n">ai</span><span class="p">);</span>
-</span><span class='line'>                <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
-</span><span class='line'>            <span class="p">}</span>
-</span><span class='line'>            <span class="n">close</span><span class="p">(</span><span class="n">sfd</span><span class="p">);</span>
-</span><span class='line'>            <span class="k">continue</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">success</span><span class="o">++</span><span class="p">;</span>
-</span><span class='line'>            <span class="p">...</span><span class="c1">//省略若干代码</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">IS_UDP</span><span class="p">(</span><span class="n">transport</span><span class="p">))</span> <span class="p">{</span>
-</span><span class='line'>            <span class="p">...</span><span class="c1">//省略若干代码</span>
-</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
-</span><span class='line'>            <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">listen_conn_add</span> <span class="o">=</span> <span class="n">conn_new</span><span class="p">(</span><span class="n">sfd</span><span class="p">,</span> <span class="n">conn_listening</span><span class="p">,</span>
-</span><span class='line'>                                             <span class="n">EV_READ</span> <span class="o">|</span> <span class="n">EV_PERSIST</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span>
-</span><span class='line'>                                             <span class="n">transport</span><span class="p">,</span> <span class="n">main_base</span><span class="p">)))</span> <span class="p">{</span>
-</span><span class='line'>                <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;failed to create listening connection</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
-</span><span class='line'>                <span class="n">exit</span><span class="p">(</span><span class="n">EXIT_FAILURE</span><span class="p">);</span>
-</span><span class='line'>            <span class="p">}</span>
-</span><span class='line'>            <span class="n">listen_conn_add</span><span class="o">-&gt;</span><span class="n">next</span> <span class="o">=</span> <span class="n">listen_conn</span><span class="p">;</span>
-</span><span class='line'>            <span class="n">listen_conn</span> <span class="o">=</span> <span class="n">listen_conn_add</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">freeaddrinfo</span><span class="p">(</span><span class="n">ai</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/* Return zero iff we detected no errors in starting up connections */</span>
-</span><span class='line'>    <span class="k">return</span> <span class="n">success</span> <span class="o">==</span> <span class="mi">0</span><span class="p">;</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>conn_new()是这里的最关键的一个函数,此函数负责将原始套接字封装成为一个conn对象，同时会注册与该conn对象相关的IO事件，并指定该连接（conn）的初始状态。这里要注意的是listening socket的conn对象被初始化为conn_listening状态.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">conn</span> <span class="o">*</span><span class="nf">conn_new</span><span class="p">(</span><span class="k">const</span> <span class="kt">int</span> <span class="n">sfd</span><span class="p">,</span> <span class="k">enum</span> <span class="n">conn_states</span> <span class="n">init_state</span><span class="p">,</span>
-</span><span class='line'>                <span class="k">const</span> <span class="kt">int</span> <span class="n">event_flags</span><span class="p">,</span>
-</span><span class='line'>                <span class="k">const</span> <span class="kt">int</span> <span class="n">read_buffer_size</span><span class="p">,</span> <span class="k">enum</span> <span class="n">network_transport</span> <span class="n">transport</span><span class="p">,</span>
-</span><span class='line'>                <span class="k">struct</span> <span class="n">event_base</span> <span class="o">*</span><span class="n">base</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="p">...</span><span class="c1">//省略若干代码</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//设置fd和初始状态</span>
-</span><span class='line'>    <span class="n">c</span><span class="o">-&gt;</span><span class="n">sfd</span> <span class="o">=</span> <span class="n">sfd</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">c</span><span class="o">-&gt;</span><span class="n">state</span> <span class="o">=</span> <span class="n">init_state</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//注册与该连接有关的IO事件</span>
-</span><span class='line'>    <span class="n">event_set</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">event</span><span class="p">,</span> <span class="n">sfd</span><span class="p">,</span> <span class="n">event_flags</span><span class="p">,</span> <span class="n">event_handler</span><span class="p">,</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="n">c</span><span class="p">);</span>
-</span><span class='line'>    <span class="n">event_base_set</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">event</span><span class="p">);</span>
-</span><span class='line'>    <span class="n">c</span><span class="o">-&gt;</span><span class="n">ev_flags</span> <span class="o">=</span> <span class="n">event_flags</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">event_add</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">event</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">perror</span><span class="p">(</span><span class="s">&quot;event_add&quot;</span><span class="p">);</span>
-</span><span class='line'>        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="p">...</span><span class="c1">//</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>所有conn对象IO事件相关的处理函数都是event_handler()函数,这个函数主要是调用drive_machine()函数:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="kt">void</span> <span class="nf">event_handler</span><span class="p">(</span><span class="k">const</span> <span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="k">const</span> <span class="kt">short</span> <span class="n">which</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">arg</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">conn</span> <span class="o">*</span><span class="n">c</span><span class="p">;</span>
-</span><span class='line'>    <span class="p">...</span>
-</span><span class='line'>    <span class="n">drive_machine</span><span class="p">(</span><span class="n">c</span><span class="p">);</span>
-</span><span class='line'>    <span class="p">...</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>drive_machine这个函数就全权负责处理与客户连接相关的事件:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">drive_machine</span><span class="p">(</span><span class="n">conn</span> <span class="o">*</span><span class="n">c</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="p">...</span>
-</span><span class='line'>    <span class="n">assert</span><span class="p">(</span><span class="n">c</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">while</span> <span class="p">(</span><span class="o">!</span><span class="n">stop</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="k">switch</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">state</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="k">case</span> <span class="nl">conn_listening</span><span class="p">:</span>
-</span><span class='line'>            <span class="n">addrlen</span> <span class="o">=</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">addr</span><span class="p">);</span>
-</span><span class='line'>            <span class="n">sfd</span> <span class="o">=</span> <span class="n">accept</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">sfd</span><span class="p">,</span> <span class="p">(</span><span class="k">struct</span> <span class="n">sockaddr</span> <span class="o">*</span><span class="p">)</span><span class="o">&amp;</span><span class="n">addr</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">addrlen</span><span class="p">);</span>
-</span><span class='line'>            <span class="p">...</span>
-</span><span class='line'>
-</span><span class='line'>            <span class="k">if</span> <span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">maxconns_fast</span> <span class="o">&amp;&amp;</span>
-</span><span class='line'>                <span class="p">...</span>
-</span><span class='line'>            <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
-</span><span class='line'>                <span class="n">dispatch_conn_new</span><span class="p">(</span><span class="n">sfd</span><span class="p">,</span> <span class="n">conn_new_cmd</span><span class="p">,</span> <span class="n">EV_READ</span> <span class="o">|</span> <span class="n">EV_PERSIST</span><span class="p">,</span>
-</span><span class='line'>                                     <span class="n">DATA_BUFFER_SIZE</span><span class="p">,</span> <span class="n">tcp_transport</span><span class="p">);</span>
-</span><span class='line'>            <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>            <span class="n">stop</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
-</span><span class='line'>            <span class="k">break</span><span class="p">;</span>
-</span><span class='line'>        <span class="k">case</span> <span class="nl">conn_waiting</span><span class="p">:</span>
-</span><span class='line'>        <span class="p">...</span>
-</span><span class='line'>        <span class="k">case</span> <span class="nl">conn_read</span><span class="p">:</span>
-</span><span class='line'>        <span class="p">...</span>
-</span><span class='line'>        <span class="k">case</span> <span class="nl">conn_parse_cmd</span><span class="p">:</span>
-</span><span class='line'>        <span class="p">...</span>
-</span><span class='line'>        <span class="k">case</span> <span class="nl">conn_new_cmd</span><span class="p">:</span>
-</span><span class='line'>        <span class="p">...</span>
-</span><span class='line'>        <span class="k">case</span> <span class="nl">conn_nread</span><span class="p">:</span>
-</span><span class='line'>        <span class="p">...</span>
-</span><span class='line'>        <span class="k">case</span> <span class="nl">conn_swallow</span><span class="p">:</span>
-</span><span class='line'>        <span class="p">...</span>
-</span><span class='line'>        <span class="k">case</span> <span class="nl">conn_write</span><span class="p">:</span>
-</span><span class='line'>        <span class="p">...</span>
-</span><span class='line'>        <span class="k">case</span> <span class="nl">conn_mwrite</span><span class="p">:</span>
-</span><span class='line'>        <span class="p">...</span>
-</span><span class='line'>        <span class="k">case</span> <span class="nl">conn_closing</span><span class="p">:</span>
-</span><span class='line'>        <span class="p">...</span>
-</span><span class='line'>        <span class="k">case</span> <span class="nl">conn_closed</span><span class="p">:</span>
-</span><span class='line'>    <span class="p">...</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>drive_machine中就是conn对象的state字段发挥作用的地方了,drive_machine()函数是一个巨大的switch语句，它根据conn对象的当前状态，即state字段的值选择执行不同的分支，因为listening socket的conn对象被初始化为conn_listening状态，所以drive_machine()函数会执行switch语句中case conn_listenning的分支，即接受客户端连接并通过dispatch_conn_new()函数将连接分派给Worker线程.</p>
-
-<p>dispatch_conn_new代码如下(thread.c):</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/*</span>
-</span><span class='line'><span class="cm"> * Dispatches a new connection to another thread. This is only ever called</span>
-</span><span class='line'><span class="cm"> * from the main thread, either during initialization (for UDP) or because</span>
-</span><span class='line'><span class="cm"> * of an incoming connection.</span>
-</span><span class='line'><span class="cm"> */</span>
-</span><span class='line'><span class="kt">void</span> <span class="nf">dispatch_conn_new</span><span class="p">(</span><span class="kt">int</span> <span class="n">sfd</span><span class="p">,</span> <span class="k">enum</span> <span class="n">conn_states</span> <span class="n">init_state</span><span class="p">,</span> <span class="kt">int</span> <span class="n">event_flags</span><span class="p">,</span>
-</span><span class='line'>                       <span class="kt">int</span> <span class="n">read_buffer_size</span><span class="p">,</span> <span class="k">enum</span> <span class="n">network_transport</span> <span class="n">transport</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">CQ_ITEM</span> <span class="o">*</span><span class="n">item</span> <span class="o">=</span> <span class="n">cqi_new</span><span class="p">();</span>  <span class="c1">//新申请一个CQ_ITEM</span>
-</span><span class='line'>    <span class="kt">char</span> <span class="n">buf</span><span class="p">[</span><span class="mi">1</span><span class="p">];</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">item</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">close</span><span class="p">(</span><span class="n">sfd</span><span class="p">);</span>
-</span><span class='line'>        <span class="cm">/* given that malloc failed this may also fail, but let&#39;s try */</span>
-</span><span class='line'>        <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Failed to allocate memory for connection object</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
-</span><span class='line'>        <span class="k">return</span> <span class="p">;</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//分发给Worker线程</span>
-</span><span class='line'>    <span class="kt">int</span> <span class="n">tid</span> <span class="o">=</span> <span class="p">(</span><span class="n">last_thread</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">%</span> <span class="n">settings</span><span class="p">.</span><span class="n">num_threads</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">LIBEVENT_THREAD</span> <span class="o">*</span><span class="kr">thread</span> <span class="o">=</span> <span class="n">threads</span> <span class="o">+</span> <span class="n">tid</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">last_thread</span> <span class="o">=</span> <span class="n">tid</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">item</span><span class="o">-&gt;</span><span class="n">sfd</span> <span class="o">=</span> <span class="n">sfd</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">item</span><span class="o">-&gt;</span><span class="n">init_state</span> <span class="o">=</span> <span class="n">init_state</span><span class="p">;</span>  <span class="c1">//注意这里的状态为conn_new_cmd</span>
-</span><span class='line'>    <span class="n">item</span><span class="o">-&gt;</span><span class="n">event_flags</span> <span class="o">=</span> <span class="n">event_flags</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">item</span><span class="o">-&gt;</span><span class="n">read_buffer_size</span> <span class="o">=</span> <span class="n">read_buffer_size</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">item</span><span class="o">-&gt;</span><span class="n">transport</span> <span class="o">=</span> <span class="n">transport</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//把新申请的CQ_ITEM放到被分配的Worker线程的队列中</span>
-</span><span class='line'>    <span class="n">cq_push</span><span class="p">(</span><span class="kr">thread</span><span class="o">-&gt;</span><span class="n">new_conn_queue</span><span class="p">,</span> <span class="n">item</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">MEMCACHED_CONN_DISPATCH</span><span class="p">(</span><span class="n">sfd</span><span class="p">,</span> <span class="kr">thread</span><span class="o">-&gt;</span><span class="n">thread_id</span><span class="p">);</span>
-</span><span class='line'>    <span class="n">buf</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="sc">&#39;c&#39;</span><span class="p">;</span>
-</span><span class='line'>    <span class="c1">//向worker thread线程的管道写入一字节的数据</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">write</span><span class="p">(</span><span class="kr">thread</span><span class="o">-&gt;</span><span class="n">notify_send_fd</span><span class="p">,</span> <span class="n">buf</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="n">perror</span><span class="p">(</span><span class="s">&quot;Writing to thread notify pipe&quot;</span><span class="p">);</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>向Worker线程写一个字符的意义在于触发Worker线程管道的读端，即notify_receive_fd描述符的可读事件.</p>
-
-<p>主线程在新连接到来的时候是如何选择处理副线程的呢?很简单,有一个计数器last_thread, 每次将last_thread加一,再模线程数来选择线程ID.</p>
-
-<p>通过之前的分析,我们知道,Worker线程的管道有读时间触发的时候,会调用thread_libevent_process来处理,这里详细分析一下:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/*</span>
-</span><span class='line'><span class="cm"> * Processes an incoming &quot;handle a new connection&quot; item. This is called when</span>
-</span><span class='line'><span class="cm"> * input arrives on the libevent wakeup pipe.</span>
-</span><span class='line'><span class="cm"> */</span>
-</span><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">thread_libevent_process</span><span class="p">(</span><span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">short</span> <span class="n">which</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">arg</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="n">LIBEVENT_THREAD</span> <span class="o">*</span><span class="n">me</span> <span class="o">=</span> <span class="n">arg</span><span class="p">;</span>
-</span><span class='line'>    <span class="n">CQ_ITEM</span> <span class="o">*</span><span class="n">item</span><span class="p">;</span>
-</span><span class='line'>    <span class="kt">char</span> <span class="n">buf</span><span class="p">[</span><span class="mi">1</span><span class="p">];</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="c1">//从管道中读数据</span>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">read</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">buf</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">)</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">verbose</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>
-</span><span class='line'>            <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Can&#39;t read from libevent pipe</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">switch</span> <span class="p">(</span><span class="n">buf</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="p">{</span>
-</span><span class='line'>    <span class="k">case</span> <span class="sc">&#39;c&#39;</span><span class="o">:</span>   <span class="c1">//c表示有新的连接请求被主线程分配到当前Worker线程</span>
-</span><span class='line'>    <span class="c1">//从当前Worker线程的连接请求队列中弹出一个请求</span>
-</span><span class='line'>    <span class="c1">//此对象即先前main thread线程推入new_conn_queue队列的对象</span>
-</span><span class='line'>    <span class="n">item</span> <span class="o">=</span> <span class="n">cq_pop</span><span class="p">(</span><span class="n">me</span><span class="o">-&gt;</span><span class="n">new_conn_queue</span><span class="p">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="nb">NULL</span> <span class="o">!=</span> <span class="n">item</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>        <span class="c1">//根据这个CQ_ITEM对象，创建并初始化conn对象</span>
-</span><span class='line'>        <span class="c1">//该对象负责客户端与该worker thread线程之间的通信</span>
-</span><span class='line'>        <span class="n">conn</span> <span class="o">*</span><span class="n">c</span> <span class="o">=</span> <span class="n">conn_new</span><span class="p">(</span><span class="n">item</span><span class="o">-&gt;</span><span class="n">sfd</span><span class="p">,</span> <span class="n">item</span><span class="o">-&gt;</span><span class="n">init_state</span><span class="p">,</span> <span class="n">item</span><span class="o">-&gt;</span><span class="n">event_flags</span><span class="p">,</span>
-</span><span class='line'>                           <span class="n">item</span><span class="o">-&gt;</span><span class="n">read_buffer_size</span><span class="p">,</span> <span class="n">item</span><span class="o">-&gt;</span><span class="n">transport</span><span class="p">,</span> <span class="n">me</span><span class="o">-&gt;</span><span class="n">base</span><span class="p">);</span>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">c</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>            <span class="k">if</span> <span class="p">(</span><span class="n">IS_UDP</span><span class="p">(</span><span class="n">item</span><span class="o">-&gt;</span><span class="n">transport</span><span class="p">))</span> <span class="p">{</span>
-</span><span class='line'>                <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Can&#39;t listen for events on UDP socket</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
-</span><span class='line'>                <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
-</span><span class='line'>            <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
-</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">settings</span><span class="p">.</span><span class="n">verbose</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>                    <span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span> <span class="s">&quot;Can&#39;t listen for events on fd %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
-</span><span class='line'>                        <span class="n">item</span><span class="o">-&gt;</span><span class="n">sfd</span><span class="p">);</span>
-</span><span class='line'>                <span class="p">}</span>
-</span><span class='line'>                <span class="n">close</span><span class="p">(</span><span class="n">item</span><span class="o">-&gt;</span><span class="n">sfd</span><span class="p">);</span>
-</span><span class='line'>            <span class="p">}</span>
-</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">c</span><span class="o">-&gt;</span><span class="kr">thread</span> <span class="o">=</span> <span class="n">me</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>        <span class="n">cqi_free</span><span class="p">(</span><span class="n">item</span><span class="p">);</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'>        <span class="k">break</span><span class="p">;</span>
-</span><span class='line'>    <span class="cm">/* we were told to flip the lock type and report in */</span>
-</span><span class='line'>    <span class="k">case</span> <span class="sc">&#39;l&#39;</span><span class="o">:</span>
-</span><span class='line'>        <span class="p">...</span>
-</span><span class='line'>    <span class="k">case</span> <span class="sc">&#39;g&#39;</span><span class="o">:</span>
-</span><span class='line'>        <span class="p">...</span>
-</span><span class='line'>    <span class="p">}</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>到这里,Worker线程就建立了和客户端的连接.</p>
-
-<p>conn_new的一个值得注意的地方就是会设置线程的事件处理函数:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="n">conn</span> <span class="o">*</span><span class="nf">conn_new</span><span class="p">(</span><span class="k">const</span> <span class="kt">int</span> <span class="n">sfd</span><span class="p">,</span> <span class="k">enum</span> <span class="n">conn_states</span> <span class="n">init_state</span><span class="p">,</span>
-</span><span class='line'>                <span class="k">const</span> <span class="kt">int</span> <span class="n">event_flags</span><span class="p">,</span>
-</span><span class='line'>                <span class="k">const</span> <span class="kt">int</span> <span class="n">read_buffer_size</span><span class="p">,</span> <span class="k">enum</span> <span class="n">network_transport</span> <span class="n">transport</span><span class="p">,</span>
-</span><span class='line'>                <span class="k">struct</span> <span class="n">event_base</span> <span class="o">*</span><span class="n">base</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>    <span class="p">...</span>
-</span><span class='line'>    <span class="n">event_set</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">event</span><span class="p">,</span> <span class="n">sfd</span><span class="p">,</span> <span class="n">event_flags</span><span class="p">,</span> <span class="n">event_handler</span><span class="p">,</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="n">c</span><span class="p">);</span>
-</span><span class='line'>        <span class="n">event_base_set</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">event</span><span class="p">);</span>
-</span><span class='line'>        <span class="n">c</span><span class="o">-&gt;</span><span class="n">ev_flags</span> <span class="o">=</span> <span class="n">event_flags</span><span class="p">;</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">event_add</span><span class="p">(</span><span class="o">&amp;</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">event</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
-</span><span class='line'>            <span class="n">perror</span><span class="p">(</span><span class="s">&quot;event_add&quot;</span><span class="p">);</span>
-</span><span class='line'>            <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
-</span><span class='line'>        <span class="p">}</span>
-</span><span class='line'>    <span class="p">...</span>
-</span><span class='line'><span class="p">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>我们可以看到,Worker线程也是使用event_handler函数来处理客户端请求过来的数据,根当前请求连接的状态来处理.</p>
-
-<p><strong>(4).事件循环</strong></p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/* enter the event loop */</span>
-</span><span class='line'><span class="n">event_base_loop</span><span class="p">(</span><span class="n">main_base</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>这时主线程启动开始通过libevent来接受外部连接请求，整个启动过程完毕.</p>
-
-<h1>3.总结</h1>
-
-<p>Memcached中采用的就是所谓的半同步-半异步模式,最早应该是由ACE的作者提出,原文在<a href="http://www.cs.wustl.edu/~schmidt/PDF/HS-HA.pdf">这里</a>.</p>
-
-<p>简单示意图如下:</p>
-
-<p><img src="/images/memcached/half-sync-half-async.jpg"></p>
-
-<h3>3.1半同步-半异步模式</h3>
-
-<p>几个模块的之间的交互为:</p>
-
-<pre><code>(1).异步模块接收可能会异步到来的各种事件(I/O,信号等),然后将它们放入队列中;
-(2).同步模块一般只有一种动作,就是不停的从队列中取出消息进行处理;
-</code></pre>
-
-<p>半同步-半异步模式的出现是为了给服务器的功能进行划分,尽可能将的可能阻塞的操作放在同步模块中,这样不会影响到异步模块的处理.</p>
-
-<p>举个例子说明:</p>
-
-<p>假设现在有一个服务器,在接收完客户端请求之后会去数据库查询,这个查询可能会很慢.这时,如果还是采用的把接收客户端的连接和处理客户端的请求(在这里这个处理就是查询数据库)放在一个模块中来处理,很可能将会有很多连接的处理响应非常慢.</p>
-
-<p>此时,考虑使用半同步半异步的模式,开一个进程,使用多路复用IO(如epoll/select)等监听客户端的连接,接收到新的连接请求之后就将这些请求存放到通过某种IPC方式实现的消息队列中,同时,还有N个处理进程,它们所做的工作就是不停的从消息队列中取出消息进行处理.这样的划分,将接收客户端请求和处理客户端请求划分为不同的模块,相互之间的通过IPC进行通讯,将对彼此功能的影响限制到最小.</p>
-
-<p><strong>优点</strong></p>
-
-<pre><code>(1).接收操作只在主循环中处理,因此不会出现惊群现象;
-(2).主副线程分工明确, 主线程仅负责I/O, 副线程负责业务逻辑处理;
-(3).多个副线程之间不会有影响,因为大家都有各自独立的连接队列;
-</code></pre>
-
-<p><strong>缺点</strong></p>
-
-<p>假如业务逻辑是类似于web服务器之类的, 那么一个简单的请求也需要这个比较繁琐的操作的话(最重要的是,很可能一个进程就能处理完的事情,非得从一个线程接收再到另一个线程去处理), 那么显然代价是不值得的.</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/8">&larr; Older</a>
@@ -6549,6 +5840,10 @@ thread_libevent_process方法.</p>
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a>
       </li>
     
@@ -6562,10 +5857,6 @@ thread_libevent_process方法.</p>
     
       <li class="post">
         <a href="/blog/2015/11/18/libphonenumber/">Libphonenumber</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/09/09/lunecezheng-ti-jia-gou/">Lunece整体架构</a>
       </li>
     
   </ul>
@@ -6588,6 +5879,7 @@ thread_libevent_process方法.</p>
 <li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (11)</a></li>
 <li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/protobuf/'>protobuf (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (8)</a></li>

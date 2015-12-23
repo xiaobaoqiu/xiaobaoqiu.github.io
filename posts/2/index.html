@@ -9,8 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近做一个同步线上数据导dev或者beta环境的小工具.今天遇到一个小异常: 1
-Caused by: com.mysql.jdbc.PacketTooBigException: Packet for query is too large (17610152 &gt; 16777216). You &hellip;">
+  <meta name="description" content="最近项目中出现了至少两次因为Mybatis的动态where条件不满足导致实际sql语句的where条件为空,进而查询全表,当数据量比较大的时候,导致OOM的情况. 如何禁止这种情况,个人觉得三种措施: 1.在逻辑层面加充分的参数有效性检查;
+2.在where条件中如果索引条件都不满足,加上1= &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -70,6 +70,404 @@ Caused by: com.mysql.jdbc.PacketTooBigException: Packet for query is too large (
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/08/22/mybatiskong-wherelan-jie-qi/">MyBatis空where拦截器</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-08-22T12:37:48+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>22</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>12:37 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近项目中出现了至少两次因为Mybatis的动态where条件不满足导致实际sql语句的where条件为空,进而查询全表,当数据量比较大的时候,导致OOM的情况.</p>
+
+<p>如何禁止这种情况,个人觉得三种措施:</p>
+
+<ul>
+<li>1.在逻辑层面加充分的参数有效性检查;</li>
+<li>2.在where条件中如果索引条件都不满足,加上1=2这种必然失败的条件;</li>
+</ul>
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;where&gt;
+</span><span class='line'>    &lt;choose&gt;
+</span><span class='line'>        &lt;when test="id != null"&gt;
+</span><span class='line'>            ...
+</span><span class='line'>        &lt;/when&gt;
+</span><span class='line'>        ...
+</span><span class='line'>        &lt;otherwise&gt;
+</span><span class='line'>        and 1=2
+</span><span class='line'>        &lt;/otherwise&gt;
+</span><span class='line'>    &lt;/choose&gt;
+</span><span class='line'>&lt;/where&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>3.Mybatis拦截器;</li>
+</ul>
+
+
+<p>前两种措施都是依赖人,从这个层面讲,是不靠谱的,即一个策略不是强制的,就是不靠谱的.相对而言,第三种是不依赖程序员的自觉性,是最靠谱的.乘周六有时间,实现一个简单的Mybatis拦截器来拦截where条件为空的SQL语句.</p>
+
+<h1>1.实现</h1>
+
+<p>先上代码,这里拦截了SqlCommandType为select,update,delete这三种类型.出现情况目前只是打日志.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Mybatis拦截器, 拦截:
+</span><span class='line'> *      select语句where条件为空
+</span><span class='line'> *      update语句where条件为空
+</span><span class='line'> *      delete语句where条件为空
+</span><span class='line'> *
+</span><span class='line'> * 处理: 目前只是打warning日志,因为项目中存在数据量很少的表读全表的情况(比如加载数据进缓存)
+</span><span class='line'> *      TODO:后续考虑设置拦截器的白名单,不在白名单的触发where条件为空的直接抛出异常.
+</span><span class='line'> *
+</span><span class='line'> * @author: xiaobaoqiu  Date: 15-8-22 Time: 上午10:26
+</span><span class='line'> */
+</span><span class='line'>@Intercepts({ @Signature(
+</span><span class='line'>        type = StatementHandler.class,
+</span><span class='line'>        method = "prepare",
+</span><span class='line'>        args = { Connection.class }) })
+</span><span class='line'>public class EmptyWhereInterceptor implements Interceptor {
+</span><span class='line'>
+</span><span class='line'>    private static final Logger logger = LoggerFactory.getLogger(EmptyWhereInterceptor.class);
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 拦截的 COMMAND 类型
+</span><span class='line'>     */
+</span><span class='line'>    private static final Set&lt;String&gt; INTERCEPTOR_COMMAND = Sets.newHashSet("select", "update", "delete");
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public Object intercept(Invocation invocation) throws Throwable {
+</span><span class='line'>        StatementHandler handler = (StatementHandler) invocation.getTarget();
+</span><span class='line'>
+</span><span class='line'>        //获取实际的StatementHandler
+</span><span class='line'>        if (handler instanceof RoutingStatementHandler) {
+</span><span class='line'>            handler = (BaseStatementHandler) ReflectUtil.getFieldValue(handler, "delegate");
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        //获取SqlCommandType
+</span><span class='line'>        String commandType = getCommandType(handler);
+</span><span class='line'>
+</span><span class='line'>        if (INTERCEPTOR_COMMAND.contains(commandType)) {
+</span><span class='line'>            String originSql = handler.getBoundSql().getSql().toLowerCase();  //获取sql
+</span><span class='line'>            if (!originSql.contains("where")) {
+</span><span class='line'>                logger.warn("禁止使用不带where条件的SQL语句.原始SQL={}", originSql);
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        return invocation.proceed();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public Object plugin(Object target) {
+</span><span class='line'>        return Plugin.wrap(target, this);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public void setProperties(Properties properties) {
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 获取Command类型,小写化返回
+</span><span class='line'>     *
+</span><span class='line'>     * @param handler
+</span><span class='line'>     * @return
+</span><span class='line'>     */
+</span><span class='line'>    private String getCommandType(StatementHandler handler) {
+</span><span class='line'>        MappedStatement mappedStatement = (MappedStatement) ReflectUtil.getFieldValue(handler, "mappedStatement");
+</span><span class='line'>        return mappedStatement.getSqlCommandType().toString().toLowerCase();
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>包括一个简单反射工具的实现:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 反射工具
+</span><span class='line'> *
+</span><span class='line'> * @author: xiaobaoqiu  Date: 15-8-22 Time: 上午11:52
+</span><span class='line'> */
+</span><span class='line'>public class ReflectUtil {
+</span><span class='line'>    public ReflectUtil() {
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 改变 Accessible,便于访问private等属性
+</span><span class='line'>     * @param field
+</span><span class='line'>     */
+</span><span class='line'>    private static void makeAccessible(Field field) {
+</span><span class='line'>        if(!Modifier.isPublic(field.getModifiers())) {
+</span><span class='line'>            field.setAccessible(true);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 获取 object 的字段,字段名称为filedName,获取不到返回null
+</span><span class='line'>     * @param object
+</span><span class='line'>     * @param filedName
+</span><span class='line'>     * @return
+</span><span class='line'>     */
+</span><span class='line'>    private static Field getDeclaredField(Object object, String filedName) {
+</span><span class='line'>        Class superClass = object.getClass();
+</span><span class='line'>
+</span><span class='line'>        while(superClass != Object.class) {
+</span><span class='line'>            try {
+</span><span class='line'>                return superClass.getDeclaredField(filedName);
+</span><span class='line'>            } catch (NoSuchFieldException var4) {
+</span><span class='line'>                superClass = superClass.getSuperclass();
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        return null;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 获取object字段fieldName的值,如果字段不存在直接抛异常
+</span><span class='line'>     *
+</span><span class='line'>     * @param object
+</span><span class='line'>     * @param fieldName
+</span><span class='line'>     * @return
+</span><span class='line'>     */
+</span><span class='line'>    public static Object getFieldValue(Object object, String fieldName) {
+</span><span class='line'>        Field field = getDeclaredField(object, fieldName);
+</span><span class='line'>        if(field == null) {
+</span><span class='line'>            throw new IllegalArgumentException("Could not find field [" + fieldName + "] on target [" + object + "]");
+</span><span class='line'>        } else {
+</span><span class='line'>            makeAccessible(field);
+</span><span class='line'>            Object result = null;
+</span><span class='line'>
+</span><span class='line'>            try {
+</span><span class='line'>                result = field.get(object);
+</span><span class='line'>            } catch (IllegalAccessException var5) {
+</span><span class='line'>                var5.printStackTrace();
+</span><span class='line'>            }
+</span><span class='line'>
+</span><span class='line'>            return result;
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 设置object字段fieldName的值,如果字段不存在直接抛异常
+</span><span class='line'>     *
+</span><span class='line'>     * @param object
+</span><span class='line'>     * @param fieldName
+</span><span class='line'>     * @param value
+</span><span class='line'>     */
+</span><span class='line'>    public static void setFieldValue(Object object, String fieldName, Object value) {
+</span><span class='line'>        Field field = getDeclaredField(object, fieldName);
+</span><span class='line'>        if(field == null) {
+</span><span class='line'>            throw new IllegalArgumentException("Could not find field [" + fieldName + "] on target [" + object + "]");
+</span><span class='line'>        } else {
+</span><span class='line'>            makeAccessible(field);
+</span><span class='line'>
+</span><span class='line'>            try {
+</span><span class='line'>                field.set(object, value);
+</span><span class='line'>            } catch (IllegalAccessException var5) {
+</span><span class='line'>                var5.printStackTrace();
+</span><span class='line'>            }
+</span><span class='line'>
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.Mybatis的Interceptor原理</h1>
+
+<p><a href="http://www.tuicool.com/articles/RbyUfu">这篇文章</a>很好的解释了Mybatis的Interceptor机制.</p>
+
+<p>mybatis读取配置再xml文件中Interceptor,通过反射构造其实例，将所有的Interceptor保存到InterceptorChain中。</p>
+
+<p>mybatis的拦截器只能代理指定的四个类：ParameterHandler、ResultSetHandler、StatementHandler以及Executor。</p>
+
+<p>参考:</p>
+
+<p><a href="http://www.tuicool.com/articles/RbyUfu">http://www.tuicool.com/articles/RbyUfu</a></p>
+
+<p><a href="http://blog.csdn.net/hupanfeng/article/details/9247379">http://blog.csdn.net/hupanfeng/article/details/9247379</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -3127,119 +3525,6 @@ WHAT: 用户当前正在使用的命令
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/06/30/linuxwen-jian-ge-shi/">Linux文件编码</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-06-30T03:07:46+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>30</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>3:07 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>在多系统直接传输文件经常碰到文件编码的问题.</p>
-
-<h1>1.查看编码</h1>
-
-<p>查看文件的编码有很多种方式</p>
-
-<h3>1.1 file</h3>
-
-<p>file命令输出了文件的格式和编码.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ file _config.yml
-</span><span class='line'>_config.yml: UTF-8 Unicode text</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.2 vi</h3>
-
-<p>vi打开文件之后,输入:set fileencoding就可以获得文件编码:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>fileencoding=utf-8</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.转换编码</h1>
-
-<h3>2.1 vi</h3>
-
-<p>使用vi也可以变更文件编码</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>:set fileencoding=utf8</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.2 iconv</h3>
-
-<p>使用iconv命令,iconv几个主要参数(man):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>输入/输出格式规范：
-</span><span class='line'>-f, --from-code=名称 原始文本编码
-</span><span class='line'>-t, --to-code=名称 输出编码
-</span><span class='line'>
-</span><span class='line'>信息：
-</span><span class='line'>-l, --list 列举所有已知的字符集
-</span><span class='line'>
-</span><span class='line'>输出控制：
-</span><span class='line'>-c 从输出中忽略无效的字符
-</span><span class='line'>-o, --output=FILE 输出到文件
-</span><span class='line'>-s, --silent 关闭警告
-</span><span class='line'>--verbose 打印进度信息</span></code></pre></td></tr></table></div></figure>
-
-
-<p>使用例子,文件infile从GB18030编码转换至UTF-8编码并写入到文件outfile中:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ cat infile 
-</span><span class='line'>���
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ iconv -f GB18030 -t utf-8 infile -o outfile
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ cat outfile 
-</span><span class='line'>测试</span></code></pre></td></tr></table></div></figure>
-
-
-<p>也可以从管道输入,比如直接访问www.google.com.hk,不出意外会是乱码(使用的big5中文编码),可以转换成utf8</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ curl -l 'www.google.com.hk' | iconv -f big5 -t gbk</span></code></pre></td></tr></table></div></figure>
-
-
-<p>iconv基于GPL公开源代码,是GNU项目的一部分.目前，libiconv已经包含在C运行时刻库libc.so中。因此，Linux平台上使用iconv库函数的程序，需要包含&lt;iconv.h>文件.</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/3">&larr; Older</a>
@@ -3259,6 +3544,10 @@ WHAT: 用户当前正在使用的命令
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a>
       </li>
     
@@ -3272,10 +3561,6 @@ WHAT: 用户当前正在使用的命令
     
       <li class="post">
         <a href="/blog/2015/11/18/libphonenumber/">Libphonenumber</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/09/09/lunecezheng-ti-jia-gou/">Lunece整体架构</a>
       </li>
     
   </ul>
@@ -3298,6 +3583,7 @@ WHAT: 用户当前正在使用的命令
 <li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (11)</a></li>
 <li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/protobuf/'>protobuf (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (8)</a></li>

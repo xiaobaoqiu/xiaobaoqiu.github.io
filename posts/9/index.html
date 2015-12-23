@@ -9,10 +9,14 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="AbstractMap Map的内部实现,key用一个set实现, value用一个Collection 1
+  <meta name="description" content="二叉堆(小顶堆)保证孩子节点大于等于父亲节点,同时它又具有完全二叉树(除了底层,其他层是满的)的性质. 一个小顶堆如下: 1
 2
-transient volatile Set&lt;K&gt; keySet = null;
-transient volatile Collection&lt;V&gt; values &hellip;">
+3
+4
+5
+6
+7 1 / \ 2 3
+/ \ / \ 4 5 6 7 / \ / \ 8 9 10 11 二叉堆是专门为取出最大或最小节点而设计点数据结构， &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -72,6 +76,526 @@ transient volatile Collection&lt;V&gt; values &hellip;">
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/07/18/er-cha-dui/">二叉堆</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-07-18T18:03:19+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>18</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>6:03 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>二叉堆(小顶堆)保证孩子节点大于等于父亲节点,同时它又具有完全二叉树(除了底层,其他层是满的)的性质.</p>
+
+<p>一个小顶堆如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>    1
+</span><span class='line'>  /   \
+</span><span class='line'> 2     3
+</span><span class='line'>/ \   / \
+</span><span class='line'>   4   5  6  7
+</span><span class='line'>  / \ / \
+</span><span class='line'> 8  9 10 11    </span></code></pre></td></tr></table></div></figure>
+
+
+<p>二叉堆是专门为取出最大或最小节点而设计点数据结构，这种数据结构在查找一般元素方面性能和一般数组是没有多大区别的。</p>
+
+<p>二叉堆在取出最大或最最小值的性能表现是O(1),取出操作完成之后，二叉堆需要一次整形操作，以便得到下一个最值，这个操作复杂度O(logn)。</p>
+
+<p>但是二叉堆也有一个缺点，就是二叉堆对存储在内存中的数据操作太过分散，这导致了二叉堆在cpu高速缓存的利用与内存击中率上面表现不是很好，这也是一个二叉堆理想操作时间所需要付出的代价。</p>
+
+<p>二叉堆用用数组实现很方便,比较经典的讲解见&lt;算法导论>,这里以小顶堆为例子.
+数组实现时候的一些属性,便于代码实现:
+    (1).父亲节点的下标为i,则左孩子节点下标2*i+1, 右孩子节点下标2*i+2;同理,下标为i的节点的父亲节点下标为(i-1)/2.
+    (2).n个节点的二叉堆,非叶子节点的数目为floor(n/2),如7个节点,则有3个非叶子节点.
+    (3).高度为h的完全二叉树,包含2<sup>h</sup>到2<sup>h+1</sup>-1个节点,即n个节点的二叉堆,高度为logn;</p>
+
+<h3>实现</h3>
+
+<p>二叉堆的实现主要涉及到两个操作,siftUp和siftDown,siftUp表示将第i个位置的元素向上调整,保证到达根节点的路径上都满足二叉堆的性质;siftDown将第i个位置的元素向下调整,保证i为根节点的子树为一个二叉堆.</p>
+
+<p>下面是我的一个简单实现:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+<span class='line-number'>111</span>
+<span class='line-number'>112</span>
+<span class='line-number'>113</span>
+<span class='line-number'>114</span>
+<span class='line-number'>115</span>
+<span class='line-number'>116</span>
+<span class='line-number'>117</span>
+<span class='line-number'>118</span>
+<span class='line-number'>119</span>
+<span class='line-number'>120</span>
+<span class='line-number'>121</span>
+<span class='line-number'>122</span>
+<span class='line-number'>123</span>
+<span class='line-number'>124</span>
+<span class='line-number'>125</span>
+<span class='line-number'>126</span>
+<span class='line-number'>127</span>
+<span class='line-number'>128</span>
+<span class='line-number'>129</span>
+<span class='line-number'>130</span>
+<span class='line-number'>131</span>
+<span class='line-number'>132</span>
+<span class='line-number'>133</span>
+<span class='line-number'>134</span>
+<span class='line-number'>135</span>
+<span class='line-number'>136</span>
+<span class='line-number'>137</span>
+<span class='line-number'>138</span>
+<span class='line-number'>139</span>
+<span class='line-number'>140</span>
+<span class='line-number'>141</span>
+<span class='line-number'>142</span>
+<span class='line-number'>143</span>
+<span class='line-number'>144</span>
+<span class='line-number'>145</span>
+<span class='line-number'>146</span>
+<span class='line-number'>147</span>
+<span class='line-number'>148</span>
+<span class='line-number'>149</span>
+<span class='line-number'>150</span>
+<span class='line-number'>151</span>
+<span class='line-number'>152</span>
+<span class='line-number'>153</span>
+<span class='line-number'>154</span>
+<span class='line-number'>155</span>
+<span class='line-number'>156</span>
+<span class='line-number'>157</span>
+<span class='line-number'>158</span>
+<span class='line-number'>159</span>
+<span class='line-number'>160</span>
+<span class='line-number'>161</span>
+<span class='line-number'>162</span>
+<span class='line-number'>163</span>
+<span class='line-number'>164</span>
+<span class='line-number'>165</span>
+<span class='line-number'>166</span>
+<span class='line-number'>167</span>
+<span class='line-number'>168</span>
+<span class='line-number'>169</span>
+<span class='line-number'>170</span>
+<span class='line-number'>171</span>
+<span class='line-number'>172</span>
+<span class='line-number'>173</span>
+<span class='line-number'>174</span>
+<span class='line-number'>175</span>
+<span class='line-number'>176</span>
+<span class='line-number'>177</span>
+<span class='line-number'>178</span>
+<span class='line-number'>179</span>
+<span class='line-number'>180</span>
+<span class='line-number'>181</span>
+<span class='line-number'>182</span>
+<span class='line-number'>183</span>
+<span class='line-number'>184</span>
+<span class='line-number'>185</span>
+<span class='line-number'>186</span>
+<span class='line-number'>187</span>
+<span class='line-number'>188</span>
+<span class='line-number'>189</span>
+<span class='line-number'>190</span>
+<span class='line-number'>191</span>
+<span class='line-number'>192</span>
+<span class='line-number'>193</span>
+<span class='line-number'>194</span>
+<span class='line-number'>195</span>
+<span class='line-number'>196</span>
+<span class='line-number'>197</span>
+<span class='line-number'>198</span>
+<span class='line-number'>199</span>
+<span class='line-number'>200</span>
+<span class='line-number'>201</span>
+<span class='line-number'>202</span>
+<span class='line-number'>203</span>
+<span class='line-number'>204</span>
+<span class='line-number'>205</span>
+<span class='line-number'>206</span>
+<span class='line-number'>207</span>
+<span class='line-number'>208</span>
+<span class='line-number'>209</span>
+<span class='line-number'>210</span>
+<span class='line-number'>211</span>
+<span class='line-number'>212</span>
+<span class='line-number'>213</span>
+<span class='line-number'>214</span>
+<span class='line-number'>215</span>
+<span class='line-number'>216</span>
+<span class='line-number'>217</span>
+<span class='line-number'>218</span>
+<span class='line-number'>219</span>
+<span class='line-number'>220</span>
+<span class='line-number'>221</span>
+<span class='line-number'>222</span>
+<span class='line-number'>223</span>
+<span class='line-number'>224</span>
+<span class='line-number'>225</span>
+<span class='line-number'>226</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kn">import</span> <span class="nn">java.util.Arrays</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="cm">/**</span>
+</span><span class='line'><span class="cm"> * 二叉堆 这里数据类型为Integer, 且堆为小顶堆</span>
+</span><span class='line'><span class="cm"> * 几个重要的性质(具有完全二叉树的性质):</span>
+</span><span class='line'><span class="cm"> * (1).父亲节点的下标为i,则左孩子节点下标2*i+1, 右孩子节点下标2*i+2;同理,下标为i的节点的父亲节点下标为(i-1)/2;</span>
+</span><span class='line'><span class="cm"> * (2).n个节点的二叉堆,非叶子节点的数目为floor(n/2),如7个节点,则有3个非叶子节点;</span>
+</span><span class='line'><span class="cm"> * (3).高度为h的完全二叉树,包含2^h到2^(h+1)-1个节点,即n个节点的二叉堆,高度为logn</span>
+</span><span class='line'><span class="cm"> * </span>
+</span><span class='line'><span class="cm"> * @Author: baoqiu.xiao@qunar.com Date: 14-7-17 Time: 下午3:45</span>
+</span><span class='line'><span class="cm"> * @Version: \$Id$</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">PQueue</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 默认大小</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">int</span> <span class="n">DEFAULT_CAPACITY</span> <span class="o">=</span> <span class="mi">16</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 数据</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">transient</span> <span class="n">Integer</span><span class="o">[]</span> <span class="n">queue</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 大小</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">size</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * ctor</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">PQueue</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">(</span><span class="n">DEFAULT_CAPACITY</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">PQueue</span><span class="o">(</span><span class="kt">int</span> <span class="n">initialCapacity</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">initialCapacity</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="o">)</span>
+</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">IllegalArgumentException</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">queue</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Integer</span><span class="o">[</span><span class="n">initialCapacity</span><span class="o">];</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">PQueue</span><span class="o">(</span><span class="n">Integer</span><span class="o">[]</span> <span class="n">array</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">(</span><span class="n">array</span><span class="o">.</span><span class="na">length</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">queue</span> <span class="o">=</span> <span class="n">Arrays</span><span class="o">.</span><span class="na">copyOf</span><span class="o">(</span><span class="n">array</span><span class="o">,</span> <span class="n">array</span><span class="o">.</span><span class="na">length</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">size</span> <span class="o">=</span> <span class="n">array</span><span class="o">.</span><span class="na">length</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">heapify</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 堆内元素个数, O(1)</span>
+</span><span class='line'><span class="cm">     * </span>
+</span><span class='line'><span class="cm">     * @return</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">size</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">size</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">isEmpty</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 取堆顶元素(这里为最小元素),但不移除堆顶元素, O(1)</span>
+</span><span class='line'><span class="cm">     * </span>
+</span><span class='line'><span class="cm">     * @return</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="n">Integer</span> <span class="nf">peek</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">queue</span><span class="o">[</span><span class="mi">0</span><span class="o">];</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 弹出堆顶元素并返回, O(logn)</span>
+</span><span class='line'><span class="cm">     * </span>
+</span><span class='line'><span class="cm">     * @return</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="n">Integer</span> <span class="nf">pop</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">Integer</span> <span class="n">result</span> <span class="o">=</span> <span class="n">queue</span><span class="o">[</span><span class="mi">0</span><span class="o">];</span>
+</span><span class='line'>        <span class="n">queue</span><span class="o">[</span><span class="mi">0</span><span class="o">]</span> <span class="o">=</span> <span class="n">queue</span><span class="o">[--</span><span class="n">size</span><span class="o">];</span> <span class="c1">// 数组尾部元素放到堆顶</span>
+</span><span class='line'>        <span class="n">queue</span><span class="o">[</span><span class="n">size</span><span class="o">]</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">shiftDown</span><span class="o">(</span><span class="mi">0</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">result</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 往堆里面插入一个元素, O(logn)</span>
+</span><span class='line'><span class="cm">     * </span>
+</span><span class='line'><span class="cm">     * @param newValue</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">add</span><span class="o">(</span><span class="n">Integer</span> <span class="n">newValue</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">newValue</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
+</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">NullPointerException</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">// 需要增长内存</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">oldSize</span> <span class="o">=</span> <span class="n">size</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">oldSize</span> <span class="o">&gt;=</span> <span class="n">queue</span><span class="o">.</span><span class="na">length</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">grow</span><span class="o">(</span><span class="n">oldSize</span> <span class="o">+</span> <span class="mi">1</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">size</span> <span class="o">=</span> <span class="n">oldSize</span> <span class="o">+</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>        <span class="n">queue</span><span class="o">[</span><span class="n">oldSize</span><span class="o">]</span> <span class="o">=</span> <span class="n">newValue</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">oldSize</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">shiftUp</span><span class="o">(</span><span class="n">oldSize</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 内存增长,保证能容纳 minCapacity 个元素</span>
+</span><span class='line'><span class="cm">     * </span>
+</span><span class='line'><span class="cm">     * @param minCapacity</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">void</span> <span class="nf">grow</span><span class="o">(</span><span class="kt">int</span> <span class="n">minCapacity</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">minCapacity</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">OutOfMemoryError</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">// 这里成倍增长</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">oldCapacity</span> <span class="o">=</span> <span class="n">queue</span><span class="o">.</span><span class="na">length</span><span class="o">;</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">newCapacity</span> <span class="o">=</span> <span class="n">oldCapacity</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">// 校验</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">newCapacity</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>            <span class="n">newCapacity</span> <span class="o">=</span> <span class="n">Integer</span><span class="o">.</span><span class="na">MAX_VALUE</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">newCapacity</span> <span class="o">&lt;</span> <span class="n">minCapacity</span><span class="o">)</span>
+</span><span class='line'>            <span class="n">newCapacity</span> <span class="o">=</span> <span class="n">minCapacity</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">// 数据拷贝</span>
+</span><span class='line'>        <span class="n">queue</span> <span class="o">=</span> <span class="n">Arrays</span><span class="o">.</span><span class="na">copyOf</span><span class="o">(</span><span class="k">this</span><span class="o">.</span><span class="na">queue</span><span class="o">,</span> <span class="n">newCapacity</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 将数组最小堆化 从最后一个非叶子节点,依次往前调整,使得每个子树都满足堆的性质</span>
+</span><span class='line'><span class="cm">     * 根据下标为i的节点的父亲节点下标为(i-1)/2, 最大下标为size-1, 因此非根节点的最大下标为(size-2)/2, 即size/2 -1</span>
+</span><span class='line'><span class="cm">     *</span>
+</span><span class='line'><span class="cm">     * 直观是O(nlogn), 记得算法导论分析的均摊时间应该是O(n), 忘了怎么分析的</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">void</span> <span class="nf">heapify</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="o">(</span><span class="n">size</span> <span class="o">&gt;&gt;&gt;</span> <span class="mi">1</span><span class="o">)</span> <span class="o">-</span> <span class="mi">1</span><span class="o">;</span> <span class="n">i</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span><span class="o">--)</span>
+</span><span class='line'>            <span class="n">shiftDown</span><span class="o">(</span><span class="n">i</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 向下调整下标为index的节点为根节点的子树, 使其满足堆的性质</span>
+</span><span class='line'><span class="cm">     * 父亲节点的下标为i,则左孩子节点下标2*i+1, 右孩子节点下标2*i+2</span>
+</span><span class='line'><span class="cm">     * O(logn)</span>
+</span><span class='line'><span class="cm">     * </span>
+</span><span class='line'><span class="cm">     * @param index</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">void</span> <span class="nf">shiftDown</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">//到达叶子节点了</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">index</span> <span class="o">&gt;</span> <span class="o">((</span><span class="n">size</span> <span class="o">&gt;&gt;&gt;</span> <span class="mi">1</span><span class="o">)</span> <span class="o">-</span> <span class="mi">1</span><span class="o">)</span> <span class="o">)</span>
+</span><span class='line'>            <span class="k">return</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">//左右孩子中较小的节点candidate</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">left</span> <span class="o">=</span> <span class="o">(</span><span class="n">index</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span><span class="o">)</span> <span class="o">+</span> <span class="mi">1</span><span class="o">,</span> <span class="n">right</span> <span class="o">=</span> <span class="n">left</span> <span class="o">+</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">candidate</span> <span class="o">=</span> <span class="n">left</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">right</span> <span class="o">&lt;</span> <span class="n">size</span> <span class="o">&amp;&amp;</span> <span class="n">queue</span><span class="o">[</span><span class="n">right</span><span class="o">]</span> <span class="o">&lt;</span> <span class="n">queue</span><span class="o">[</span><span class="n">left</span><span class="o">]){</span>
+</span><span class='line'>            <span class="n">candidate</span> <span class="o">=</span> <span class="n">right</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">//父节点大于子节点, 则交换父子节点, 并递归调整candide为根节点的子树</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">queue</span><span class="o">[</span><span class="n">index</span><span class="o">]</span> <span class="o">&gt;</span> <span class="n">queue</span><span class="o">[</span><span class="n">candidate</span><span class="o">])</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">swap</span><span class="o">(</span><span class="n">index</span><span class="o">,</span> <span class="n">candidate</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">shiftDown</span><span class="o">(</span><span class="n">candidate</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 向上调整下标为index的节点的数据, 保证其到根节点的路径上都满足堆的性质</span>
+</span><span class='line'><span class="cm">     * 节点下标为i, 则父节点下标为(i-1)/2</span>
+</span><span class='line'><span class="cm">     * O(logn)</span>
+</span><span class='line'><span class="cm">     *</span>
+</span><span class='line'><span class="cm">     * @param index</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">void</span> <span class="nf">shiftUp</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">//达到根节点了</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">index</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>            <span class="k">return</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">parent</span> <span class="o">=</span> <span class="o">(</span><span class="n">index</span><span class="o">-</span><span class="mi">1</span><span class="o">)&gt;&gt;&gt;</span><span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">//父亲节点 &gt; 当前节点,需要交换</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">parent</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="n">queue</span><span class="o">[</span><span class="n">parent</span><span class="o">]</span> <span class="o">&gt;</span> <span class="n">queue</span><span class="o">[</span><span class="n">index</span><span class="o">])</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">swap</span><span class="o">(</span><span class="n">parent</span><span class="o">,</span> <span class="n">index</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">shiftUp</span><span class="o">(</span><span class="n">parent</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 交换数组中 i 和 j 的元素</span>
+</span><span class='line'><span class="cm">     * </span>
+</span><span class='line'><span class="cm">     * @param i</span>
+</span><span class='line'><span class="cm">     * @param j</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">void</span> <span class="nf">swap</span><span class="o">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">,</span> <span class="kt">int</span> <span class="n">j</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Integer</span> <span class="n">tmp</span> <span class="o">=</span> <span class="n">queue</span><span class="o">[</span><span class="n">i</span><span class="o">];</span>
+</span><span class='line'>        <span class="n">queue</span><span class="o">[</span><span class="n">i</span><span class="o">]</span> <span class="o">=</span> <span class="n">queue</span><span class="o">[</span><span class="n">j</span><span class="o">];</span>
+</span><span class='line'>        <span class="n">queue</span><span class="o">[</span><span class="n">j</span><span class="o">]</span> <span class="o">=</span> <span class="n">tmp</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">main</span><span class="o">(</span><span class="n">String</span><span class="o">[]</span> <span class="n">args</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">PQueue</span> <span class="n">queue</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">PQueue</span><span class="o">();</span>
+</span><span class='line'>        <span class="n">queue</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="mi">6</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">queue</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="mi">8</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">queue</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="mi">2</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">queue</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="mi">4</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">queue</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="mi">5</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">queue</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="mi">7</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">queue</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="mi">1</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">while</span> <span class="o">(!</span><span class="n">queue</span><span class="o">.</span><span class="na">isEmpty</span><span class="o">())</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="n">queue</span><span class="o">.</span><span class="na">pop</span><span class="o">());</span>    <span class="c1">//1 2 4 5 6 7 8</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -4090,734 +4614,6 @@ public class Stack<E> extends Vector<E> {
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/06/13/java-concurrency-in-practice-5/">Java Concurrency in Practice 5 : Building Blocks</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-06-13T10:15:00+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>13</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>10:15 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p><strong>第五章：构建块(Building Blocks)</strong>
-java类库中并发构建块的集合.</p>
-
-<h1>1.同步容器</h1>
-
-<p>同步容器包含两部分:</p>
-
-<p>(1).Vector和HashTable;</p>
-
-<p>(2).Collections.synchronizedXxx工厂方法创建的容器;</p>
-
-<p>在迭代器件,对容器加锁会导致其他线程需要访问容器时候,必须等待知道迭代结束,另外doSomething中可能还持有另外一个锁,这就可能造成死锁.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">synchronized</span> <span class="o">(</span><span class="n">vector</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="n">Integer</span> <span class="n">item</span> <span class="o">:</span> <span class="n">vector</span><span class="o">){</span>
-</span><span class='line'>            <span class="n">doSomething</span><span class="o">(</span><span class="n">item</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>在迭代器期间,对容器加锁的一个替代办法是复制容器,但需要考虑器带来的性能开销.</p>
-
-<h1>2.并发容器</h1>
-
-<p>同步容器通过对容器的所有状态进行串行访问,从而实现了他们的线程安全.</p>
-
-<p>这样的代价就是削弱了并发性,当多个线程公摊竞争容器级别的锁时,吞吐量就会降低.</p>
-
-<p>而并发容器正式为多线程并发访问而设计的,比如ConcurrentHashMap替代HashMap;当多数操作为读取的时候用CopyOnWriteArrayList代替List;ConcurrentLinkedQueue是一个具有优先级顺序的队列(非并发),PriorityQueue的操作不会阻塞,如果队列时空,则从队列中获取元素的操作返回null;BlockingQueue扩展了Queue,增加了可阻塞的插入和获取操作,如果队列为空,一个获取操作会一致阻塞知道队列中存在可用元素,如果队列是满的,插入操作会一致阻塞知道队列中存在可用空间;ConcurrentSkipListMap和ConcurrentSkipListSet用来作为同步的Sorted Map和SortedSet的并发替代并.</p>
-
-<h3>ConcurrentHashMap</h3>
-
-<p>在HashTable和SynchronizedMap中,获取Map的锁就可以防止任何其他线程访问该Map(独占),ConcurrentHashMap使用了一个更细化的锁机制(桶级别的锁),叫分离锁,它允许更深层次的共享访问,即任意数量的独显乘可以并发访问Map,读者和写着也可以并发访问Map,并写有限数量的写线程可以并发的修改Map,因而为并发刚问带来更高的吞吐量.
-ConcurrentHashMap增加的一些原子操作:
-缺少即插入(key不存在的时候才插入):</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">V</span> <span class="nf">putIfAbsent</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">value</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
-</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">NullPointerException</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">hash</span> <span class="o">=</span> <span class="n">hash</span><span class="o">(</span><span class="n">key</span><span class="o">.</span><span class="na">hashCode</span><span class="o">());</span>
-</span><span class='line'>        <span class="k">return</span> <span class="nf">segmentFor</span><span class="o">(</span><span class="n">hash</span><span class="o">).</span><span class="na">put</span><span class="o">(</span><span class="n">key</span><span class="o">,</span> <span class="n">hash</span><span class="o">,</span> <span class="n">value</span><span class="o">,</span> <span class="kc">true</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>相等便删除(只有当key和value匹配的时候才删除):</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">remove</span><span class="o">(</span><span class="n">Object</span> <span class="n">key</span><span class="o">,</span> <span class="n">Object</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">hash</span> <span class="o">=</span> <span class="n">hash</span><span class="o">(</span><span class="n">key</span><span class="o">.</span><span class="na">hashCode</span><span class="o">());</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">value</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
-</span><span class='line'>            <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">return</span> <span class="nf">segmentFor</span><span class="o">(</span><span class="n">hash</span><span class="o">).</span><span class="na">remove</span><span class="o">(</span><span class="n">key</span><span class="o">,</span> <span class="n">hash</span><span class="o">,</span> <span class="n">value</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">;</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>相等便替换:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="c1">//只有当key匹配某一个值才取代</span>
-</span><span class='line'><span class="kd">public</span> <span class="n">V</span> <span class="nf">replace</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">value</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
-</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">NullPointerException</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">hash</span> <span class="o">=</span> <span class="n">hash</span><span class="o">(</span><span class="n">key</span><span class="o">.</span><span class="na">hashCode</span><span class="o">());</span>
-</span><span class='line'>        <span class="k">return</span> <span class="nf">segmentFor</span><span class="o">(</span><span class="n">hash</span><span class="o">).</span><span class="na">replace</span><span class="o">(</span><span class="n">key</span><span class="o">,</span> <span class="n">hash</span><span class="o">,</span> <span class="n">value</span><span class="o">);</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="c1">//只有当key和oldValue匹配的时候才替换</span>
-</span><span class='line'><span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">replace</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">,</span> <span class="n">V</span> <span class="n">oldValue</span><span class="o">,</span> <span class="n">V</span> <span class="n">newValue</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">oldValue</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">newValue</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
-</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">NullPointerException</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">hash</span> <span class="o">=</span> <span class="n">hash</span><span class="o">(</span><span class="n">key</span><span class="o">.</span><span class="na">hashCode</span><span class="o">());</span>
-</span><span class='line'>        <span class="k">return</span> <span class="nf">segmentFor</span><span class="o">(</span><span class="n">hash</span><span class="o">).</span><span class="na">replace</span><span class="o">(</span><span class="n">key</span><span class="o">,</span> <span class="n">hash</span><span class="o">,</span> <span class="n">oldValue</span><span class="o">,</span> <span class="n">newValue</span><span class="o">);</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>CopyOnWriteArrayList</h3>
-
-<p>CopyOnWriteArrayList避免了在迭代器件对容器加锁.显然,每次容器改变是复制需要开销,特别是容器比较大的时候,当对容器迭代操作频率远远高于对容器的修改的频率 时候,使用写时复制容器是一个合理的选择.</p>
-
-<h3>BlockingQueue</h3>
-
-<p>阻塞队列(BlockingQueue)提供了可阻塞的put和take方法,同时也提供了可定时的offer和poll方法:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kt">boolean</span> <span class="nf">offer</span><span class="o">(</span><span class="n">E</span> <span class="n">e</span><span class="o">,</span> <span class="kt">long</span> <span class="n">timeout</span><span class="o">,</span> <span class="n">TimeUnit</span> <span class="n">unit</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'><span class="n">E</span> <span class="nf">poll</span><span class="o">(</span><span class="kt">long</span> <span class="n">timeout</span><span class="o">,</span> <span class="n">TimeUnit</span> <span class="n">unit</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">;</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Queue的长度可以有限,也可以无限.BlockingQueue的实现包括:LinkedBlockingQueue和ArrayBlockingQueue是FIFO队列;PriorityBlockingQueue是一个按优先级顺序排序的队列,支持自定义Comparator;SynchronousQueue根本上不是一个整整意义的队列,因为它不会为队列元素维护任何存储空间.其中每个 put 必须等待一个 take，反之亦然.</p>
-
-<h3>生产者-消费者</h3>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">FileCrawler</span> <span class="kd">implements</span> <span class="n">Runnable</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">BlockingQueue</span><span class="o">&lt;</span><span class="n">File</span><span class="o">&gt;</span> <span class="n">fileQueue</span><span class="o">;</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">File</span> <span class="n">root</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="nf">FileCrawler</span><span class="o">(</span><span class="n">BlockingQueue</span><span class="o">&lt;</span><span class="n">File</span><span class="o">&gt;</span> <span class="n">fileQueue</span><span class="o">,</span> <span class="n">File</span> <span class="n">root</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">fileQueue</span> <span class="o">=</span> <span class="n">fileQueue</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">root</span> <span class="o">=</span> <span class="n">root</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="nd">@Override</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">run</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">crawl</span><span class="o">(</span><span class="n">root</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">().</span><span class="na">interrupt</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kt">void</span> <span class="nf">crawl</span><span class="o">(</span><span class="n">File</span> <span class="n">root</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">InterruptedException</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">File</span><span class="o">[]</span> <span class="n">files</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="na">listFiles</span><span class="o">();</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">files</span> <span class="o">!=</span> <span class="kc">null</span> <span class="o">&amp;&amp;</span> <span class="n">files</span><span class="o">.</span><span class="na">length</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">for</span> <span class="o">(</span><span class="n">File</span> <span class="n">file</span> <span class="o">:</span> <span class="n">files</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">file</span><span class="o">.</span><span class="na">isDirectory</span><span class="o">())</span>
-</span><span class='line'>                    <span class="n">crawl</span><span class="o">(</span><span class="n">file</span><span class="o">);</span>
-</span><span class='line'>                <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">alreadyIndexed</span><span class="o">(</span><span class="n">file</span><span class="o">)</span> <span class="o">==</span> <span class="kc">false</span><span class="o">)</span>
-</span><span class='line'>                    <span class="n">fileQueue</span><span class="o">.</span><span class="na">put</span><span class="o">(</span><span class="n">file</span><span class="o">);</span>
-</span><span class='line'>            <span class="o">}</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kt">boolean</span> <span class="nf">alreadyIndexed</span><span class="o">(</span><span class="n">File</span> <span class="n">file</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="c1">//TODO</span>
-</span><span class='line'>        <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">FileIndexer</span> <span class="kd">implements</span> <span class="n">Runnable</span> <span class="o">{</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">BlockingQueue</span><span class="o">&lt;</span><span class="n">File</span><span class="o">&gt;</span> <span class="n">fileQueue</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="nf">FileIndexer</span><span class="o">(</span><span class="n">BlockingQueue</span><span class="o">&lt;</span><span class="n">File</span><span class="o">&gt;</span> <span class="n">fileQueue</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">fileQueue</span> <span class="o">=</span> <span class="n">fileQueue</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="nd">@Override</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">run</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">while</span> <span class="o">(</span><span class="kc">true</span><span class="o">)</span>
-</span><span class='line'>                <span class="n">index</span><span class="o">(</span><span class="n">fileQueue</span><span class="o">.</span><span class="na">take</span><span class="o">());</span>
-</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">().</span><span class="na">interrupt</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kt">void</span> <span class="nf">index</span><span class="o">(</span><span class="n">File</span> <span class="n">file</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="c1">//TODO : do index</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">CrawlAndIndex</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">main</span><span class="o">(</span><span class="n">String</span><span class="o">[]</span> <span class="n">args</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="kd">final</span> <span class="kt">int</span> <span class="n">MAX_QUEUE_SIZE</span> <span class="o">=</span> <span class="mi">1024</span><span class="o">;</span>
-</span><span class='line'>        <span class="kd">final</span> <span class="kt">int</span> <span class="n">INDEXER_COUNT</span> <span class="o">=</span> <span class="mi">100</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="kd">final</span> <span class="n">File</span><span class="o">[]</span> <span class="n">roots</span> <span class="o">=</span> <span class="n">getFiles</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="n">BlockingQueue</span><span class="o">&lt;</span><span class="n">File</span><span class="o">&gt;</span> <span class="n">fileQueue</span> <span class="o">=</span> <span class="k">new</span> <span class="n">LinkedBlockingDeque</span><span class="o">&lt;</span><span class="n">File</span><span class="o">&gt;(</span><span class="n">MAX_QUEUE_SIZE</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="n">File</span> <span class="n">file</span> <span class="o">:</span> <span class="n">roots</span><span class="o">)</span>
-</span><span class='line'>            <span class="k">new</span> <span class="nf">Thread</span><span class="o">(</span><span class="k">new</span> <span class="nf">FileCrawler</span><span class="o">(</span><span class="n">fileQueue</span><span class="o">,</span> <span class="n">file</span><span class="o">)).</span><span class="na">start</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">for</span><span class="o">(</span><span class="kt">int</span> <span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="o">;</span> <span class="n">i</span><span class="o">&lt;</span><span class="n">INDEXER_COUNT</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span>
-</span><span class='line'>            <span class="k">new</span> <span class="nf">Thread</span><span class="o">(</span><span class="k">new</span> <span class="nf">FileIndexer</span><span class="o">(</span><span class="n">fileQueue</span><span class="o">)).</span><span class="na">start</span><span class="o">();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="n">File</span><span class="o">[]</span> <span class="nf">getFiles</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>        <span class="c1">//TODO</span>
-</span><span class='line'>        <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>阻塞和可中断的方法</h3>
-
-<p>线程可能会因为几种原因被阻塞或者暂停:等待IO操作结束,等待获的一个锁,等待从Thread.sleep()中唤醒,或者等待另外一个线程的计算结果.</p>
-
-<p>当一个线程被阻塞时候,它通常被挂起,并设置乘线程阻塞的某一个状态(BLOCKED,WAITING或者TIMED_WAITING).</p>
-
-<p>对于InterruptedException,通常最明智的策略是把这个InterruptedException传递给你的调用者.</p>
-
-<p>恢复中断:有时还我们不能抛出InterruptedException,比如代码是Runnable的一部分,这是很,我们需要捕获InterruptedException并在当前线程中通过调用interrupt()从中断中恢复.如:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">TaskRunnable</span> <span class="kd">implements</span> <span class="n">Runnable</span> <span class="o">{</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">BlockingQueue</span><span class="o">&lt;</span><span class="n">Task</span><span class="o">&gt;</span> <span class="n">taskQueue</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="nf">TaskRunnable</span><span class="o">(</span><span class="n">BlockingQueue</span><span class="o">&lt;</span><span class="n">Task</span><span class="o">&gt;</span> <span class="n">taskQueue</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">taskQueue</span> <span class="o">=</span> <span class="n">taskQueue</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="nd">@Override</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">run</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">while</span> <span class="o">(</span><span class="kc">true</span><span class="o">)</span>
-</span><span class='line'>                <span class="n">process</span><span class="o">(</span><span class="n">taskQueue</span><span class="o">.</span><span class="na">take</span><span class="o">());</span>
-</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">().</span><span class="na">interrupt</span><span class="o">();</span> <span class="c1">//恢复中断状态</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.Synchronizer</h1>
-
-<p>Synchronizer是一个对象,它根据自身状态调节线程的控制流.</p>
-
-<p>阻塞队列可以扮演一个Synchronizer角色,其他类型的Synchronizer包括信号量(semaphore),关卡(barrier)以及闭锁(latch).</p>
-
-<p>所有的Synchronizer都享有类似的结构特征:他们封装状态,这些庄套决定线程执行到某一点是通过还是被迫等待；他们还提供了操控状态的方法,以及高校地等到Synchronizer进入到期望状态的方法.</p>
-
-<h3>闭锁</h3>
-
-<p>闭锁可以延迟线程的进度直到进程到达终止(termnal)状态.</p>
-
-<p>一个闭锁就像一道大门:在闭锁达到终点状态之前,门一致是关闭的,没有线程能够通过,终点状态到来的时候,门卡了,允许所有都通过.</p>
-
-<p>一旦闭锁到达终点状态,它就不能在改变状态了,所有它会永远保持趟开状态.</p>
-
-<p>闭锁可以用来确保特定活动在其他活动完成之后才发生,如:
-1. 确保一个计算不会执行,直到它需要的资源都被初始化完成;
-2. 确保一个服务不会开始,直到它依赖的其他服务都已经开始;
-3. 瞪大,直到活动的所有部分窦唯继续处理做好准备(如CS对战中所有玩家都准备就绪);</p>
-
-<p>CountDownLatch是一个闭锁实现,允许一个或多个线程等待事件集的发生.包含一个计数器,表示需要等待的事件数,countDown方法对计算器做减操作,表示一个事件已经发生,await方法等待计算机达到0,此时表示所有事件都已经发生.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kt">long</span> <span class="nf">timeTasks</span><span class="o">(</span><span class="kt">int</span> <span class="n">nThreads</span><span class="o">,</span> <span class="kd">final</span> <span class="n">Runnable</span> <span class="n">task</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">InterruptedException</span> <span class="o">{</span>
-</span><span class='line'>        <span class="kd">final</span> <span class="n">CountDownLatch</span> <span class="n">endGate</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">CountDownLatch</span><span class="o">(</span><span class="n">nThreads</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">nThreads</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">Thread</span> <span class="n">t</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">Thread</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>                <span class="nd">@Override</span>
-</span><span class='line'>                <span class="kd">public</span> <span class="kt">void</span> <span class="nf">run</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>                    <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>                        <span class="n">task</span><span class="o">.</span><span class="na">run</span><span class="o">();</span>
-</span><span class='line'>                    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>                        <span class="n">endGate</span><span class="o">.</span><span class="na">countDown</span><span class="o">();</span>
-</span><span class='line'>                    <span class="o">}</span>
-</span><span class='line'>                <span class="o">}</span>
-</span><span class='line'>            <span class="o">};</span>
-</span><span class='line'>            <span class="n">t</span><span class="o">.</span><span class="na">start</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="kt">long</span> <span class="n">start</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="na">nanoTime</span><span class="o">();</span>
-</span><span class='line'>        <span class="n">endGate</span><span class="o">.</span><span class="na">await</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">long</span> <span class="n">end</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="na">nanoTime</span><span class="o">();</span>
-</span><span class='line'>        <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;All Job Finish, use time(nano) = &quot;</span> <span class="o">+</span> <span class="o">(</span><span class="n">end</span> <span class="o">-</span> <span class="n">start</span><span class="o">));</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">return</span> <span class="n">end</span> <span class="o">-</span> <span class="n">start</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">doTask</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">{</span>
-</span><span class='line'>        <span class="n">timeTasks</span><span class="o">(</span><span class="mi">10</span><span class="o">,</span> <span class="k">new</span> <span class="nf">Runnable</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>            <span class="nd">@Override</span>
-</span><span class='line'>            <span class="kd">public</span> <span class="kt">void</span> <span class="nf">run</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>                <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>                    <span class="n">Thread</span><span class="o">.</span><span class="na">sleep</span><span class="o">((</span><span class="kt">long</span><span class="o">)</span> <span class="o">(</span><span class="mi">1000</span> <span class="o">*</span> <span class="n">Math</span><span class="o">.</span><span class="na">random</span><span class="o">()));</span>
-</span><span class='line'>                    <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;Finished.&quot;</span><span class="o">);</span>
-</span><span class='line'>                <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>                <span class="o">}</span>
-</span><span class='line'>            <span class="o">}</span>
-</span><span class='line'>        <span class="o">});</span>
-</span><span class='line'>    <span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>FutureTask</h3>
-
-<p>FutureTask描述库一个抽象的可携带结果的计算.FutureTask通过Callable实现的,它等价与一个可携带结果的Runnable,并且有上那个状态:等待,运行和完成.一旦FutureTask进入完成状态,则会永远停止在这个状态上.</p>
-
-<p>Future.get行为依赖与任务的状态,如果它已经完成,get可以立刻得到返回结果,否在会阻塞知道任务转入完成状态,然后返回结构或者抛出异常.</p>
-
-<p>Executor框架利用FuntureTask来完成异步任务,并可以用来计算任何潜在的耗时计算,而且可以在真正要计算结构之前就启动他们开始计算.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Preload</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">FutureTask</span><span class="o">&lt;</span><span class="n">BigDecimal</span><span class="o">&gt;</span> <span class="n">futureTask</span> <span class="o">=</span> <span class="k">new</span> <span class="n">FutureTask</span><span class="o">&lt;</span><span class="n">BigDecimal</span><span class="o">&gt;(</span><span class="k">new</span> <span class="n">Callable</span><span class="o">&lt;</span><span class="n">BigDecimal</span><span class="o">&gt;()</span> <span class="o">{</span>
-</span><span class='line'>        <span class="nd">@Override</span>
-</span><span class='line'>        <span class="kd">public</span> <span class="n">BigDecimal</span> <span class="nf">call</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">Exception</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">return</span> <span class="nf">timeConsumingWork</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">});</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Thread</span> <span class="n">thread</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">Thread</span><span class="o">(</span><span class="n">futureTask</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">start</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">thread</span><span class="o">.</span><span class="na">start</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="n">BigDecimal</span> <span class="nf">get</span><span class="o">(){</span>
-</span><span class='line'>        <span class="k">try</span><span class="o">{</span>
-</span><span class='line'>            <span class="k">return</span> <span class="n">futureTask</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>    <span class="c1">//获取数据</span>
-</span><span class='line'>        <span class="o">}</span><span class="k">catch</span><span class="o">(</span><span class="n">ExecutionException</span> <span class="n">e</span><span class="o">){</span>
-</span><span class='line'>            <span class="n">Throwable</span> <span class="n">cause</span> <span class="o">=</span> <span class="n">e</span><span class="o">.</span><span class="na">getCause</span><span class="o">();</span>
-</span><span class='line'>            <span class="c1">//处理各种原因的异常</span>
-</span><span class='line'>            <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
-</span><span class='line'>        <span class="o">}</span><span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">e</span><span class="o">){</span>
-</span><span class='line'>            <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * 耗时的计算</span>
-</span><span class='line'><span class="cm">     * </span>
-</span><span class='line'><span class="cm">     * @return</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="n">BigDecimal</span> <span class="nf">timeConsumingWork</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>        <span class="c1">// TODO</span>
-</span><span class='line'>        <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Callable记录的这些任务,可以抛出受检查或者未受检查的异常,无论执行任务的代码抛出什么,它都被封装为一个ExecutionException,并被Future.get重新抛出.</p>
-
-<h3>信号量</h3>
-
-<p>计算信号量(Counting semaphore)用来控制能够同时访问某特定资源的活动的数量,或者同时执行某一给定操作的数量.可以用来实现资源池或者给一个容器限定边界.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">BoundedHashSet</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Set</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="n">set</span><span class="o">;</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Semaphore</span> <span class="n">sem</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="nf">BoundedHashSet</span><span class="o">(</span><span class="kt">int</span> <span class="n">bound</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">set</span> <span class="o">=</span> <span class="n">Collections</span><span class="o">.</span><span class="na">synchronizedSet</span><span class="o">(</span><span class="k">new</span> <span class="n">HashSet</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;());</span>
-</span><span class='line'>        <span class="n">sem</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">Semaphore</span><span class="o">(</span><span class="n">bound</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">add</span><span class="o">(</span><span class="n">T</span> <span class="n">o</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">InterruptedException</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">sem</span><span class="o">.</span><span class="na">acquire</span><span class="o">();</span>  <span class="c1">//获得许可</span>
-</span><span class='line'>        <span class="kt">boolean</span> <span class="n">added</span> <span class="o">=</span> <span class="kc">false</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">added</span> <span class="o">=</span> <span class="n">set</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="n">o</span><span class="o">);</span>
-</span><span class='line'>            <span class="k">return</span> <span class="n">added</span><span class="o">;</span>
-</span><span class='line'>        <span class="o">}</span><span class="k">finally</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">if</span><span class="o">(!</span><span class="n">added</span><span class="o">)</span>
-</span><span class='line'>                <span class="n">sem</span><span class="o">.</span><span class="na">release</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">remove</span><span class="o">(</span><span class="n">Object</span> <span class="n">o</span><span class="o">){</span>
-</span><span class='line'>        <span class="kt">boolean</span> <span class="n">removed</span> <span class="o">=</span> <span class="n">set</span><span class="o">.</span><span class="na">remove</span><span class="o">(</span><span class="n">o</span><span class="o">);</span>
-</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">removed</span><span class="o">)</span>
-</span><span class='line'>            <span class="n">sem</span><span class="o">.</span><span class="na">release</span><span class="o">();</span>  <span class="c1">//将许可放回资源池</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">removed</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>关卡</h3>
-
-<p>关卡(Barrier)类似于闭锁,不同之处在于,所有线程必须同时到达关卡点,才能继续处理.</p>
-
-<p>闭锁等待是事件,关卡等待的是其他线程.</p>
-
-<p>CyclicBarrier更像一个水闸, 线程执行就想水流, 在水闸处都会堵住, 等到水满(线程到齐)了, 才开始泄流.其实现协议类似于一些朋友指定的集合地点:&ldquo;我们每个人6:00在麦当劳见,到了以后不见不散,之后我们再决定接下来做什么&rdquo;.</p>
-
-<p>CyclicBarrier允许一个给定数量的成员多次集中在一个关卡点.如果所有线程都到达了关卡点,关卡就被成功的突破,这样所有的线程都被释放,关卡会重置以备下一次使用.</p>
-
-<p>Exchanger是关卡的另外一种形式.</p>
-
-<h3>高速缓存</h3>
-
-<p>为一个昂贵的函数缓存计算结果.Map中存Future而不是具体的数值,这样避免重复计算.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">interface</span> <span class="nc">Computable</span><span class="o">&lt;</span><span class="n">A</span><span class="o">,</span> <span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
-</span><span class='line'>    <span class="n">V</span> <span class="nf">compute</span><span class="o">(</span><span class="n">A</span> <span class="n">arg</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">;</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Memoizer</span><span class="o">&lt;</span><span class="n">A</span><span class="o">,</span> <span class="n">V</span><span class="o">&gt;</span> <span class="kd">implements</span> <span class="n">Computable</span><span class="o">&lt;</span><span class="n">A</span><span class="o">,</span> <span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">ConcurrentHashMap</span><span class="o">&lt;</span><span class="n">A</span><span class="o">,</span> <span class="n">Future</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;&gt;</span> <span class="n">cache</span> <span class="o">=</span> <span class="k">new</span> <span class="n">ConcurrentHashMap</span><span class="o">&lt;</span><span class="n">A</span><span class="o">,</span> <span class="n">Future</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;&gt;();</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Computable</span><span class="o">&lt;</span><span class="n">A</span><span class="o">,</span> <span class="n">V</span><span class="o">&gt;</span> <span class="n">c</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">public</span> <span class="nf">Memoizer</span><span class="o">(</span><span class="n">Computable</span><span class="o">&lt;</span><span class="n">A</span><span class="o">,</span> <span class="n">V</span><span class="o">&gt;</span> <span class="n">c</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">c</span> <span class="o">=</span> <span class="n">c</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="nd">@Override</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="n">V</span> <span class="nf">compute</span><span class="o">(</span><span class="kd">final</span> <span class="n">A</span> <span class="n">arg</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">InterruptedException</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">while</span> <span class="o">(</span><span class="kc">true</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">Future</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">f</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">arg</span><span class="o">);</span>
-</span><span class='line'>            <span class="k">if</span><span class="o">(</span><span class="n">f</span> <span class="o">==</span> <span class="kc">null</span><span class="o">){</span>
-</span><span class='line'>                <span class="n">Callable</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">eval</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Callable</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;()</span> <span class="o">{</span>
-</span><span class='line'>                    <span class="nd">@Override</span>
-</span><span class='line'>                    <span class="kd">public</span> <span class="n">V</span> <span class="nf">call</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">Exception</span> <span class="o">{</span>
-</span><span class='line'>                        <span class="k">return</span> <span class="n">c</span><span class="o">.</span><span class="na">compute</span><span class="o">(</span><span class="n">arg</span><span class="o">);</span>
-</span><span class='line'>                    <span class="o">}</span>
-</span><span class='line'>                <span class="o">};</span>
-</span><span class='line'>
-</span><span class='line'>                <span class="n">FutureTask</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">ft</span> <span class="o">=</span> <span class="k">new</span> <span class="n">FutureTask</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;(</span><span class="n">eval</span><span class="o">);</span>
-</span><span class='line'>                <span class="n">f</span> <span class="o">=</span> <span class="n">cache</span><span class="o">.</span><span class="na">putIfAbsent</span><span class="o">(</span><span class="n">arg</span><span class="o">,</span> <span class="n">ft</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>                <span class="k">if</span><span class="o">(</span><span class="n">f</span> <span class="o">==</span> <span class="kc">null</span><span class="o">){</span>
-</span><span class='line'>                    <span class="n">f</span> <span class="o">=</span> <span class="n">ft</span><span class="o">;</span>
-</span><span class='line'>                    <span class="n">ft</span><span class="o">.</span><span class="na">run</span><span class="o">();</span>
-</span><span class='line'>                <span class="o">}</span>
-</span><span class='line'>            <span class="o">}</span>
-</span><span class='line'>            <span class="k">try</span><span class="o">{</span>
-</span><span class='line'>                <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>
-</span><span class='line'>            <span class="o">}</span><span class="k">catch</span> <span class="o">(</span><span class="n">CancellationException</span> <span class="n">e</span><span class="o">){</span>
-</span><span class='line'>                <span class="n">cache</span><span class="o">.</span><span class="na">remove</span><span class="o">(</span><span class="n">arg</span><span class="o">,</span> <span class="n">f</span><span class="o">);</span>
-</span><span class='line'>            <span class="o">}</span><span class="k">catch</span> <span class="o">(</span><span class="n">ExecutionException</span> <span class="n">e</span><span class="o">){</span>
-</span><span class='line'>                <span class="c1">//TODO:根据 e.getCause() 处理</span>
-</span><span class='line'>            <span class="o">}</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/10">&larr; Older</a>
@@ -4837,6 +4633,10 @@ ConcurrentHashMap增加的一些原子操作:
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a>
       </li>
     
@@ -4850,10 +4650,6 @@ ConcurrentHashMap增加的一些原子操作:
     
       <li class="post">
         <a href="/blog/2015/11/18/libphonenumber/">Libphonenumber</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/09/09/lunecezheng-ti-jia-gou/">Lunece整体架构</a>
       </li>
     
   </ul>
@@ -4876,6 +4672,7 @@ ConcurrentHashMap增加的一些原子操作:
 <li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (11)</a></li>
 <li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/protobuf/'>protobuf (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (8)</a></li>
