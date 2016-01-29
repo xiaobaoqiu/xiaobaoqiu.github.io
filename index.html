@@ -9,11 +9,9 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="
-1.JVM内存占用上限
+  <meta name="description" content="1.JVM内存占用上限
 2.JVM RES数据来源
-3.谁吃了JVM内存 1.JVM内存占用上限 2.JVM RES数据来源 3.谁吃了JVM内存
-">
+3.谁吃了JVM内存 1.JVM内存占用上限 关于JVM的一些基础知识,可以看 JVM Internals,曾经我尝试翻译过,地址:http://xiaobaoqiu.github.io/blog/2014/09/11/internal-jvm &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -105,11 +103,206 @@
 </ul>
 
 
-<h2>1.JVM内存占用上限</h2>
+<h1>1.JVM内存占用上限</h1>
 
-<h2>2.JVM RES数据来源</h2>
+<p>关于JVM的一些基础知识,可以看 <a href="http://blog.jamesdbloom.com/JVMInternals.html">JVM Internals</a>,曾经我尝试翻译过,地址:<a href="http://xiaobaoqiu.github.io/blog/2014/09/11/internal-jvm/">http://xiaobaoqiu.github.io/blog/2014/09/11/internal-jvm/</a></p>
 
-<h2>3.谁吃了JVM内存</h2>
+<p>这里要说的是,那些参数决定了JVM内存上限,比如常用的内存配置如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-Xms1024m -Xmx1024m -XX:PermSize=256m</span></code></pre></td></tr></table></div></figure>
+
+
+<p>说明堆(Heap)的大小1G,永久代大小256M.</p>
+
+<p>另外,64位的操作系统(Linux服务器),线程的栈空间大小最大为1M:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ...]$ java -XX:+PrintFlagsFinal -version | grep ThreadStackSize
+</span><span class='line'>     intx CompilerThreadStackSize                   = 0               {pd product}        
+</span><span class='line'>     intx ThreadStackSize                           = 1024            {pd product}        
+</span><span class='line'>     intx VMThreadStackSize                         = 1024            {pd product}        
+</span><span class='line'>java version "1.7.0_45"
+</span><span class='line'>Java(TM) SE Runtime Environment (build 1.7.0_45-b18)
+</span><span class='line'>Java HotSpot(TM) 64-Bit Server VM (build 24.45-b08, mixed mode)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>JVM的占用上限由一下几个因素决定:
+    1.堆内存
+    2.持久代
+    3.线程栈空间
+    4.堆外内存</p>
+
+<p>堆外内存参考: <a href="http://www.infoq.com/cn/news/2014/12/external-memory-heap-memory">http://www.infoq.com/cn/news/2014/12/external-memory-heap-memory</a></p>
+
+<p>线程数可以如下得到:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$ ps -m 1381 | wc -l
+</span><span class='line'>176</span></code></pre></td></tr></table></div></figure>
+
+
+<p>通常而言,我们只需要计算堆内存,持久代再加上线程栈空间.比如我们的本地一个小服务:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Max Memory = Heap(1G) + Perm(256M) + 176 * Thread stack (1M)</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.JVM RES数据来源</h1>
+
+<p>首先得知道top命令中RES数据从哪里来的.再Linux上,万物皆文件,因此RES的值也是来源于文件.</p>
+
+<h3>2.1. /proc/pid内容</h3>
+
+<p>下面是一个典型的Tomcat应用的线程下的内容,进程号为1381,简单说描述每个文件的内容或者作用:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>attr         进程的属性
+</span><span class='line'>autogroup
+</span><span class='line'>auxv
+</span><span class='line'>cgroup
+</span><span class='line'>clear_refs
+</span><span class='line'>cmdline       启动进程时执行的命令
+</span><span class='line'>coredump_filter
+</span><span class='line'>cpuset
+</span><span class='line'>cwd           指向进程当前工作目录的软链
+</span><span class='line'>environ       进程执行时使用的环境变量
+</span><span class='line'>exe           这个就是起这个进程的执行文件
+</span><span class='line'>fd            进程打开的文件描述符,可以知道具体的文件路径
+</span><span class='line'>fdinfo
+</span><span class='line'>io            进程的io统计信息
+</span><span class='line'>limits            进程的软限制，硬限制等信息
+</span><span class='line'>loginuid
+</span><span class='line'>maps          进程相关的内存映射信息
+</span><span class='line'>mem           代进程持有的内存,不可读
+</span><span class='line'>mountinfo
+</span><span class='line'>mounts
+</span><span class='line'>mountstats
+</span><span class='line'>net
+</span><span class='line'>numa_maps
+</span><span class='line'>oom_adj       调节oom-killer的参数
+</span><span class='line'>oom_score         oom-killer打分,当需要是,oom-killer会根据各个进程的分数,kill掉某个进程
+</span><span class='line'>oom_score_adj         调节oom-killer的参数
+</span><span class='line'>pagemap       进程的虚拟页和物理内存页或者swap区的映射关系
+</span><span class='line'>personality
+</span><span class='line'>root          指向进程根目录的软链
+</span><span class='line'>sched
+</span><span class='line'>schedstat
+</span><span class='line'>sessionid
+</span><span class='line'>smaps             This file shows memory consumption for each of the process's mappings.
+</span><span class='line'>stack             This file provides a symbolic trace of the function calls in this process's kernel stack
+</span><span class='line'>stat          进程的状态
+</span><span class='line'>statm             进程使用的内存的状态
+</span><span class='line'>status            进程状态信息,比stat/statm更具可读性
+</span><span class='line'>syscall
+</span><span class='line'>task              进程包含的线程，子目录名是线程的ID
+</span><span class='line'>wchan</span></code></pre></td></tr></table></div></figure>
+
+
+<p>参考: <a href="http://man7.org/linux/man-pages/man5/proc.5.html">http://man7.org/linux/man-pages/man5/proc.5.html</a></p>
+
+<h3>2.2. /proc/pid下内存相关文件</h3>
+
+<p>和内存相关的文件主要包括:
+    statm: 进程的内存使用,注意单位是page</p>
+
+<p>当前系统的page大小可以通过getconf命令获取,比如我当前的服务器page大小为4k:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$ getconf PAGESIZE
+</span><span class='line'>4096</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2.3. top命令RES数据来源</h3>
+
+<p>top命令RES数据来源于/proc/PID/statm中的第二个字段.还是1381这个进程的statm文件内容和对应的top信息如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx /proc/1381]$ sudo cat statm
+</span><span class='line'>968763 122480 558 1 0 929555 0
+</span><span class='line'>
+</span><span class='line'>[baoqiu.xiao@Xxx ~]$ top -p 1381
+</span><span class='line'>  PID  USER      PR   NI  VIRT     RES     SHR  S  %CPU  %MEM    TIME+       COMMAND                                                                                                                             
+</span><span class='line'> 1381 tomcat    20   0   3784m  478m 2228  S  2.0       6.1           54:53.36    java</span></code></pre></td></tr></table></div></figure>
+
+
+<p>/proc/[pid]/statm文件的几个字段的具体意义如下(注意单位是page):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>size         (1) total program size(same as VmSize in /proc/[pid]/status)
+</span><span class='line'>resident      (2) (resident set size)(same as VmRSS in /proc/[pid]/status),即RSS
+</span><span class='line'>share         (3) shared pages (i.e., backed by a file)
+</span><span class='line'>text          (4) text (code)
+</span><span class='line'>lib               (5) library (unused in Linux 2.6)
+</span><span class='line'>data          (6) data + stack
+</span><span class='line'>dt                (7) dirty pages (unused in Linux 2.6)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>可以验证,1381这个进程的RES大小来源, 和top命令中RES的数字是吻合的:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>122480 * 4096 / (1024 * 1024) = 478.4375 MB</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.谁吃了JVM内存</h1>
 </div>
   
   
