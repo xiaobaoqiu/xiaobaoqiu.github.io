@@ -9,7 +9,10 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="Java最初被设计为一种安全的受控环境.尽管如此,Java HotSpot还是包含了一个“后门”,它提供了一些可以直接操控内存和线程的低层次操作.这个后门类就是sun.misc.Unsafe,它被JDK广泛用于自己的包中,如java.nio和java.util.concurrent. &hellip;">
+  <meta name="description" content="这篇博客的目的是了解Java Concurrent包中几个主要的并发容器的实现原理. 这里将这些并发容器分为4类: (1).BlockingQueue系列 BlockingQueue
+BlockingDeque
+ArrayBlockingQueue
+LinkedBlockingDeque &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -72,6 +75,79 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/11/11/javabing-fa-rong-qi/">Java并发容器</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-11-11T17:55:32+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>11</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>5:55 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>这篇博客的目的是了解Java Concurrent包中几个主要的并发容器的实现原理.</p>
+
+<p>这里将这些并发容器分为4类:</p>
+
+<p>(1).BlockingQueue系列</p>
+
+<pre><code>BlockingQueue
+BlockingDeque
+ArrayBlockingQueue
+LinkedBlockingDeque
+LinkedBlockingQueue
+PriorityBlockingQueue
+DelayQueue
+</code></pre>
+
+<p>(2).Concurrent系列</p>
+
+<pre><code>ConcurrentHashMap
+ConcurrentLinkedQueue
+ConcurrentMap
+ConcurrentNavigableMap
+</code></pre>
+
+<p>(3).SkipList系列</p>
+
+<pre><code>ConcurrentSkipListMap
+ConcurrentSkipListSet
+</code></pre>
+
+<p>(4).CopyOnWrite系列</p>
+
+<pre><code>CopyOnWriteArrayList
+CopyOnWriteArraySet
+</code></pre>
+
+<p>后续系列将分别介绍:</p>
+
+<pre><code>1.Java并发容器之BlockingQueue
+
+2.Java并发容器之Concurrent
+
+3.Java并发容器之SkipList
+
+4.Java并发容器之CopyOnWrite
+</code></pre>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -6415,333 +6491,6 @@ Buffers is the size of in-memory block I/O buffer。</p>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/08/26/file-magic-number/">File Magic Number</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-08-26T12:59:12+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>26</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>12:59 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h1>起因</h1>
-
-<p>最近在做一个图片相关的项目,涉及到图片的处理,在切换到新的图片服务器之后,原始的图片裁剪接口失败,报错的原因是:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[2014-08-25 22:05:45 ERROR XXXX.util.ImageUtil:175] cutJPG is error,input:/home/q/www/crm.fs.qunar.com/mfs-fs/image/2f/fd/new_2ffd34d0edf5dcc7807107dd9e745d2b.jpg
-</span><span class='line'>javax.imageio.IIOException: Not a JPEG file: starts with 0x89 0x50
-</span><span class='line'>at com.sun.imageio.plugins.jpeg.JPEGImageReader.readImageHeader(Native Method)</span></code></pre></td></tr></table></div></figure>
-
-
-<p>很奇怪,错误原因是说new_2ffd34d0edf5dcc7807107dd9e745d2b.jpg这个图片不是jpg格式的图片.</p>
-
-<h1>问题</h1>
-
-<p>老的裁剪接口使用的是java自带的javax.imageio与java.awt.image包下工具,如ImageReader, ImageWritter,BufferedImage等.
-错误发生的地方的代码逻辑:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="c1">//根据文件后缀获取Reader</span>
-</span><span class='line'><span class="n">Iterator</span><span class="o">&lt;</span><span class="n">ImageReader</span><span class="o">&gt;</span> <span class="n">it</span> <span class="o">=</span> <span class="n">ImageIO</span><span class="o">.</span><span class="na">getImageReadersByFormatName</span><span class="o">(</span><span class="n">StringUtil</span><span class="o">.</span><span class="na">getFileSuffix</span><span class="o">(</span><span class="n">input</span><span class="o">));</span>
-</span><span class='line'><span class="n">ImageReader</span> <span class="n">reader</span> <span class="o">=</span> <span class="n">it</span><span class="o">.</span><span class="na">next</span><span class="o">();</span>
-</span><span class='line'><span class="o">...</span>
-</span><span class='line'><span class="c1">//获取图片读取需要的参数</span>
-</span><span class='line'><span class="n">ImageReadParam</span> <span class="n">param</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="na">getDefaultReadParam</span><span class="o">();</span>
-</span><span class='line'><span class="o">...</span>
-</span><span class='line'><span class="c1">//读取图片</span>
-</span><span class='line'><span class="n">BufferedImage</span> <span class="n">bi</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="na">read</span><span class="o">(</span><span class="mi">0</span><span class="o">,</span> <span class="n">param</span><span class="o">);</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>错误显示在最后上面代码的最后一行读取文件的时候失败,更下一步的原因是JPEGImageReader的read方法:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">at</span> <span class="n">com</span><span class="o">.</span><span class="na">sun</span><span class="o">.</span><span class="na">imageio</span><span class="o">.</span><span class="na">plugins</span><span class="o">.</span><span class="na">jpeg</span><span class="o">.</span><span class="na">JPEGImageReader</span><span class="o">.</span><span class="na">readImageHeader</span><span class="o">(</span><span class="n">Native</span> <span class="n">Method</span><span class="o">)</span> <span class="o">~[</span><span class="nl">na:</span><span class="mf">1.7</span><span class="o">.</span><span class="mi">0_45</span><span class="o">]</span>
-</span><span class='line'><span class="n">at</span> <span class="n">com</span><span class="o">.</span><span class="na">sun</span><span class="o">.</span><span class="na">imageio</span><span class="o">.</span><span class="na">plugins</span><span class="o">.</span><span class="na">jpeg</span><span class="o">.</span><span class="na">JPEGImageReader</span><span class="o">.</span><span class="na">readNativeHeader</span><span class="o">(</span><span class="n">JPEGImageReader</span><span class="o">.</span><span class="na">java</span><span class="o">:</span><span class="mi">604</span><span class="o">)</span> <span class="o">~[</span><span class="nl">na:</span><span class="mf">1.7</span><span class="o">.</span><span class="mi">0_45</span><span class="o">]</span>
-</span><span class='line'><span class="n">at</span> <span class="n">com</span><span class="o">.</span><span class="na">sun</span><span class="o">.</span><span class="na">imageio</span><span class="o">.</span><span class="na">plugins</span><span class="o">.</span><span class="na">jpeg</span><span class="o">.</span><span class="na">JPEGImageReader</span><span class="o">.</span><span class="na">checkTablesOnly</span><span class="o">(</span><span class="n">JPEGImageReader</span><span class="o">.</span><span class="na">java</span><span class="o">:</span><span class="mi">342</span><span class="o">)</span> <span class="o">~[</span><span class="nl">na:</span><span class="mf">1.7</span><span class="o">.</span><span class="mi">0_45</span><span class="o">]</span>
-</span><span class='line'><span class="n">at</span> <span class="n">com</span><span class="o">.</span><span class="na">sun</span><span class="o">.</span><span class="na">imageio</span><span class="o">.</span><span class="na">plugins</span><span class="o">.</span><span class="na">jpeg</span><span class="o">.</span><span class="na">JPEGImageReader</span><span class="o">.</span><span class="na">gotoImage</span><span class="o">(</span><span class="n">JPEGImageReader</span><span class="o">.</span><span class="na">java</span><span class="o">:</span><span class="mi">476</span><span class="o">)</span> <span class="o">~[</span><span class="nl">na:</span><span class="mf">1.7</span><span class="o">.</span><span class="mi">0_45</span><span class="o">]</span>
-</span><span class='line'><span class="n">at</span> <span class="n">com</span><span class="o">.</span><span class="na">sun</span><span class="o">.</span><span class="na">imageio</span><span class="o">.</span><span class="na">plugins</span><span class="o">.</span><span class="na">jpeg</span><span class="o">.</span><span class="na">JPEGImageReader</span><span class="o">.</span><span class="na">readHeader</span><span class="o">(</span><span class="n">JPEGImageReader</span><span class="o">.</span><span class="na">java</span><span class="o">:</span><span class="mi">597</span><span class="o">)</span> <span class="o">~[</span><span class="nl">na:</span><span class="mf">1.7</span><span class="o">.</span><span class="mi">0_45</span><span class="o">]</span>
-</span><span class='line'><span class="n">at</span> <span class="n">com</span><span class="o">.</span><span class="na">sun</span><span class="o">.</span><span class="na">imageio</span><span class="o">.</span><span class="na">plugins</span><span class="o">.</span><span class="na">jpeg</span><span class="o">.</span><span class="na">JPEGImageReader</span><span class="o">.</span><span class="na">readInternal</span><span class="o">(</span><span class="n">JPEGImageReader</span><span class="o">.</span><span class="na">java</span><span class="o">:</span><span class="mi">1054</span><span class="o">)</span> <span class="o">~[</span><span class="nl">na:</span><span class="mf">1.7</span><span class="o">.</span><span class="mi">0_45</span><span class="o">]</span>
-</span><span class='line'><span class="n">at</span> <span class="n">com</span><span class="o">.</span><span class="na">sun</span><span class="o">.</span><span class="na">imageio</span><span class="o">.</span><span class="na">plugins</span><span class="o">.</span><span class="na">jpeg</span><span class="o">.</span><span class="na">JPEGImageReader</span><span class="o">.</span><span class="na">read</span><span class="o">(</span><span class="n">JPEGImageReader</span><span class="o">.</span><span class="na">java</span><span class="o">:</span><span class="mi">1034</span><span class="o">)</span> <span class="o">~[</span><span class="nl">na:</span><span class="mf">1.7</span><span class="o">.</span><span class="mi">0_45</span><span class="o">]</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>ImageReader有很多的具体实现,包括PNGImageReader, BMPImageReader, GIFImageReader等,这里的原因就是一个png的图片后缀名改为jpg,然后Reader的时候会根据后缀(.jpg)来选择实际的Reader.</p>
-
-<p>那么JPEGImageReader怎么知道这个图片不是一个jpg的图片呢?这就涉及到我们这里讲到的File magic number.</p>
-
-<h1>什么File magic number</h1>
-
-<p>Magic numbers are the first bits of a file which uniquely identify the type of file. This makes programming easier because complicated file structures need not be searched in order to identify the file type.</p>
-
-<p>简单的说File magic number就是用文件的一些bit位来唯一标志这个文件的类型.</p>
-
-<p>下面是三个图片文件(jpg, png, gif)的头部:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">xiaobaoqiu</span><span class="nd">@xiaobaoqiu</span><span class="o">:~/</span><span class="n">Picture$</span> <span class="n">hexdump</span> <span class="o">-</span><span class="n">C</span> <span class="mi">1</span><span class="o">.</span><span class="na">jpg</span> <span class="o">-</span><span class="n">n</span> <span class="mi">10</span>
-</span><span class='line'><span class="mi">00000000</span>  <span class="n">ff</span> <span class="n">d8</span> <span class="n">ff</span> <span class="n">e0</span> <span class="mi">00</span> <span class="mi">10</span> <span class="mi">4</span><span class="n">a</span> <span class="mi">46</span>  <span class="mi">49</span> <span class="mi">46</span>                    <span class="o">|......</span><span class="na">JFIF</span><span class="o">|</span>
-</span><span class='line'><span class="mi">0000000</span><span class="n">a</span>
-</span><span class='line'><span class="n">xiaobaoqiu</span><span class="nd">@xiaobaoqiu</span><span class="o">:~/</span><span class="n">Picture$</span> <span class="n">hexdump</span> <span class="o">-</span><span class="n">C</span> <span class="n">ticket</span><span class="o">.</span><span class="na">png</span> <span class="o">-</span><span class="n">n</span> <span class="mi">10</span>
-</span><span class='line'><span class="mi">00000000</span>  <span class="mi">89</span> <span class="mi">50</span> <span class="mi">4</span><span class="n">e</span> <span class="mi">47</span> <span class="mi">0</span><span class="n">d</span> <span class="mi">0</span><span class="n">a</span> <span class="mi">1</span><span class="n">a</span> <span class="mi">0</span><span class="n">a</span>  <span class="mi">00</span> <span class="mi">00</span>                    <span class="o">|.</span><span class="na">PNG</span><span class="o">......|</span>
-</span><span class='line'><span class="mi">0000000</span><span class="n">a</span>
-</span><span class='line'><span class="n">xiaobaoqiu</span><span class="nd">@xiaobaoqiu</span><span class="o">:~/</span><span class="n">Picture$</span> <span class="n">hexdump</span> <span class="o">-</span><span class="n">C</span> <span class="n">rtree</span><span class="o">.</span><span class="na">gif</span> <span class="o">-</span><span class="n">n</span> <span class="mi">10</span>
-</span><span class='line'><span class="mi">00000000</span>  <span class="mi">47</span> <span class="mi">49</span> <span class="mi">46</span> <span class="mi">38</span> <span class="mi">39</span> <span class="mi">61</span> <span class="mi">37</span> <span class="mi">02</span>  <span class="mi">8</span><span class="n">b</span> <span class="mi">02</span>                    <span class="o">|</span><span class="n">GIF89a7</span><span class="o">...|</span>
-</span><span class='line'><span class="mi">0000000</span><span class="n">a</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>图片1.jpg中的开始的ff d8表明只是一个JPG文件,随后的ff e0表明这是一种JFIF结构类型(参考:<a href="http://blog.csdn.net/kickxxx/article/details/8173332">http://blog.csdn.net/kickxxx/article/details/8173332</a>).</p>
-
-<p>GIF文件的头部包括 : (47 49 46 38 39 61)和(47 49 46 38 37 61)这两种;</p>
-
-<p>PNG文件头部 : 89 50 4E 47 0D 0A 1A 0A</p>
-
-<h1>典型文件的File magic number</h1>
-
-<p>总结一些典型文件的File magic number:</p>
-
-<h3>图片</h3>
-
-<table>
-<thead>
-<tr>
-<th>文件类型 </th>
-<th> 典型扩展名 </th>
-<th> Hex字符 </th>
-<th> Ascii digits</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Bitmap format </td>
-<td> .bmp  </td>
-<td> 42 4d </td>
-<td> BM</td>
-</tr>
-<tr>
-<td>FITS format </td>
-<td> .fits </td>
-<td> 53 49 4d 50 4c 45 </td>
-<td> SIMPLE</td>
-</tr>
-<tr>
-<td>GIF format </td>
-<td> .gif </td>
-<td> 47 49 46 38 </td>
-<td> GIF8</td>
-</tr>
-<tr>
-<td>Graphics Kernel System </td>
-<td> .gks </td>
-<td>47 4b 53 4d </td>
-<td> GKSM</td>
-</tr>
-<tr>
-<td>IRIS rgb format </td>
-<td> .rgb </td>
-<td> 01 da </td>
-<td> ..</td>
-</tr>
-<tr>
-<td>ITC (CMU WM) format </td>
-<td> .itc </td>
-<td> f1 00 40 bb </td>
-<td> &hellip;.</td>
-</tr>
-<tr>
-<td>JPEG File Interchange Format </td>
-<td> .jpg </td>
-<td> ff d8 ff e0 </td>
-<td> &hellip;.</td>
-</tr>
-<tr>
-<td>NIFF (Navy TIFF) </td>
-<td> .nif </td>
-<td> 49 49 4e 31 </td>
-<td> IIN1</td>
-</tr>
-<tr>
-<td>PM format </td>
-<td> .pm </td>
-<td> 56 49 45 57 </td>
-<td> VIEW</td>
-</tr>
-<tr>
-<td>PNG format </td>
-<td>.png </td>
-<td> 89 50 4e 47 </td>
-<td> .PNG</td>
-</tr>
-<tr>
-<td>Postscript format </td>
-<td> .[e]ps </td>
-<td> 25 21 </td>
-<td> %!</td>
-</tr>
-<tr>
-<td>Sun Rasterfile </td>
-<td> .ras </td>
-<td> 59 a6 6a 95 </td>
-<td> Y.j.</td>
-</tr>
-<tr>
-<td>Targa format </td>
-<td> .tga </td>
-<td> xx xx xx </td>
-<td> &hellip;</td>
-</tr>
-<tr>
-<td>TIFF format (Motorola - big endian) </td>
-<td> .tif </td>
-<td> 4d 4d 00 2a </td>
-<td> MM.*</td>
-</tr>
-<tr>
-<td>TIFF format (Intel - little endian) </td>
-<td> .tif </td>
-<td> 49 49 2a 00 </td>
-<td> II*.</td>
-</tr>
-<tr>
-<td>X11 Bitmap format </td>
-<td> .xbm </td>
-<td> xx xx </td>
-<td></td>
-</tr>
-<tr>
-<td>XCF Gimp file structure </td>
-<td> .xcf </td>
-<td> 67 69 6d 70 20 78 63 66 20 76 </td>
-<td> gimp xcf</td>
-</tr>
-<tr>
-<td>Xfig format </td>
-<td> .fig </td>
-<td> 23 46 49 47 </td>
-<td> #FIG</td>
-</tr>
-<tr>
-<td>XPM format </td>
-<td> .xpm </td>
-<td> 2f 2a 20 58 50 4d 20 2a 2f </td>
-<td> /<em> XPM </em>/</td>
-</tr>
-</tbody>
-</table>
-
-
-<h3>压缩文件</h3>
-
-<table>
-<thead>
-<tr>
-<th>文件类型 </th>
-<th> 典型扩展名 </th>
-<th> Hex字符 </th>
-<th> Ascii digits</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Bzip </td>
-<td> .bz </td>
-<td> 42 5a </td>
-<td> BZ</td>
-</tr>
-<tr>
-<td>Compress </td>
-<td> .Z </td>
-<td> 1f 9d </td>
-<td> ..</td>
-</tr>
-<tr>
-<td>gzip format </td>
-<td> .gz </td>
-<td> 1f 8b </td>
-<td> ..</td>
-</tr>
-<tr>
-<td>pkzip format </td>
-<td> .zip </td>
-<td> 50 4b 03 04 </td>
-<td> PK..</td>
-</tr>
-</tbody>
-</table>
-
-
-<h3>可执行文件</h3>
-
-<table>
-<thead>
-<tr>
-<th>文件类型 </th>
-<th> 典型扩展名 </th>
-<th> Hex字符 </th>
-<th> Ascii digits</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>MS-DOS, OS/2 or MS Windows </td>
-<td> </td>
-<td> 4d 5a </td>
-<td> MZ</td>
-</tr>
-<tr>
-<td>Unix elf </td>
-<td> </td>
-<td> 7f 45 4c 46 </td>
-<td> .ELF</td>
-</tr>
-</tbody>
-</table>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/9">&larr; Older</a>
@@ -6761,6 +6510,10 @@ Buffers is the size of in-memory block I/O buffer。</p>
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2016/02/03/strace/">Strace</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2016/01/28/who-eat-jvms-memory/">Who Eats JVM's Memory</a>
       </li>
     
@@ -6776,10 +6529,6 @@ Buffers is the size of in-memory block I/O buffer。</p>
         <a href="/blog/2015/11/21/ju-bu-min-gan-hash/">局部敏感Hash</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2015/11/19/memcachedxian-zhi-fang-wen-ip/">Memcached安全性</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -6793,7 +6542,7 @@ Buffers is the size of in-memory block I/O buffer。</p>
 <li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/java/'>java (24)</a></li>
 <li><a class='list-group-item' href='/blog/categories/library/'>library (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/linux/'>linux (12)</a></li>
+<li><a class='list-group-item' href='/blog/categories/linux/'>linux (13)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (6)</a></li>
 <li><a class='list-group-item' href='/blog/categories/mybatis/'>mybatis (1)</a></li>
@@ -6818,7 +6567,7 @@ Buffers is the size of in-memory block I/O buffer。</p>
     <h1 class="panel-title">其他博客</h3>
   </div>
   <div id="categories_list_div" class="list-group">
-    <a class='list-group-item' href='http://www.baidu.com/p/Nicker_2010'>百度空间</a>
+    <a class='list-group-item' href='http://wenzhang.baidu.com/'>百度空间</a>
   </div>
 </section>
 

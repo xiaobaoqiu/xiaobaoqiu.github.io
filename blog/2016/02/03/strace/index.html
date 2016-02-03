@@ -1,0 +1,431 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Strace - xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="1.strace简介
+2.strace使用Demo 1.strace简介 strace用来跟踪进程执行时的系统调用和所接收的信号. Linux下进程不能直接访问硬件设备,当进程需要访问硬件设备(比如读取磁盘文件,接收网络数据等等)时,必须由用户态模式切换至内核态模式,通过系统调用访问硬件设备. &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2016/02/03/strace/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  
+
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+  
+  <meta name="baidu-site-verification" content="5oIt2xaFFz" />
+  <meta name="google-site-verification" content="U9Avd5Yqzpetvn_zxo1KaK2iqYNwSlLon27veprwBRY" />
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Keep Runnnnnnnnnning...</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss email">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+    <li><a href="xiaobaoqiu@163.com" rel="subscribe-email" title="subscribe via email">Email</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">首页</a></li>
+  <li><a href="/blog/archives">所有博文</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Strace</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-02-03T13:55:05+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2016</span></span> <span class='time'>1:55 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><ul>
+<li><a href="#1.strace%E7%AE%80%E4%BB%8B">1.strace简介</a></li>
+<li><a href="#2.strace%E4%BD%BF%E7%94%A8Demo">2.strace使用Demo</a></li>
+</ul>
+
+
+<h2 id="1.strace简介">1.strace简介</h2>
+
+
+<p>strace用来跟踪进程执行时的系统调用和所接收的信号.</p>
+
+<p>Linux下进程不能直接访问硬件设备,当进程需要访问硬件设备(比如读取磁盘文件,接收网络数据等等)时,必须由用户态模式切换至内核态模式,通过系统调用访问硬件设备.strace可以跟踪到一个进程产生的系统调用,包括参数,返回值,执行消耗的时间.</p>
+
+<p>参数及意义如下,忽略了一些不大重要的(其实海报看一些没看懂的&hellip;):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>OPTIONS
+</span><span class='line'>       -c         计数,包括每个系统调用耗时,调用次数,错误次数.注意这里显示的时间是CPU花在内核上的时间.
+</span><span class='line'>       -D         跟踪程序作为被跟踪程序的子进程.
+</span><span class='line'>       -d          输出strace关于标准错误的调试信息
+</span><span class='line'>       -f          根据进程,包括其子进程(fork(2), vfork(2) and clone(2)这些系统调用)
+</span><span class='line'>       -ff         如果提供-o filename,则所有进程的跟踪结果输出到相应的filename.pid中,pid是各进程的进程号.
+</span><span class='line'>       -F          尝试跟踪vfork调用
+</span><span class='line'>       -h         帮助信息.
+</span><span class='line'>       -i          输出系统调用的入口指针
+</span><span class='line'>       -q         禁止输出attaching和detaching的信息
+</span><span class='line'>       -r          打印出每个系统调用的相对时间(相对于第一个系统调用)
+</span><span class='line'>       -t          在输出中的每一行前加上时间信息(时分秒)
+</span><span class='line'>       -tt         在输出中的每一行前加上时间信息,包含毫秒
+</span><span class='line'>       -ttt        微秒级输出,单位是秒(如1454483650.043891).
+</span><span class='line'>       -T          显示每个系统调用使用时间的百分比占比.
+</span><span class='line'>       -v          输出所有的系统调用.一些调用关于环境变量,状态,输入输出等调用由于使用频繁,默认不输出.
+</span><span class='line'>       -V          版本信息
+</span><span class='line'>       -x          以十六进制形式输出非标准字符串(non-ASCII strings)
+</span><span class='line'>       -xx         所有字符串以十六进制形式输出
+</span><span class='line'>       -y          Print paths associated with file descriptor arguments.
+</span><span class='line'>       -a column   设置返回值的输出位置,默认为40
+</span><span class='line'>       -b syscall  当某个系统调用被调用,trace程序就会detach.当前只支持execve. 这个选项在trace多线程的时候十分有用(需要-f选项)
+</span><span class='line'>       -e expr     指定一个表达式,用来控制如何跟踪.表达式格式如下:
+</span><span class='line'>
+</span><span class='line'>                             [qualifier=][!]value1[,value2]...
+</span><span class='line'>
+</span><span class='line'>                   其中qualifier只能是 trace,abbrev,verbose,raw,signal,read,write其中之,value是用来限定的符号或数字.默认的 qualifier是 trace.感叹号是否定符号.例如:
+</span><span class='line'>-eopen等价于 -e trace=open,表示只跟踪open调用.而-etrace!=open表示跟踪除了open以外的其他调用.
+</span><span class='line'>
+</span><span class='line'>       -e trace=set   只跟踪指定的系统调用.例如:-e trace=open,close,rean,write表示只跟踪这四个系统调用.默认的为set=all.
+</span><span class='line'>       -e trace=file   只跟踪有关文件操作的系统调用
+</span><span class='line'>       -e trace=process 只跟踪有关进程控制的系统调用.
+</span><span class='line'>       -e trace=network 只跟踪与网络有关的所有系统调用.
+</span><span class='line'>       -e trace=signal 只跟踪所有与系统信号有关的 系统调用
+</span><span class='line'>       -e trace=ipc 只跟踪所有与进程通讯有关的系统调用
+</span><span class='line'>       -e trace=desc 只跟踪所有与文件描述符有关的系统调用
+</span><span class='line'>       -e trace=memory 只跟踪所有与内存映射有关的系统调用
+</span><span class='line'>       -e signal=set 指定跟踪的系统信号.默认为all.如 signal=!SIGIO(或者signal=!io),表示不跟踪SIGIO信号.
+</span><span class='line'>       -o filename 将trace结果输出到文件
+</span><span class='line'>       -p pid      跟踪指定的进程pid
+</span><span class='line'>       -s strsize  指定输出的字符串的最大长度.默认为32.文件名一直全部输出.
+</span><span class='line'>       -S sortby   使用了-c选项的情况下的排序准则,可选包括time, calls, name, 和nothing,默认是time
+</span><span class='line'>       -u username 以username的UID和GID执行被跟踪的命令.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>使用<a href="http://www.tecmint.com/cheat-command-line-cheat-sheet-for-linux-users/">cheat</a>可以看到strace通常使用方法:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ cheat strace
+</span><span class='line'># 基本使用
+</span><span class='line'>strace &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># 将trace结构写到文件,使用-o参数
+</span><span class='line'>strace -o strace.out &lt;other switches&gt; &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># 只trace open()这个系统调用
+</span><span class='line'>strace -e trace=open &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># trace所有会打开文件的系统调用
+</span><span class='line'>strace -e trace=file &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># trace所有和进程管理相关的系统调用,再查看一个进程的fork,wait和exec等步骤的时候很有用
+</span><span class='line'>strace -e trace=process &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># 当前进程fork出来的子进程也trace
+</span><span class='line'>strace -f &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># 每个系统调用计数,包括:调用时间,调用次数,错误次数
+</span><span class='line'>strace -c &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># trace某一个进程(可以指定多个pid)
+</span><span class='line'>strace -p &lt;pid&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>通常而言,我们使用-c选项找出最耗时的系统调用,再使用-e选项跟踪这个操作.</p>
+
+<p>参考: <a href="http://huoding.com/2015/10/16/474">手把手教你用Strace诊断问题</a></p>
+
+<h2 id="2.strace使用Demo">2.strace使用Demo</h2>
+
+
+<p>一致很好奇top命令的数据从哪里获取的.我这里 的前提我知道的一点:top的数据肯定是从proc/pid/下的文件中读取的,有这个前提我们就可以来trace我们的top命令执行过程中有那些系统调用了.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$ strace -o top.strace -e trace=open top
+</span><span class='line'>
+</span><span class='line'>//找出1381这个进程的信息来源
+</span><span class='line'>[baoqiu.xiao@Xxx ~]$ grep 1381 top.strace 
+</span><span class='line'>open("/proc/1381/stat", O_RDONLY)       = 4
+</span><span class='line'>open("/proc/1381/statm", O_RDONLY)      = 4</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面的strace中,我们知道,top的信息来源于两个文件,stat和statm.这两个文件的介绍参考上一篇博客: <a href="http://xiaobaoqiu.github.io/blog/2016/01/28/who-eat-jvms-memory/.">http://xiaobaoqiu.github.io/blog/2016/01/28/who-eat-jvms-memory/.</a></p>
+
+<p>参考:
+<a href="http://linoxide.com/linux-command/linux-strace-command-examples/">8 Options to Trace/Debug Programs using Linux strace Command</a></p>
+
+<p><a href="http://huoding.com/tag/strace">火丁笔记 strace</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">xiaobaoqiu</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2016-02-03T13:55:05+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2016</span></span> <span class='time'>1:55 pm</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/linux/'>linux</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2016/02/03/strace/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2016/02/03/strace/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2016/01/28/who-eat-jvms-memory/" title="Previous Post: Who eats JVM's Memory">&laquo; Who eats JVM's Memory</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <div class="panel-heading">
+    <h1 class="panel-title">最新文章</h3>
+  </div>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/02/03/strace/">Strace</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/01/28/who-eat-jvms-memory/">Who Eats JVM's Memory</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/11/21/ju-bu-min-gan-hash/">局部敏感Hash</a>
+      </li>
+    
+  </ul>
+</section>
+<section class="panel panel-default">
+  <div  class="panel-heading">
+    <h1 class="panel-title">文章分类</h1>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <li><a class='list-group-item' href='/blog/categories/algorithm/'>algorithm (5)</a></li>
+<li><a class='list-group-item' href='/blog/categories/druid/'>druid (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/java/'>java (24)</a></li>
+<li><a class='list-group-item' href='/blog/categories/library/'>library (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/linux/'>linux (13)</a></li>
+<li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/mybatis/'>mybatis (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (11)</a></li>
+<li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/protocol/'>protocol (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/search/'>search (8)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
+<li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
+ 
+  </div>
+</section>
+<section class="panel panel-default">
+  <div  class="panel-heading">
+    <h1 class="panel-title">其他博客</h3>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <a class='list-group-item' href='http://wenzhang.baidu.com/'>百度空间</a>
+  </div>
+</section>
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2016 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

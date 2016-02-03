@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Linux | xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/blog/categories/linux/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2016-02-03T10:53:56+08:00</updated>
+  <updated>2016-02-03T16:58:10+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,125 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Strace]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2016/02/03/strace/"/>
+    <updated>2016-02-03T13:55:05+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2016/02/03/strace</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.strace%E7%AE%80%E4%BB%8B">1.strace简介</a></li>
+<li><a href="#2.strace%E4%BD%BF%E7%94%A8Demo">2.strace使用Demo</a></li>
+</ul>
+
+
+<h2 id="1.strace简介">1.strace简介</h2>
+
+
+<p>strace用来跟踪进程执行时的系统调用和所接收的信号.</p>
+
+<p>Linux下进程不能直接访问硬件设备,当进程需要访问硬件设备(比如读取磁盘文件,接收网络数据等等)时,必须由用户态模式切换至内核态模式,通过系统调用访问硬件设备.strace可以跟踪到一个进程产生的系统调用,包括参数,返回值,执行消耗的时间.</p>
+
+<p>参数及意义如下,忽略了一些不大重要的(其实海报看一些没看懂的&hellip;):</p>
+
+<pre><code>OPTIONS
+       -c         计数,包括每个系统调用耗时,调用次数,错误次数.注意这里显示的时间是CPU花在内核上的时间.
+       -D         跟踪程序作为被跟踪程序的子进程.
+       -d          输出strace关于标准错误的调试信息
+       -f          根据进程,包括其子进程(fork(2), vfork(2) and clone(2)这些系统调用)
+       -ff         如果提供-o filename,则所有进程的跟踪结果输出到相应的filename.pid中,pid是各进程的进程号.
+       -F          尝试跟踪vfork调用
+       -h         帮助信息.
+       -i          输出系统调用的入口指针
+       -q         禁止输出attaching和detaching的信息
+       -r          打印出每个系统调用的相对时间(相对于第一个系统调用)
+       -t          在输出中的每一行前加上时间信息(时分秒)
+       -tt         在输出中的每一行前加上时间信息,包含毫秒
+       -ttt        微秒级输出,单位是秒(如1454483650.043891).
+       -T          显示每个系统调用使用时间的百分比占比.
+       -v          输出所有的系统调用.一些调用关于环境变量,状态,输入输出等调用由于使用频繁,默认不输出.
+       -V          版本信息
+       -x          以十六进制形式输出非标准字符串(non-ASCII strings)
+       -xx         所有字符串以十六进制形式输出
+       -y          Print paths associated with file descriptor arguments.
+       -a column   设置返回值的输出位置,默认为40
+       -b syscall  当某个系统调用被调用,trace程序就会detach.当前只支持execve. 这个选项在trace多线程的时候十分有用(需要-f选项)
+       -e expr     指定一个表达式,用来控制如何跟踪.表达式格式如下:
+
+                             [qualifier=][!]value1[,value2]...
+
+                   其中qualifier只能是 trace,abbrev,verbose,raw,signal,read,write其中之,value是用来限定的符号或数字.默认的 qualifier是 trace.感叹号是否定符号.例如:
+-eopen等价于 -e trace=open,表示只跟踪open调用.而-etrace!=open表示跟踪除了open以外的其他调用.
+
+       -e trace=set   只跟踪指定的系统调用.例如:-e trace=open,close,rean,write表示只跟踪这四个系统调用.默认的为set=all.
+       -e trace=file   只跟踪有关文件操作的系统调用
+       -e trace=process 只跟踪有关进程控制的系统调用.
+       -e trace=network 只跟踪与网络有关的所有系统调用.
+       -e trace=signal 只跟踪所有与系统信号有关的 系统调用
+       -e trace=ipc 只跟踪所有与进程通讯有关的系统调用
+       -e trace=desc 只跟踪所有与文件描述符有关的系统调用
+       -e trace=memory 只跟踪所有与内存映射有关的系统调用
+       -e signal=set 指定跟踪的系统信号.默认为all.如 signal=!SIGIO(或者signal=!io),表示不跟踪SIGIO信号.
+       -o filename 将trace结果输出到文件
+       -p pid      跟踪指定的进程pid
+       -s strsize  指定输出的字符串的最大长度.默认为32.文件名一直全部输出.
+       -S sortby   使用了-c选项的情况下的排序准则,可选包括time, calls, name, 和nothing,默认是time
+       -u username 以username的UID和GID执行被跟踪的命令.
+</code></pre>
+
+<p>使用<a href="http://www.tecmint.com/cheat-command-line-cheat-sheet-for-linux-users/">cheat</a>可以看到strace通常使用方法:</p>
+
+<pre><code>xiaobaoqiu@xiaobaoqiu:~$ cheat strace
+# 基本使用
+strace &lt;command&gt;
+
+# 将trace结构写到文件,使用-o参数
+strace -o strace.out &lt;other switches&gt; &lt;command&gt;
+
+# 只trace open()这个系统调用
+strace -e trace=open &lt;command&gt;
+
+# trace所有会打开文件的系统调用
+strace -e trace=file &lt;command&gt;
+
+# trace所有和进程管理相关的系统调用,再查看一个进程的fork,wait和exec等步骤的时候很有用
+strace -e trace=process &lt;command&gt;
+
+# 当前进程fork出来的子进程也trace
+strace -f &lt;command&gt;
+
+# 每个系统调用计数,包括:调用时间,调用次数,错误次数
+strace -c &lt;command&gt;
+
+# trace某一个进程(可以指定多个pid)
+strace -p &lt;pid&gt;
+</code></pre>
+
+<p>通常而言,我们使用-c选项找出最耗时的系统调用,再使用-e选项跟踪这个操作.</p>
+
+<p>参考: <a href="http://huoding.com/2015/10/16/474">手把手教你用Strace诊断问题</a></p>
+
+<h2 id="2.strace使用Demo">2.strace使用Demo</h2>
+
+
+<p>一致很好奇top命令的数据从哪里获取的.我这里 的前提我知道的一点:top的数据肯定是从proc/pid/下的文件中读取的,有这个前提我们就可以来trace我们的top命令执行过程中有那些系统调用了.</p>
+
+<pre><code>[baoqiu.xiao@Xxx ~]$ strace -o top.strace -e trace=open top
+
+//找出1381这个进程的信息来源
+[baoqiu.xiao@Xxx ~]$ grep 1381 top.strace 
+open("/proc/1381/stat", O_RDONLY)       = 4
+open("/proc/1381/statm", O_RDONLY)      = 4
+</code></pre>
+
+<p>从上面的strace中,我们知道,top的信息来源于两个文件,stat和statm.这两个文件的介绍参考上一篇博客: <a href="http://xiaobaoqiu.github.io/blog/2016/01/28/who-eat-jvms-memory/.">http://xiaobaoqiu.github.io/blog/2016/01/28/who-eat-jvms-memory/.</a></p>
+
+<p>参考:
+<a href="http://linoxide.com/linux-command/linux-strace-command-examples/">8 Options to Trace/Debug Programs using Linux strace Command</a></p>
+
+<p><a href="http://huoding.com/tag/strace">火丁笔记 strace</a></p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Oomkiller]]></title>
@@ -439,115 +558,6 @@ xiaobaoqiu@xiaobaoqiu:~/temp$ cat outfile
 </code></pre>
 
 <p>iconv基于GPL公开源代码,是GNU项目的一部分.目前，libiconv已经包含在C运行时刻库libc.so中。因此，Linux平台上使用iconv库函数的程序，需要包含&lt;iconv.h>文件.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Linux Swap]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/06/23/linux-swap/"/>
-    <updated>2015-06-23T19:35:55+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/06/23/linux-swap</id>
-    <content type="html"><![CDATA[<p>最近一台机器出现swap报警,从监控图上也看到swap的使用一直存在.</p>
-
-<p>服务器上只有一个Tomcat应用和一些定时任务.</p>
-
-<h1>1.什么是swap</h1>
-
-<p>inux操作系统将物理内存分为多个小的内存块，称之为页(pages). 当应用请求的物理内存不够分配时，操作系统会将一段时间之内不用的内存页交换至swap分区，从而为应用释放内存空间。</p>
-
-<p>Swap对于系统过来说非常重要：</p>
-
-<pre><code>1.首先，当主内存不够用时，操作系统可以swap out一部分内存页，迅速为当前急需内存的应用或者进程分配内存；
-2.其次，某些内存页只在应用初始化阶段用到，之后可能就不再使用了，操作系统可以将这些内存页swap out，从而为应用或者磁盘cache腾出更多的内存空间;
-</code></pre>
-
-<h1>2.swap会带来哪些问题</h1>
-
-<p>我们知道，计算机磁盘I/O通常是系统的瓶颈所在。主内存的读写速度是纳秒级别，而磁盘读写速度是毫秒级别，两者相差3、4个数量级。然而，即使是当前广泛使用的SSD，读写速度相比主内存或者CPU cache也相差2、3个数量级。系统发生swap交换越多，那么系统自然也越慢。</p>
-
-<p>特别对于web服务器来说，都是面对用户的交互式应用，因此响应速度尤其重要。如果系统经常因为swap交换而变得响应迟钝，那么用户体验效果可想而知。</p>
-
-<p>总结成一句话：swap分区要有，在关键时刻不至于让你的应用因为内存不够用而被操作系统OOM KILLER干掉；但是不到关键时刻不要进行swap交换，因为这些操作会影响系统的响应速度。</p>
-
-<p>关于swap的swap in和swap out可以从vmstat命令查看(si表示swap in, so表示swap out).参考:
-<a href="http://xiaobaoqiu.github.io/blog/2015/01/26/vmstatgong-ju/">http://xiaobaoqiu.github.io/blog/2015/01/26/vmstatgong-ju/</a></p>
-
-<h1>3.查看swap占用</h1>
-
-<p>free命令, 参考:
-<a href="http://xiaobaoqiu.github.io/blog/2014/09/04/linux-memory-usage/">http://xiaobaoqiu.github.io/blog/2014/09/04/linux-memory-usage/</a></p>
-
-<h1>4.找到swap占用元凶</h1>
-
-<p>Linux系统中有一个文件smaps文件，记录了当前进程所对应的内存映像信息，路径为/proc/$pid/smaps.以本机的一个线程为例子:</p>
-
-<pre><code>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo cat /proc/3555/smaps | head -16
-00400000-00401000 r-xp 00000000 08:13 3444936                            /usr/local/jdk1.7.0_72/bin/java
-Size:                  4 kB
-Rss:                   4 kB
-Pss:                   4 kB
-Shared_Clean:          0 kB
-Shared_Dirty:          0 kB
-Private_Clean:         4 kB
-Private_Dirty:         0 kB
-Referenced:            4 kB
-Anonymous:             0 kB
-AnonHugePages:         0 kB
-Swap:                  0 kB
-KernelPageSize:        4 kB
-MMUPageSize:           4 kB
-Locked:                0 kB
-VmFlags: rd ex mr mw me dw
-</code></pre>
-
-<p>其中Swap表示这个线程占有Swap的情况.</p>
-
-<p>查看swap的占有情况的脚本,按照占用swap的占用多少从高到底排序:</p>
-
-<pre><code>#!/bin/bash
-
-function getswap {
-SUM=0
-OVERALL=0
-for DIR in `find /proc/ -maxdepth 1 -type d | egrep "^/proc/[0-9]"` ; do
-PID=`echo $DIR | cut -d / -f 3`
-PROGNAME=`ps -p $PID -o comm --no-headers`
-for SWAP in `grep Swap $DIR/smaps 2&gt;/dev/null| awk '{ print $2 }'`
-do
-let SUM=$SUM+$SWAP
-done
-echo "PID=$PID    Swap used(KB): $SUM    ($PROGNAME )"
-let OVERALL=$OVERALL+$SUM
-SUM=0
-
-done
-echo "Overall swap used: $OVERALL"
-}
-
-getswap|sort -k4nr
-</code></pre>
-
-<p>然后运行:</p>
-
-<pre><code>sudo ~/check_swap.sh
-</code></pre>
-
-<h1>5.清除被占用的swap</h1>
-
-<p>在我们明确知道哪些进程吃swap以后，接下来的问题就是我们如何释放这些swap，释放swap的意思就是把交换到swap中的数据swap in到物理内存页中。</p>
-
-<pre><code>1.重启吃swap的服务，比如重启一下我们的java进程;
-2.swapoff + swapon
-这个方法的好处是，不用重启服务，但是需要确保现在有足够的物理内存可以容下从swap中释放出来的数据。下面给出了swapoff和swapon的具体做法，注意看swapoff后和swapon后，free的输出有什么异同;
-
-sudo /sbin/swapoff -a
-sudo /sbin/swapon -a
-
-swapoff后，free的输出里，swap分区的大小变为0，占用变为0,也就是说swap分区中的数据已经释放到物理内存中，同时swap分区被禁用。swapon后，free的输出里，swap分区的容量又恢复了
-，也就是说swap分区重新被启用了。当然我们可以把这两个命令写到一起：
-
-sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
-</code></pre>
 ]]></content>
   </entry>
   
