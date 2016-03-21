@@ -9,10 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="Java诊断我相信再日常开发中都十分需要.相信大家都使用过以下几种诊断方式: 1.肉眼诊断
-就是出现问题时候企图通过肉眼来发现代码问题.通常很明显的问题有效;
-2.日志诊断
-通过给出问题的代码入参或者上下游加上日志,或者出问题的时候加上日志来诊断;这种方式的问题就是出现问题你需要重新拉分支,加日志 &hellip;">
+  <meta name="description" content="join 用于多表中字段之间的关联,语法如下: 1
+... FROM table1 INNER|LEFT|RIGHT JOIN table2 ON conditiona JOIN实际上是两个表的的乘积(即笛卡尔积).假设集合A={a,b}，集合B={0,1,2}，则两个集合的笛卡尔积为{(a,0 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -75,6 +73,130 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/09/03/mysql-join/">Mysql Join</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-09-03T11:42:33+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>11:42 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>join 用于多表中字段之间的关联,语法如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>... FROM table1 INNER|LEFT|RIGHT JOIN table2 ON conditiona</span></code></pre></td></tr></table></div></figure>
+
+
+<p>JOIN实际上是两个表的的乘积(即笛卡尔积).假设集合A={a,b}，集合B={0,1,2}，则两个集合的笛卡尔积为{(a,0),(a,1),(a,2),(b,0),(b,1), (b,2)}.</p>
+
+<p>JOIN按照功能大致分为如下三类:</p>
+
+<pre><code>INNER JOIN: 取得两个表中存在连接匹配关系的记录;
+LEFT JOIN: 取得左表完全记录，即使右表并无对应匹配记录,如果没有匹配,右侧将包含null;
+RIGHT JOIN: 与 LEFT JOIN 相反，取得右表完全记录，即使左表并无匹配对应记录;
+</code></pre>
+
+<h2>. 1.显示join和隐式join</h2>
+
+<p>另外,写join语句有所谓的显示join和隐式join的写法:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-- 显示join
+</span><span class='line'>select * from
+</span><span class='line'>table1 inner join table2
+</span><span class='line'>on table1.name = table2.name;
+</span><span class='line'>
+</span><span class='line'>-- 隐式join
+</span><span class='line'>select table1.*, table2.*
+</span><span class='line'>from table1, table2
+</span><span class='line'>where table1.name = table2.name;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这两种写法性能上基本没有差异,参考stackoverflow: <a href="http://stackoverflow.com/questions/44917/explicit-vs-implicit-sql-joins">http://stackoverflow.com/questions/44917/explicit-vs-implicit-sql-joins</a></p>
+
+<h2>. 2.ON条件和WHERE条件</h2>
+
+<p>在执行顺序上需要注意的是on条件和where条件执行顺序: 首先使用on条件产生初始笛卡尔积集合,再在这个集合上使用where条件筛选.所以join的时候应该首先好的on条件保证笛卡尔积集合尽可能小,从而减少Where的执行.</p>
+
+<p>比如下面两种写法,方案2写法保证产生的笛卡尔积集合很小,因而从执行性能来看第二个显然更加省时。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-- 方案1
+</span><span class='line'>select * from A
+</span><span class='line'>inner join B on B.name = A.name
+</span><span class='line'>left join C on C.name = B.name
+</span><span class='line'>left join D on D.id = C.id
+</span><span class='line'>where C.status&gt;1 and D.status=1;
+</span><span class='line'>
+</span><span class='line'>-- 方案2
+</span><span class='line'>select * from A
+</span><span class='line'>inner join B on B.name = A.name
+</span><span class='line'>left join C on C.name = B.name and C.status&gt;1
+</span><span class='line'>left join D on D.id = C.id and D.status=1</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>. 3.STRAIGHT_JOIN和NATURAL JOIN</h2>
+
+<h4>. 3.1 STRAIGHT_JOIN</h4>
+
+<p>再Join的时候,MySQL优化器要确定以谁为驱动表，也就是说以哪个表为基准，在处理此类问题时，MySQL优化器采用了简单粗暴的解决方法：哪个表的结果集小，就以哪个表为驱动表，当然MySQL优化器实际的处理方式会复杂许多，具体可以参考：<a href="http://www.orczhou.com/index.php/2013/04/how-mysql-choose-index-in-a-join/">http://www.orczhou.com/index.php/2013/04/how-mysql-choose-index-in-a-join/</a></p>
+
+<p>说明：在EXPLAIN结果中，第一行出现的表就是驱动表。</p>
+
+<p>但是这个由的时候比较愚蠢,比如我们order by的字段在大结果集的表上,也就是说排序字段不在驱动表里，于是乎不可避免的出现了Using filesort和Using temporary.</p>
+
+<p>上面这种场景,我们就可以通过使用STRAIGHT_JOIN显示的指定驱动表</p>
+
+<p>参考: <a href="http://huoding.com/2013/06/04/261">http://huoding.com/2013/06/04/261</a></p>
+
+<h4>. 3.2 NATURAL</h4>
+
+<p>MySQL将表中具有相同名称的字段自动进行记录匹配，而这些同名字段类型可以不同。因此，NATURAL JOIN 不用指定匹配条件。</p>
+
+<p>同样包含NATURAL LEFT JOIN和NATURAL RIGHT JOIN.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>SELECT article.aid,article.title,user.username FROM article NATURAL JOIN user</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2888,204 +3010,6 @@ _ : 单个字符
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-07-16T04:25:57+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:25 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>经常需要查看当前服务器哪些用户在登录,以及他们都在干什么.</p>
-
-<p>下面总结一些命令,其中last应该是最常用的命令.</p>
-
-<h1>1.w</h1>
-
-<p>w - Show who is logged on and what they are doing.</p>
-
-<p>主要字段:</p>
-
-<pre><code>LOGIN@: 什么时间登录的
-PCPU: 当前进程所用时间
-WHAT: 用户当前正在使用的命令
-</code></pre>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ w
-</span><span class='line'> 20:32:42 up  9:59, 15 users,  load average: 1.80, 1.26, 1.17
-</span><span class='line'>USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
-</span><span class='line'>xiaobaoq tty7     :0               10:34    9:58m 22:26   0.48s init --user
-</span><span class='line'>xiaobaoq pts/1    :0               10:35    2:22m  0.12s  0.12s /bin/bash
-</span><span class='line'>xiaobaoq pts/2    :0               11:12   44:10   0.26s  0.19s ssh cn6
-</span><span class='line'>xiaobaoq pts/7    :0               11:12    9:02m  0.15s  0.09s ssh cn6
-</span><span class='line'>xiaobaoq pts/8    :0               11:28    5:56m  0.09s  0.03s ssh cn5
-</span><span class='line'>xiaobaoq pts/12   :0               13:09    3:03m  0.30s  0.24s ssh cn0
-</span><span class='line'>xiaobaoq pts/13   :0               13:09    3:14m  0.13s  0.07s mysql -h...
-</span><span class='line'>xiaobaoq pts/14   :0               13:09    3:00m  1.23s  1.17s ssh cn0
-</span><span class='line'>xiaobaoq pts/18   :0               13:09    3:03m  3.42s  3.35s ssh cn0
-</span><span class='line'>xiaobaoq pts/20   :0               13:14    3:01m  0.45s  0.39s mysql -h...
-</span><span class='line'>xiaobaoq pts/22   :0               13:26    7:01m  0.13s  0.07s ssh cn0
-</span><span class='line'>xiaobaoq pts/23   :0               14:02   40:34   0.17s  0.17s /bin/bash
-</span><span class='line'>xiaobaoq pts/24   :0               14:03    2.00s  0.23s  0.00s w
-</span><span class='line'>xiaobaoq pts/25   :0               14:36    2:02   0.24s  0.18s ssh cn5
-</span><span class='line'>xiaobaoq pts/26   :0               17:41    2:47m  0.09s  0.09s /bin/bash</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.who</h1>
-
-<p>who - show who is logged on</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who
-</span><span class='line'>xiaobaoqiu tty7         2015-07-15 10:34 (:0)
-</span><span class='line'>xiaobaoqiu pts/1        2015-07-15 10:35 (:0)
-</span><span class='line'>xiaobaoqiu pts/2        2015-07-15 11:12 (:0)
-</span><span class='line'>xiaobaoqiu pts/7        2015-07-15 11:12 (:0)
-</span><span class='line'>xiaobaoqiu pts/8        2015-07-15 11:28 (:0)
-</span><span class='line'>xiaobaoqiu pts/12       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/13       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/14       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/18       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/20       2015-07-15 13:14 (:0)
-</span><span class='line'>xiaobaoqiu pts/22       2015-07-15 13:26 (:0)
-</span><span class='line'>xiaobaoqiu pts/23       2015-07-15 14:02 (:0)
-</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)
-</span><span class='line'>xiaobaoqiu pts/25       2015-07-15 14:36 (:0)
-</span><span class='line'>xiaobaoqiu pts/26       2015-07-15 17:41 (:0)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.users</h1>
-
-<p>users - print the user names of users currently logged in to the current host</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ users
-</span><span class='line'>xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.whoami</h1>
-
-<p>whoami - print effective userid</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ whoami
-</span><span class='line'>xiaobaoqiu
-</span><span class='line'>
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who am i
-</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)
-</span><span class='line'>
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who mom likes
-</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>5.id</h1>
-
-<p>id - print real and effective user and group IDs</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ id
-</span><span class='line'>uid=1000(xiaobaoqiu) gid=1000(xiaobaoqiu) 组=1000(xiaobaoqiu),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),108(lpadmin),124(sambashare)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>6.last</h1>
-
-<p>last, lastb - show listing of last logged in users</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ last
-</span><span class='line'>xiaobaoq pts/26       :0               Wed Jul 15 17:41   still logged in   
-</span><span class='line'>xiaobaoq pts/25       :0               Wed Jul 15 14:36   still logged in   
-</span><span class='line'>xiaobaoq pts/24       :0               Wed Jul 15 14:03   still logged in   
-</span><span class='line'>xiaobaoq pts/23       :0               Wed Jul 15 14:02   still logged in   
-</span><span class='line'>xiaobaoq pts/22       :0               Wed Jul 15 13:26   still logged in   
-</span><span class='line'>xiaobaoq pts/20       :0               Wed Jul 15 13:14   still logged in   
-</span><span class='line'>xiaobaoq pts/20       :0               Wed Jul 15 13:14 - 13:14  (00:00)    
-</span><span class='line'>xiaobaoq pts/18       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/14       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/13       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/12       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/8        :0               Wed Jul 15 11:28   still logged in   
-</span><span class='line'>xiaobaoq pts/7        :0               Wed Jul 15 11:12   still logged in   
-</span><span class='line'>xiaobaoq pts/2        :0               Wed Jul 15 11:12   still logged in   
-</span><span class='line'>xiaobaoq pts/1        :0               Wed Jul 15 10:35   still logged in</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/3">&larr; Older</a>
@@ -3105,6 +3029,10 @@ WHAT: 用户当前正在使用的命令
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2016/02/03/strace/">Strace</a>
       </li>
     
@@ -3118,10 +3046,6 @@ WHAT: 用户当前正在使用的命令
     
       <li class="post">
         <a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/11/21/ju-bu-min-gan-hash/">局部敏感Hash</a>
       </li>
     
   </ul>
@@ -3148,7 +3072,7 @@ WHAT: 用户当前正在使用的命令
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (8)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (4)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

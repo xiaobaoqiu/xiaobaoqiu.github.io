@@ -9,7 +9,29 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.R-Tree简介 Btree以及它的变体B+tree对数据库的发展可谓是功不可没,但是，Btree良好的性能却仅仅只能在一维数据上产生效果，如果涉及到二维数据甚至多维数据，那么Btree也无能为力了。然而随着GIS（地理信息系统）和CAD（计算机辅助设计）的广泛应用，多维空间数据( &hellip;">
+  <meta name="description" content="第六章：任务执行 1.在线程中执行任务 服务器应用:良好的吞吐量和快速的响应性.应用程序应该在负荷过载时候平缓地劣化. 2.Executor框架 将任务的提交和任务的执行体解藕. 1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -72,6 +94,396 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/06/19/java-concurrency-in-practice-6/">Java Concurrency in Practice 6 : 任务执行</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-06-19T13:15:00+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>19</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>1:15 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p><strong>第六章：任务执行</strong></p>
+
+<h1>1.在线程中执行任务</h1>
+
+<p>服务器应用:良好的吞吐量和快速的响应性.应用程序应该在负荷过载时候平缓地劣化.</p>
+
+<h1>2.Executor框架</h1>
+
+<p>将任务的提交和任务的执行体解藕.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">TaskExecutionWebService</span> <span class="o">{</span>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 线程池大小</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">int</span> <span class="n">POOL_SIZE</span> <span class="o">=</span> <span class="mi">100</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="n">Executor</span> <span class="n">executor</span> <span class="o">=</span> <span class="n">Executors</span><span class="o">.</span><span class="na">newFixedThreadPool</span><span class="o">(</span><span class="n">POOL_SIZE</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">main</span><span class="o">(</span><span class="n">String</span><span class="o">[]</span> <span class="n">args</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">IOException</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">ServerSocket</span> <span class="n">serverSocket</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">ServerSocket</span><span class="o">(</span><span class="mi">80</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">while</span><span class="o">(</span><span class="kc">true</span><span class="o">){</span>
+</span><span class='line'>            <span class="kd">final</span> <span class="n">Socket</span> <span class="n">socket</span> <span class="o">=</span> <span class="n">serverSocket</span><span class="o">.</span><span class="na">accept</span><span class="o">();</span>
+</span><span class='line'>            <span class="n">Runnable</span> <span class="n">runnable</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">Runnable</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>                <span class="nd">@Override</span>
+</span><span class='line'>                <span class="kd">public</span> <span class="kt">void</span> <span class="nf">run</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">handRequest</span><span class="o">(</span><span class="n">socket</span><span class="o">);</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>            <span class="o">};</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="n">executor</span><span class="o">.</span><span class="na">execute</span><span class="o">(</span><span class="n">runnable</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">handRequest</span><span class="o">(</span><span class="n">Socket</span> <span class="n">socket</span><span class="o">){</span>
+</span><span class='line'>        <span class="c1">//TODO</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>线程池</h3>
+
+<p>优点:重用存在的线程;任务达到时候,不需要等待线程创建;</p>
+
+<p>Executors提供了一些静态方法:
+1. newFixedThreadPool(int nThreads):最多nThreads个线程,当某一个线程由于非预期的Exception而结束,线程池会补充一个新的线程;
+2. newSingleThreadExecutor():创建一个单线程化的executor,如果这个线程异常结束,会有量外一个取代它;
+3. newCachedThreadPool():创建可缓存的线程池,如果当前线程池的长度超过处理的需要时候,它可以灵活的收回空闲的线程;当需求增加时候,它可以灵活的添加新的线程,不对池的长度做任何限制;
+4. newScheduledThreadPool(int corePoolSize):创建一个定长的线程池,支持定时的周期性的任务执行,类似与Timer;</p>
+
+<h3>Executor的生命周期</h3>
+
+<p>Executor是异步的执行任务,所有在任何时间里,所有之前提交的任务的状态都不可能立即可见,这些任务中,有些可能已经完成,有些可能正在运行,有些还可能还在队列中等待执行;</p>
+
+<p>关闭应用程序时,程序会出现很多种情况:最平缓的关闭(任务全部完成而且没有任何新的工作)到最唐突的关闭(拔掉电源),以及介于这两个极端之前的各种可能.</p>
+
+<p>为了解决执行服务的声明周期问题,ExecutorService接口扩展了Executoe,添加了一些用于生命周期管理的方法.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">interface</span> <span class="nc">ExecutorService</span> <span class="kd">extends</span> <span class="n">Executor</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kt">void</span> <span class="nf">shutdown</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">List</span><span class="o">&lt;</span><span class="n">Runnable</span><span class="o">&gt;</span> <span class="nf">shutdownNow</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">...</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ExecutorService暗示了声明周期的3种状态:运行,关闭和终止.ExecutorService创建后的初始状态是运行状态.shutdown()方法会启动一个平缓的关闭:停止接受新的任务,同时等待已提交的任务执行完成,包括尚未开始的任务.shutdownNow()方法会启动一个强制的关闭过程:尝试取消所有运行中的任务和排在队列中尚未开始的任务.</p>
+
+<p>我们可以awaitTermination()等待ExecutorService到达中止状态,也可以轮询isTerminated()判断ExecutorService是否已经终止.</p>
+
+<h3>延迟的并据周期性的任务</h3>
+
+<p>考虑用ScheduledThreadPoolExecutor代替Timer,ScheduledThreadPoolExecutor可以用Executors.newScheduledThreadPool()工厂方法创建一个ScheduledThreadPoolExecutor.</p>
+
+<p>调度线程池(Scheduled Thread Pool)让我们可以提供多个线程来执行延迟的周星任务,而Timer是单线程的.</p>
+
+<p>Timer的另外一个问题是如果TimerTask异常会终止timer线程.</p>
+
+<p>DelayQueue管理着一个包含Delayed对象的容器,每个Delayed对象都与一个延迟时间相关联:只有在元素过期胡,DelayQueue才能让你执行take获取元素.从DelayQueue中返回的对象将依据它们所延迟的时间进行排序.</p>
+
+<h1>3.寻找可强化的并行性</h1>
+
+<h3>可携带结果的任务:Callable和Future</h3>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">interface</span> <span class="nc">Future</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kt">boolean</span> <span class="nf">cancel</span><span class="o">(</span><span class="kt">boolean</span> <span class="n">mayInterruptIfRunning</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kt">boolean</span> <span class="nf">isCancelled</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kt">boolean</span> <span class="nf">isDone</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">V</span> <span class="nf">get</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">,</span> <span class="n">ExecutionException</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">V</span> <span class="nf">get</span><span class="o">(</span><span class="kt">long</span> <span class="n">timeout</span><span class="o">,</span> <span class="n">TimeUnit</span> <span class="n">unit</span><span class="o">)</span>
+</span><span class='line'>        <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">,</span> <span class="n">ExecutionException</span><span class="o">,</span> <span class="n">TimeoutException</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ExecutorService的所有submit方法都返回Future:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">interface</span> <span class="nc">ExecutorService</span> <span class="kd">extends</span> <span class="n">Executor</span> <span class="o">{</span>
+</span><span class='line'>    <span class="o">...</span>
+</span><span class='line'>    <span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="n">Future</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="nf">submit</span><span class="o">(</span><span class="n">Callable</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="n">task</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="n">Future</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="nf">submit</span><span class="o">(</span><span class="n">Runnable</span> <span class="n">task</span><span class="o">,</span> <span class="n">T</span> <span class="n">result</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">Future</span><span class="o">&lt;?&gt;</span> <span class="n">submit</span><span class="o">(</span><span class="n">Runnable</span> <span class="n">task</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">...</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>CompletionService</h3>
+
+<p>CompletionService整合了Executor和BlockingQUeue的功能.可以将Callable任务提交给它执行,染红使用类似于队列的take和poll方法,在结果完整(Future的get正确返回)可用时获得这个结果.ExecutorCompletionService是实现CompletionService接口的一个类,它将计算任务委托给一个Executor.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">interface</span> <span class="nc">CompletionService</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">Future</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">submit</span><span class="o">(</span><span class="n">Callable</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">task</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">Future</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">submit</span><span class="o">(</span><span class="n">Runnable</span> <span class="n">task</span><span class="o">,</span> <span class="n">V</span> <span class="n">result</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">Future</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">take</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">Future</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">poll</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">Future</span><span class="o">&lt;</span><span class="n">V</span><span class="o">&gt;</span> <span class="nf">poll</span><span class="o">(</span><span class="kt">long</span> <span class="n">timeout</span><span class="o">,</span> <span class="n">TimeUnit</span> <span class="n">unit</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">InterruptedException</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>使用CompletionService完成页面渲染器(包含文本渲染,图片渲染,图片需要先下载):每需要下载一个图像,就创建一个独立的任务,在线程池中执行,将顺序的图片下载转换为并行.从CompletionService中获取结构,只要任何一个图像下载完成,就立刻展示.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Render</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="n">ExecutorService</span> <span class="n">executorService</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">Render</span><span class="o">(</span><span class="n">ExecutorService</span> <span class="n">executorService</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">executorService</span> <span class="o">=</span> <span class="n">executorService</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 渲染页面,包括文本和图片</span>
+</span><span class='line'><span class="cm">     * </span>
+</span><span class='line'><span class="cm">     * @param source</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kt">void</span> <span class="nf">renderPage</span><span class="o">(</span><span class="n">CharSequence</span> <span class="n">source</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">final</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">ImageInfo</span><span class="o">&gt;</span> <span class="n">imageInfoList</span> <span class="o">=</span> <span class="n">scanImageInfoList</span><span class="o">(</span><span class="n">source</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">CompletionService</span><span class="o">&lt;</span><span class="n">ImageData</span><span class="o">&gt;</span> <span class="n">completionService</span> <span class="o">=</span> <span class="k">new</span> <span class="n">ExecutorCompletionService</span><span class="o">&lt;</span><span class="n">ImageData</span><span class="o">&gt;(</span><span class="n">executorService</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/** 建立下载图片的任务,提交到CompletionService */</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kd">final</span> <span class="n">ImageInfo</span> <span class="n">imageInfo</span> <span class="o">:</span> <span class="n">imageInfoList</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">completionService</span><span class="o">.</span><span class="na">submit</span><span class="o">(</span><span class="k">new</span> <span class="n">Callable</span><span class="o">&lt;</span><span class="n">ImageData</span><span class="o">&gt;()</span> <span class="o">{</span>
+</span><span class='line'>                <span class="nd">@Override</span>
+</span><span class='line'>                <span class="kd">public</span> <span class="n">ImageData</span> <span class="nf">call</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">Exception</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="n">imageInfo</span><span class="o">.</span><span class="na">downloadImage</span><span class="o">();</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>            <span class="o">});</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/** 渲染文本 */</span>
+</span><span class='line'>        <span class="n">renderText</span><span class="o">(</span><span class="n">source</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/** 获取图片下载结果,渲染图片 */</span>
+</span><span class='line'>        <span class="k">try</span><span class="o">{</span>
+</span><span class='line'>            <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">imageInfoList</span><span class="o">.</span><span class="na">size</span><span class="o">();</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">Future</span><span class="o">&lt;</span><span class="n">ImageData</span><span class="o">&gt;</span> <span class="n">future</span> <span class="o">=</span> <span class="n">completionService</span><span class="o">.</span><span class="na">take</span><span class="o">();</span>
+</span><span class='line'>                <span class="n">renderImage</span><span class="o">(</span><span class="n">future</span><span class="o">.</span><span class="na">get</span><span class="o">());</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span><span class="k">catch</span><span class="o">(</span><span class="n">InterruptedException</span> <span class="n">ie</span><span class="o">){</span>
+</span><span class='line'>            <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">().</span><span class="na">interrupt</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span><span class="k">catch</span><span class="o">(</span><span class="n">ExecutionException</span> <span class="n">ee</span><span class="o">){</span>
+</span><span class='line'>            <span class="c1">//TODO</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>为任务设置时限</h3>
+
+<p>某些任务需要在一定时间内返回结构,超时则结果无意义.</p>
+
+<p>Future的带限时版本的get方法满足需求,超时会抛出TimeoutException.</p>
+
+<p>使用限时任务的另外一个问题是,当它们超时的时候,应该停止他们无意义的继续计算.Future.get()抛出TimeoutException异常,则可以通过Future取消任务.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="cm">/**</span>
+</span><span class='line'><span class="cm"> * 带广告的页面渲染,广告超时未获得则不显示广告</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="n">Page</span> <span class="nf">getRenderPageWithAd</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kt">long</span> <span class="n">endNanos</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="na">currentTimeMillis</span><span class="o">()</span> <span class="o">+</span> <span class="n">TIME_BUDGET</span><span class="o">;</span>
+</span><span class='line'>    <span class="cm">/** 获取广告的future */</span>
+</span><span class='line'>    <span class="n">Future</span><span class="o">&lt;</span><span class="n">Ad</span><span class="o">&gt;</span> <span class="n">future</span> <span class="o">=</span> <span class="n">executorService</span><span class="o">.</span><span class="na">submit</span><span class="o">(</span><span class="k">new</span> <span class="n">FetchAdTask</span><span class="o">&lt;</span><span class="n">Ad</span><span class="o">&gt;());</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/** 获取原始待渲染页面 */</span>
+</span><span class='line'>    <span class="n">Page</span> <span class="n">page</span> <span class="o">=</span> <span class="n">getRenderPage</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/** 获取广告 */</span>
+</span><span class='line'>    <span class="n">Ad</span> <span class="n">ad</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kt">long</span>  <span class="n">timeLeft</span> <span class="o">=</span> <span class="n">endNanos</span> <span class="o">-</span> <span class="n">System</span><span class="o">.</span><span class="na">currentTimeMillis</span><span class="o">();</span>
+</span><span class='line'>        <span class="n">ad</span> <span class="o">=</span> <span class="n">future</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">timeLeft</span><span class="o">,</span> <span class="n">TimeUnit</span><span class="o">.</span><span class="na">MILLISECONDS</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">ie</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">ad</span> <span class="o">=</span> <span class="n">DEFAULT_AD</span><span class="o">;</span>
+</span><span class='line'>        <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">().</span><span class="na">interrupt</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">ExecutionException</span> <span class="n">ee</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">ad</span> <span class="o">=</span> <span class="n">DEFAULT_AD</span>
+</span><span class='line'>    <span class="o">}</span><span class="k">catch</span> <span class="o">(</span><span class="n">TimeoutException</span> <span class="n">te</span><span class="o">){</span>
+</span><span class='line'>        <span class="cm">/** 超时,放弃广告,并取消获取广告的任务 */</span>
+</span><span class='line'>        <span class="n">ad</span> <span class="o">=</span> <span class="n">DEFAULT_AD</span><span class="o">;</span>
+</span><span class='line'>        <span class="n">future</span><span class="o">.</span><span class="na">cancel</span><span class="o">(</span><span class="kc">true</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">page</span><span class="o">.</span><span class="na">setAd</span><span class="o">(</span><span class="n">ad</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">return</span> <span class="n">page</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -3677,170 +4089,6 @@ ConcurrentHashMap增加的一些原子操作:
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/05/30/k-th-smallest-element-in-the-union-of-two-sorted-arrays/">两个已序数组的第k小元素</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-05-30T10:44:06+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>30</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>10:44 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h2>Problem:</h2>
-
-<p>两个已序数组(从小到大)的第k小元素.数组分别记为A(长度m)和B(长度n).</p>
-
-<h2>Solutions</h2>
-
-<h3>方法1</h3>
-
-<p>将两个数组merge成一个有序数组(m+n大小),再直接取第k个元素.</p>
-
-<p>时间复杂度:O(m+n).</p>
-
-<p>空间复杂度:O(m+n).</p>
-
-<h3>方法2</h3>
-
-<p>两个指针i和j分别从小到大遍历两个数组,代码大致如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>i=0, j=0
-</span><span class='line'>while((i+j)&lt;k && (i&lt;m || j&lt;n)){
-</span><span class='line'>    if(A[i] &lt; B[j]) i++;
-</span><span class='line'>    else j++;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>时间复杂度:O(k).</p>
-
-<p>空间复杂度:O(1).</p>
-
-<h3>方法3</h3>
-
-<p>利用方法2,我们发现,如果</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>B[j-1] &lt; A[i] &lt; B[j]</span></code></pre></td></tr></table></div></figure>
-
-
-<p>则,A[i]为第i+j+1小的元素,同理,如果</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>A[i-1] &lt; B[j] &lt; A[i]</span></code></pre></td></tr></table></div></figure>
-
-
-<p>则B[j]是第i+j+1小的元素.令</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>i+j+1 = k
-</span><span class='line'>即
-</span><span class='line'>i+j=k-1</span></code></pre></td></tr></table></div></figure>
-
-
-<p>则找到了我们需要的第k小元素.</p>
-
-<p>下面是我们的方法:</p>
-
-<ol>
-<li><p>二分搜索数组A,i的初值:
-<code>
-i = (int)((double)m / (m+n) * (k-1));
-</code>
-令j = k-1-i;</p></li>
-<li><p>比较,如果
-<code>
-B[j-1] &lt; A[i] &lt; B[j]
-</code>
-则返回A[i]. 如果
-<code>
-A[i-1] &lt; B[j] &lt; A[i]
-</code>
-则返回B[j];</p></li>
-<li><p>步骤2未结束,则比较A[i]和B[j]</p>
-
-<p>如果A[i]&lt;B[j],则我们可以排除比A[i]小的元素和比B[j]大的元素,即</p>
-
-<p>在A[i+1, m]和B[0, j]中查找第k-i小的元素</p>
-
-<p>否在,可以排除比B[j]小的元素和比A[i]大的元素,即</p>
-
-<p>在A[0, i]和B[j+1, n]中查找第k-j小的元素</p></li>
-</ol>
-
-
-<p>简单示例代码(不完整):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>int kthSmallest(int A[], int m, int B[], int n, int k) {
-</span><span class='line'>  
-</span><span class='line'>  int i = (int)((double)m / (m+n) * (k-1));
-</span><span class='line'>  int j = (k-1) - i;
-</span><span class='line'>
-</span><span class='line'>  int Ai_1 = ((i == 0) ? INT_MIN : A[i-1]);
-</span><span class='line'>  int Bj_1 = ((j == 0) ? INT_MIN : B[j-1]);
-</span><span class='line'>  int Ai   = ((i == m) ? INT_MAX : A[i]);
-</span><span class='line'>  int Bj   = ((j == n) ? INT_MAX : B[j]);
-</span><span class='line'> 
-</span><span class='line'>  if (Bj_1 &lt; Ai && Ai &lt; Bj)
-</span><span class='line'>    return Ai;
-</span><span class='line'>  else if (Ai_1 &lt; Bj && Bj &lt; Ai)
-</span><span class='line'>    return Bj;
-</span><span class='line'> 
-</span><span class='line'>  if (Ai &lt; Bj)
-</span><span class='line'>    return kthSmallest(A+i+1, m-i-1, B, j, k-i);
-</span><span class='line'>  else
-</span><span class='line'>    return kthSmallest(A, i, B+j+1, n-j-1, k-j);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>时间复杂度:O(logm + logn)</p>
-
-<p>空间复杂度:O(1)</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/11">&larr; Older</a>
@@ -3860,6 +4108,10 @@ A[i-1] &lt; B[j] &lt; A[i]
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2016/02/03/strace/">Strace</a>
       </li>
     
@@ -3873,10 +4125,6 @@ A[i-1] &lt; B[j] &lt; A[i]
     
       <li class="post">
         <a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/11/21/ju-bu-min-gan-hash/">局部敏感Hash</a>
       </li>
     
   </ul>
@@ -3903,7 +4151,7 @@ A[i-1] &lt; B[j] &lt; A[i]
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (8)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (4)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

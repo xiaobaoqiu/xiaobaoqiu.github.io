@@ -4,7 +4,7 @@
   <title><![CDATA[xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2016-02-20T15:05:26+08:00</updated>
+  <updated>2016-03-21T15:16:18+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,618 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[从代理到Spring事务]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2016/03/11/cong-dai-li-dao-springshi-wu/"/>
+    <updated>2016-03-11T17:15:46+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2016/03/11/cong-dai-li-dao-springshi-wu</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.%E4%BB%A3%E7%90%86">1.代理</a>
+
+<ul>
+<li><a href="#1.1%20%E4%BB%A3%E7%90%86%E6%A8%A1%E5%BC%8F">1.1 代理模式</a></li>
+<li><a href="#1.2%20Java%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86">1.2 Java动态代理</a></li>
+<li><a href="#1.3%20CGLib%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86">1.3 CGLib动态代理</a></li>
+</ul>
+</li>
+<li><a href="#2.Spring%E4%BA%8B%E5%8A%A1">2.Spring事务</a>
+
+<ul>
+<li><a href="#2.1%20%E7%BC%96%E7%A8%8B%E5%BC%8F%E4%BA%8B%E5%8A%A1">2.1 编程式事务</a></li>
+<li><a href="#2.2%20AOP%E5%AE%9E%E7%8E%B0">2.2 AOP实现</a></li>
+<li><a href="#2.3%20Aspectj%E5%AE%9E%E7%8E%B0">2.3 Aspectj实现</a></li>
+</ul>
+</li>
+</ul>
+
+
+<p>最近再项目中发现不少同事不理解默认情况下的Spring事务的AOP机制,导致随意使用事务注解.因此也在很多场景事务不生效。因此想从代理机制开始理一下整个Spring声明式的原理。</p>
+
+<h2 id="1.代理">1.代理</h2>
+
+
+<p>通常，我们代码中处理核心的业务逻辑，还包含一些枝节性的代码和功能，比如日志记录、消息发送、安全、事务保证和监控等。</p>
+
+<p>我们通常期望将这些枝节性的代码功能和我们的核心业务逻辑分离，减少业务功能和枝节功能的耦合。这时候我们就要使用代理来达到我们的目的。</p>
+
+<p>代理的作用是：为其它对象提供一种代理以控制对这个对象的访问。简单理解就是中间的作用。代理一般涉及到三个角色：</p>
+
+<pre><code>(1).抽象角色：声明真实对象和代理对象的共同接口
+(2).代理角色：代理对象内部包含有真实角色的引用，从而可以操作真实角色，同时代理对象与真实对象有相同的接口，能在任何时候代替真实对象，同时代理对象可以在执行真实对 象前后加入特定的逻辑以实现功能的扩展。
+(3).真实角色：代理角色所代表的真实对象，是我们最终要引用的对象
+</code></pre>
+
+<h4 id="1.1 代理模式">1.1 代理模式</h4>
+
+
+<p>代理模式是一个经典的设计模式，介绍往上很多。</p>
+
+<p>下面是一个最简单的实现：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public interface IHello {
+</span><span class='line'>    void hello();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class HelloImpl implements IHello {
+</span><span class='line'>    @Override
+</span><span class='line'>    public void hello() {
+</span><span class='line'>        System.out.println("HelloImpl: Hello World.");
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class HelloProxyImpl implements IHello {
+</span><span class='line'>
+</span><span class='line'>    private IHello inner;
+</span><span class='line'>
+</span><span class='line'>    public HelloProxyImpl(IHello inner) {
+</span><span class='line'>        this.inner = inner;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public void hello() {
+</span><span class='line'>        doSomethingBefore();
+</span><span class='line'>        
+</span><span class='line'>        inner.hello();
+</span><span class='line'>        
+</span><span class='line'>        doSomethingAfter();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private void doSomethingBefore() {
+</span><span class='line'>        System.out.println("HelloProxyImpl: Before hello()...");
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private void doSomethingAfter() {
+</span><span class='line'>        System.out.println("HelloProxyImpl: After hello()...");
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>UML图大致如下：
+<img src="http://xiaobaoqiu.github.io/images/spring/proxy_mode.png"></p>
+
+<p>从代码上我们可以看出，代理模式要求(这也是它的限制所在)：
+(1).代理类需要和被代理者一样实现相同的接口；
+(2).代理类包含被代理者的引用；</p>
+
+<h4 id="1.2 Java动态代理">1.2 Java动态代理</h4>
+
+
+<p>代理模式我们可以理解为一种静态代理，其问题是需要我们显示的为每个需要被代理的类实现一个代理类，即一个代理类只能为i一个被代理者做代理的功能。如果有上千个类需要代理，估计要骂娘了。</p>
+
+<p>java动态代理正是为了解决这个问题。主要通过java.lang.reflect.Proxy类和java.lang.reflect.InvocationHandler接口。我们只需要实现InvocationHandler接口，在实现invoke()方法的时候加上我们的代理逻辑。</p>
+
+<p>一个简单的使用实例如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * @author xiaobaoqiu  Date: 16-3-10 Time: 下午6:18
+</span><span class='line'> */
+</span><span class='line'>public class JavaDynamicProxy implements InvocationHandler {
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 被代理者
+</span><span class='line'>     */
+</span><span class='line'>    private Object inner;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 生成代理类
+</span><span class='line'>     */
+</span><span class='line'>    public static Object generateProxy(Object inner) {
+</span><span class='line'>        return Proxy.newProxyInstance(
+</span><span class='line'>                inner.getClass().getClassLoader(),
+</span><span class='line'>                inner.getClass().getInterfaces(),
+</span><span class='line'>                new JavaDynamicProxy(inner));
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private JavaDynamicProxy(Object inner) {
+</span><span class='line'>        this.inner = inner;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+</span><span class='line'>        doSomethingBefore();
+</span><span class='line'>
+</span><span class='line'>        Object result = method.invoke(inner, args);
+</span><span class='line'>
+</span><span class='line'>        doSomethingAfter();
+</span><span class='line'>
+</span><span class='line'>        return result;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private void doSomethingBefore() {
+</span><span class='line'>        System.out.println("JavaDynamicProxy: Before...");
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private void doSomethingAfter() {
+</span><span class='line'>        System.out.println("JavaDynamicProxy: After...");
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>//使用
+</span><span class='line'>public static void main(String[] args) {
+</span><span class='line'>        //被动态代理的IHello实例对象A
+</span><span class='line'>        IHello helloA = new HelloImpl();
+</span><span class='line'>        //生成对象A的动态代理
+</span><span class='line'>        IHello helloAProxy = (IHello) JavaDynamicProxy.generateProxy(helloA);
+</span><span class='line'>        helloAProxy.hello();
+</span><span class='line'>
+</span><span class='line'>        System.out.println("-------------------------------------------------");
+</span><span class='line'>        // 一个JavaDynamicProxy可以一直使用
+</span><span class='line'>
+</span><span class='line'>        //被动态代理的IHello实例对象B
+</span><span class='line'>        IHello helloB = new HelloWithLogImpl();
+</span><span class='line'>        //生成对象B的动态代理
+</span><span class='line'>        IHello helloBProxy = (IHello) JavaDynamicProxy.generateProxy(helloB);
+</span><span class='line'>        helloBProxy.hello();
+</span><span class='line'>
+</span><span class='line'>        System.out.println("-------------------------------------------------");
+</span><span class='line'>        //被动态代理对象IBye实例
+</span><span class='line'>        IBye bye = new ByeImpl();
+</span><span class='line'>        //生成IBye实例的动态代理
+</span><span class='line'>        IBye byeProxy = (IBye) JavaDynamicProxy.generateProxy(bye);
+</span><span class='line'>        byeProxy.bye();
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>JavaDynamicProxy.generateProxy的输出会是一个动态的代理类。debug信息如下，从debug信息我们大致知道，这个代理类也实现了我们的IBye接口，类名称为$Proxy0,内部包含一个属性名为h的属性，h指向的就是我们实现的InvocationHandler的类(这里即JavaDynamicProxy)的实例。</p>
+
+<p><img src="http://xiaobaoqiu.github.io/images/spring/java_proxy_debug.png"></p>
+
+<p>但是Java动态代理的限制是：
+(1).被代理的类要求至少实现了一个Interface;
+(2).被代理的类要求有public的构造函数(即没有显示的将其设置为private等);
+(3).被代理的类要求不是final;</p>
+
+<p>如下代理一个没有实现任何接口的类会报错</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>    //没有实现任何interface的类使不能被动态代理的
+</span><span class='line'>    System.out.println("-------------------------------------------------");
+</span><span class='line'>    HelloWithoutInterface helloC = new HelloWithoutInterface();
+</span><span class='line'>    //生成对象B的动态代理
+</span><span class='line'>    HelloWithoutInterface helloCProxy = (HelloWithoutInterface) JavaDynamicProxy.generateProxy(helloC);
+</span><span class='line'>    helloCProxy.hello();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>错误信息如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Exception in thread "main" java.lang.ClassCastException: com.sun.proxy.$Proxy2 cannot be cast to proxy.javaProxy.HelloWithoutInterface
+</span><span class='line'>  at proxy.javaProxy.JavaProxyMain.main(JavaProxyMain.java:42)
+</span><span class='line'>  at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+</span><span class='line'>  at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+</span><span class='line'>  at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+</span><span class='line'>  at java.lang.reflect.Method.invoke(Method.java:606)
+</span><span class='line'>  at com.intellij.rt.execution.application.AppMain.main(AppMain.java:140)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Java动态代理的机制是利用反射机制生成。具体代码可以debug，主要的代码如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>//Proxy.java
+</span><span class='line'>public static Object newProxyInstance(ClassLoader loader, Class&lt;?&gt;[] interfaces, InvocationHandler h) throws IllegalArgumentException {
+</span><span class='line'>  ...
+</span><span class='line'>  Class&lt;?&gt; cl = getProxyClass0(loader, intfs);  //生成代理类
+</span><span class='line'>  ...
+</span><span class='line'>  return newInstance(cons, ih);   // 生成代理类的实例
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>private static Class&lt;?&gt; getProxyClass0(ClassLoader loader,  Class&lt;?&gt;... interfaces) {
+</span><span class='line'>        //生成代理类的主要逻辑在ProxyClassFactory
+</span><span class='line'>        return proxyClassCache.get(loader, interfaces);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>//ProxyClassFactory的apply方法
+</span><span class='line'>public Class&lt;?&gt; apply(ClassLoader loader, Class&lt;?&gt;[] interfaces) {
+</span><span class='line'>  ...
+</span><span class='line'>            String proxyPkg = null;     // 生成代理类的包路径
+</span><span class='line'>            ...
+</span><span class='line'>            if (proxyPkg == null) {
+</span><span class='line'>                // if no non-public proxy interfaces, use com.sun.proxy package
+</span><span class='line'>                proxyPkg = ReflectUtil.PROXY_PACKAGE + ".";   //默认路径在com.sun.proxy下面
+</span><span class='line'>            }
+</span><span class='line'>
+</span><span class='line'>            long num = nextUniqueNumber.getAndIncrement();    //代理类的序号， 我们熟悉的$Proxy0中的0
+</span><span class='line'>            String proxyName = proxyPkg + proxyClassNamePrefix + num; //代理类的类名称
+</span><span class='line'>
+</span><span class='line'>            //使用ProxyGenerator生成代理类的字节码
+</span><span class='line'>            byte[] proxyClassFile = ProxyGenerator.generateProxyClass(proxyName, interfaces);
+</span><span class='line'>            //生成代理类
+</span><span class='line'>            return defineClass0(loader, proxyName, proxyClassFile, 0, proxyClassFile.length);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>//ProxyGenerator.generateProxyClass的代码太恶心的...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们可以自己使用ProxyGenerator来生成代理类并将其字节码记录下来：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// 获取代理类的字节码
+</span><span class='line'>      byte[] classFile = ProxyGenerator.generateProxyClass("$Proxy0", ByeImpl.class.getInterfaces());
+</span><span class='line'>      //将字节码写文件，建议写成.class文件</span></code></pre></td></tr></table></div></figure>
+
+
+<p>获取的字节码如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import java.lang.reflect.InvocationHandler;
+</span><span class='line'>import java.lang.reflect.Method;
+</span><span class='line'>import java.lang.reflect.Proxy;
+</span><span class='line'>import java.lang.reflect.UndeclaredThrowableException;
+</span><span class='line'>import proxy.sample.IBye;
+</span><span class='line'>
+</span><span class='line'>public final class $Proxy0 extends Proxy implements IBye {
+</span><span class='line'>    private static Method m1;
+</span><span class='line'>    private static Method m3;
+</span><span class='line'>    private static Method m0;
+</span><span class='line'>    private static Method m2;
+</span><span class='line'>
+</span><span class='line'>    public $Proxy0(InvocationHandler var1) throws  {
+</span><span class='line'>        super(var1);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public final boolean equals(Object var1) throws  {
+</span><span class='line'>        try {
+</span><span class='line'>            return ((Boolean)super.h.invoke(this, m1, new Object[]{var1})).booleanValue();
+</span><span class='line'>        } catch (RuntimeException | Error var3) {
+</span><span class='line'>            throw var3;
+</span><span class='line'>        } catch (Throwable var4) {
+</span><span class='line'>            throw new UndeclaredThrowableException(var4);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public final void bye() throws  {
+</span><span class='line'>        try {
+</span><span class='line'>            super.h.invoke(this, m3, (Object[])null);
+</span><span class='line'>        } catch (RuntimeException | Error var2) {
+</span><span class='line'>            throw var2;
+</span><span class='line'>        } catch (Throwable var3) {
+</span><span class='line'>            throw new UndeclaredThrowableException(var3);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public final int hashCode() throws  {
+</span><span class='line'>        try {
+</span><span class='line'>            return ((Integer)super.h.invoke(this, m0, (Object[])null)).intValue();
+</span><span class='line'>        } catch (RuntimeException | Error var2) {
+</span><span class='line'>            throw var2;
+</span><span class='line'>        } catch (Throwable var3) {
+</span><span class='line'>            throw new UndeclaredThrowableException(var3);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public final String toString() throws  {
+</span><span class='line'>        try {
+</span><span class='line'>            return (String)super.h.invoke(this, m2, (Object[])null);
+</span><span class='line'>        } catch (RuntimeException | Error var2) {
+</span><span class='line'>            throw var2;
+</span><span class='line'>        } catch (Throwable var3) {
+</span><span class='line'>            throw new UndeclaredThrowableException(var3);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    static {
+</span><span class='line'>        try {
+</span><span class='line'>            m1 = Class.forName("java.lang.Object").getMethod("equals", new Class[]{Class.forName("java.lang.Object")});
+</span><span class='line'>            m3 = Class.forName("proxy.sample.IBye").getMethod("bye", new Class[0]);
+</span><span class='line'>            m0 = Class.forName("java.lang.Object").getMethod("hashCode", new Class[0]);
+</span><span class='line'>            m2 = Class.forName("java.lang.Object").getMethod("toString", new Class[0]);
+</span><span class='line'>        } catch (NoSuchMethodException var2) {
+</span><span class='line'>            throw new NoSuchMethodError(var2.getMessage());
+</span><span class='line'>        } catch (ClassNotFoundException var3) {
+</span><span class='line'>            throw new NoClassDefFoundError(var3.getMessage());
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从生成的类我们知道，代理类继承Proxy类(这就是为什么Proxy类内的InvocationHandler实例未protected)并实现我们需要的被代理者的Interface(比如这里的bye()方法)，另外它只要一个接受一个InvocationHandler为参数的构造函数。当我们调用代理类的bye()方法时候，其实是调用我们实现的InvocationHandler(即上面的JavaDynamicProxy)的invoke()方法，在invoke()方法里面，我们实现了我的代理逻辑。</p>
+
+<h4 id="1.3 CGLib动态代理">1.3 CGLib动态代理</h4>
+
+
+<h2 id="2.Spring事务">2.Spring事务</h2>
+
+
+<p>目标: The most common reason for using transactions in an application is to maintain a high degree of data integrity and consistency.</p>
+
+<p>代理实现选择器:
+AdviceMode
+TransactionManagementConfigurationSelector</p>
+
+<p>声明事务切面实现:
+TransactionInterceptor</p>
+
+<p>事务管理器
+PlatformTransactionManager
+DataSourceTransactionManager</p>
+
+<p>事务实现
+Connection关闭自动提交
+ConnectionHolder来保持Connection</p>
+
+<p>事务模板
+TransactionTempale</p>
+
+<p>AOP简化事务模板</p>
+
+<p>核心类: PlatformTransactionManager</p>
+
+<p>隔离级别: Isolation
+传播属性: Propagation</p>
+
+<h4 id="2.1 编程式事务">2.1 编程式事务</h4>
+
+
+<h4 id="2.2 AOP实现">2.2 AOP实现</h4>
+
+
+<h4 id="2.3 Aspectj实现">2.3 Aspectj实现</h4>
+
+
+<p>参考:
+<a href="http://openwares.net/java/spring_mybatis_transaction.html">http://openwares.net/java/spring_mybatis_transaction.html</a>
+<a href="http://my.oschina.net/guanzhenxing/blog/214228">http://my.oschina.net/guanzhenxing/blog/214228</a>
+<a href="http://www.mybatis.org/spring/zh/transactions.html">http://www.mybatis.org/spring/zh/transactions.html</a>
+<a href="http://tracylihui.github.io/2015/07/28/spring/Spring%E5%A3%B0%E6%98%8E%E5%BC%8F%E4%BA%8B%E5%8A%A1%E7%AE%A1%E7%90%86/">http://tracylihui.github.io/2015/07/28/spring/Spring%E5%A3%B0%E6%98%8E%E5%BC%8F%E4%BA%8B%E5%8A%A1%E7%AE%A1%E7%90%86/</a>
+<a href="http://www.cnblogs.com/davenkin/archive/2013/02/16/java-tranaction-1.html">http://www.cnblogs.com/davenkin/archive/2013/02/16/java-tranaction-1.html</a>
+<a href="http://www.importnew.com/12300.html">http://www.importnew.com/12300.html</a>
+详细介绍Spring事务管理: <a href="http://developer.51cto.com/art/200906/129854.htm">http://developer.51cto.com/art/200906/129854.htm</a>
+spring事务原理1-事务的抽象: <a href="http://sqtds.github.io/2014/06/09/2014/spring-tx1/">http://sqtds.github.io/2014/06/09/2014/spring-tx1/</a>
+Spring官方文档Transaction Management: <a href="http://docs.spring.io/autorepo/docs/spring/3.2.x/spring-framework-reference/html/transaction.html">http://docs.spring.io/autorepo/docs/spring/3.2.x/spring-framework-reference/html/transaction.html</a>
+Spring官方文档Aspect Oriented Programming with Spring: <a href="http://docs.spring.io/spring/docs/3.0.x/reference/aop.html">http://docs.spring.io/spring/docs/3.0.x/reference/aop.html</a>
+StackOverFlow Spring - @Transactional - What happens in background?: <a href="http://stackoverflow.com/questions/1099025/spring-transactional-what-happens-in-background">http://stackoverflow.com/questions/1099025/spring-transactional-what-happens-in-background</a>
+Transaction strategies: Understanding transaction pitfalls: <a href="http://www.ibm.com/developerworks/library/j-ts1/">http://www.ibm.com/developerworks/library/j-ts1/</a>
+Annotation-based Transactions in Spring: <a href="http://springinpractice.com/2008/03/18/annotation-based-transactions-in-spring">http://springinpractice.com/2008/03/18/annotation-based-transactions-in-spring</a>
+Design principle behind Transaction framework with Spring 3: <a href="http://stackoverflow.com/questions/11789857/design-principle-behind-transaction-framework-with-spring-3">http://stackoverflow.com/questions/11789857/design-principle-behind-transaction-framework-with-spring-3</a>
+Chapter 6. 使用Spring进行面向切面编程（AOP）: <a href="http://shouce.jb51.net/spring/aop.html">http://shouce.jb51.net/spring/aop.html</a>
+wiki: <a href="http://wiki.corp.qunar.com/display/~yushen.ma/Spring+3.x-JDBC+Transaction">http://wiki.corp.qunar.com/display/~yushen.ma/Spring+3.x-JDBC+Transaction</a>
+spring事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=52084161">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=52084161</a>
+spring 事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=93338632">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=93338632</a>
+aspectj事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=92656954">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=92656954</a></p>
+
+<p>Demo:
+编程事务: <a href="http://www.tutorialspoint.com/spring/programmatic_management.htm">http://www.tutorialspoint.com/spring/programmatic_management.htm</a>
+声明事务: <a href="http://www.tutorialspoint.com/spring/declarative_management.htm">http://www.tutorialspoint.com/spring/declarative_management.htm</a></p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Strace]]></title>
@@ -5143,184 +5755,6 @@ _ : 单个字符
 </span><span class='line'>  public static final int DEFAULT_MAX_DETERMINIZED_STATES = 10000;
 </span><span class='line'>  ...
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[系统当前用户]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/07/16/xi-tong-dang-qian-yong-hu/"/>
-    <updated>2015-07-16T04:25:57+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/07/16/xi-tong-dang-qian-yong-hu</id>
-    <content type="html"><![CDATA[<p>经常需要查看当前服务器哪些用户在登录,以及他们都在干什么.</p>
-
-<p>下面总结一些命令,其中last应该是最常用的命令.</p>
-
-<h1>1.w</h1>
-
-<p>w - Show who is logged on and what they are doing.</p>
-
-<p>主要字段:</p>
-
-<pre><code>LOGIN@: 什么时间登录的
-PCPU: 当前进程所用时间
-WHAT: 用户当前正在使用的命令
-</code></pre>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ w
-</span><span class='line'> 20:32:42 up  9:59, 15 users,  load average: 1.80, 1.26, 1.17
-</span><span class='line'>USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
-</span><span class='line'>xiaobaoq tty7     :0               10:34    9:58m 22:26   0.48s init --user
-</span><span class='line'>xiaobaoq pts/1    :0               10:35    2:22m  0.12s  0.12s /bin/bash
-</span><span class='line'>xiaobaoq pts/2    :0               11:12   44:10   0.26s  0.19s ssh cn6
-</span><span class='line'>xiaobaoq pts/7    :0               11:12    9:02m  0.15s  0.09s ssh cn6
-</span><span class='line'>xiaobaoq pts/8    :0               11:28    5:56m  0.09s  0.03s ssh cn5
-</span><span class='line'>xiaobaoq pts/12   :0               13:09    3:03m  0.30s  0.24s ssh cn0
-</span><span class='line'>xiaobaoq pts/13   :0               13:09    3:14m  0.13s  0.07s mysql -h...
-</span><span class='line'>xiaobaoq pts/14   :0               13:09    3:00m  1.23s  1.17s ssh cn0
-</span><span class='line'>xiaobaoq pts/18   :0               13:09    3:03m  3.42s  3.35s ssh cn0
-</span><span class='line'>xiaobaoq pts/20   :0               13:14    3:01m  0.45s  0.39s mysql -h...
-</span><span class='line'>xiaobaoq pts/22   :0               13:26    7:01m  0.13s  0.07s ssh cn0
-</span><span class='line'>xiaobaoq pts/23   :0               14:02   40:34   0.17s  0.17s /bin/bash
-</span><span class='line'>xiaobaoq pts/24   :0               14:03    2.00s  0.23s  0.00s w
-</span><span class='line'>xiaobaoq pts/25   :0               14:36    2:02   0.24s  0.18s ssh cn5
-</span><span class='line'>xiaobaoq pts/26   :0               17:41    2:47m  0.09s  0.09s /bin/bash</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.who</h1>
-
-<p>who - show who is logged on</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who
-</span><span class='line'>xiaobaoqiu tty7         2015-07-15 10:34 (:0)
-</span><span class='line'>xiaobaoqiu pts/1        2015-07-15 10:35 (:0)
-</span><span class='line'>xiaobaoqiu pts/2        2015-07-15 11:12 (:0)
-</span><span class='line'>xiaobaoqiu pts/7        2015-07-15 11:12 (:0)
-</span><span class='line'>xiaobaoqiu pts/8        2015-07-15 11:28 (:0)
-</span><span class='line'>xiaobaoqiu pts/12       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/13       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/14       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/18       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/20       2015-07-15 13:14 (:0)
-</span><span class='line'>xiaobaoqiu pts/22       2015-07-15 13:26 (:0)
-</span><span class='line'>xiaobaoqiu pts/23       2015-07-15 14:02 (:0)
-</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)
-</span><span class='line'>xiaobaoqiu pts/25       2015-07-15 14:36 (:0)
-</span><span class='line'>xiaobaoqiu pts/26       2015-07-15 17:41 (:0)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.users</h1>
-
-<p>users - print the user names of users currently logged in to the current host</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ users
-</span><span class='line'>xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.whoami</h1>
-
-<p>whoami - print effective userid</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ whoami
-</span><span class='line'>xiaobaoqiu
-</span><span class='line'>
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who am i
-</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)
-</span><span class='line'>
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who mom likes
-</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>5.id</h1>
-
-<p>id - print real and effective user and group IDs</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ id
-</span><span class='line'>uid=1000(xiaobaoqiu) gid=1000(xiaobaoqiu) 组=1000(xiaobaoqiu),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),108(lpadmin),124(sambashare)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>6.last</h1>
-
-<p>last, lastb - show listing of last logged in users</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ last
-</span><span class='line'>xiaobaoq pts/26       :0               Wed Jul 15 17:41   still logged in   
-</span><span class='line'>xiaobaoq pts/25       :0               Wed Jul 15 14:36   still logged in   
-</span><span class='line'>xiaobaoq pts/24       :0               Wed Jul 15 14:03   still logged in   
-</span><span class='line'>xiaobaoq pts/23       :0               Wed Jul 15 14:02   still logged in   
-</span><span class='line'>xiaobaoq pts/22       :0               Wed Jul 15 13:26   still logged in   
-</span><span class='line'>xiaobaoq pts/20       :0               Wed Jul 15 13:14   still logged in   
-</span><span class='line'>xiaobaoq pts/20       :0               Wed Jul 15 13:14 - 13:14  (00:00)    
-</span><span class='line'>xiaobaoq pts/18       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/14       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/13       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/12       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/8        :0               Wed Jul 15 11:28   still logged in   
-</span><span class='line'>xiaobaoq pts/7        :0               Wed Jul 15 11:12   still logged in   
-</span><span class='line'>xiaobaoq pts/2        :0               Wed Jul 15 11:12   still logged in   
-</span><span class='line'>xiaobaoq pts/1        :0               Wed Jul 15 10:35   still logged in</span></code></pre></td></tr></table></div></figure>
 
 ]]></content>
   </entry>
