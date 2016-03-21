@@ -126,9 +126,9 @@
 
 <p>代理的作用是：为其它对象提供一种代理以控制对这个对象的访问。简单理解就是中间的作用。代理一般涉及到三个角色：</p>
 
-<pre><code>(1).抽象角色：声明真实对象和代理对象的共同接口
-(2).代理角色：代理对象内部包含有真实角色的引用，从而可以操作真实角色，同时代理对象与真实对象有相同的接口，能在任何时候代替真实对象，同时代理对象可以在执行真实对 象前后加入特定的逻辑以实现功能的扩展。
-(3).真实角色：代理角色所代表的真实对象，是我们最终要引用的对象
+<pre><code>(1).抽象角色：声明真实对象和代理对象的共同接口；
+(2).代理角色：代理对象内部包含有真实角色的引用，从而可以操作真实角色，同时代理对象与真实对象有相同的接口，能在任何时候代替真实对象，同时代理对象可以在执行真实对 象前后加入特定的逻辑以实现功能的扩展；
+(3).真实角色：代理角色所代表的真实对象，是我们最终要引用的对象；
 </code></pre>
 
 <h4 id="1.1 代理模式">1.1 代理模式</h4>
@@ -372,9 +372,10 @@
 
 <p>但是Java动态代理的限制是：</p>
 
-<p>(1).被代理的类要求至少实现了一个Interface;
+<pre><code>(1).被代理的类要求至少实现了一个Interface;
 (2).被代理的类要求有public的构造函数(即没有显示的将其设置为private等);
-(3).被代理的类要求不是final;</p>
+(3).被代理的类要求不是final;
+</code></pre>
 
 <p>如下代理一个没有实现任何接口的类会报错</p>
 
@@ -638,10 +639,330 @@
 
 <p><img src="/images/spring/java_dynamic_proxy.png"></p>
 
+<p>参考：<a href="http://www.cnblogs.com/cruze/p/3819761.html">http://www.cnblogs.com/cruze/p/3819761.html</a></p>
+
 <h4 id="1.3 CGLib动态代理">1.3 CGLib动态代理</h4>
 
 
-<p>鉴于Java动态代理的限制，我们有需要代理没有任何实现接口的类的时候，可以考虑使用CGLib。CGLib的全称是Code Generate Library。</p>
+<p>鉴于Java动态代理的限制，我们有需要代理没有任何实现接口的类的时候，可以考虑使用CGLib。CGLib的全称是Code Generate Library。CGLib的使用使用十分广泛，我们这里要讲的Spring AOP，已经EasyMock等。</p>
+
+<p>同样先上Demo代码，我们只需要实现MethodInterceptor接口：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * @author xiaobaoqiu  Date: 16-3-10 Time: 下午7:15
+</span><span class='line'> */
+</span><span class='line'>public class CglibDynamicProxy implements MethodInterceptor {
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 动态生成代理类
+</span><span class='line'>     */
+</span><span class='line'>    public Object generateProxy(Class cls) {
+</span><span class='line'>        Enhancer enhancer = new Enhancer();
+</span><span class='line'>        enhancer.setCallback(this);
+</span><span class='line'>//        enhancer.setCallbackFilter(); //filter
+</span><span class='line'>        enhancer.setSuperclass(cls);
+</span><span class='line'>        return enhancer.create();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public Object intercept(Object obj, Method method, Object[] args, MethodProxy proxy) throws Throwable {
+</span><span class='line'>        doSomethingBefore();
+</span><span class='line'>
+</span><span class='line'>        Object result = proxy.invokeSuper(obj, args);
+</span><span class='line'>
+</span><span class='line'>        doSomethingAfter();
+</span><span class='line'>
+</span><span class='line'>        return result;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private void doSomethingBefore() {
+</span><span class='line'>        System.out.println("CglibDynamicProxy: Before...");
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private void doSomethingAfter() {
+</span><span class='line'>        System.out.println("CglibDynamicProxy: After...");
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>//使用
+</span><span class='line'>public static void main(String[] args) {
+</span><span class='line'>        CglibDynamicProxy proxy = new CglibDynamicProxy();
+</span><span class='line'>        //注意: 原始类的instance不需要存在，只需要Class类型
+</span><span class='line'>
+</span><span class='line'>        //用接口IHello接, 或者 HelloImpl 接
+</span><span class='line'>        IHello helloAProxy = (IHello)proxy.generateProxy(HelloImpl.class);
+</span><span class='line'>        helloAProxy.hello();
+</span><span class='line'>
+</span><span class='line'>        System.out.println("-------------------------------------------------");
+</span><span class='line'>
+</span><span class='line'>        //用接口IHello接, 或者 HelloWithLogImpl 接
+</span><span class='line'>        IHello helloBProxy = (IHello)proxy.generateProxy(HelloWithLogImpl.class);
+</span><span class='line'>        helloBProxy.hello();
+</span><span class='line'>
+</span><span class='line'>        System.out.println("-------------------------------------------------");
+</span><span class='line'>
+</span><span class='line'>        //代理没有实现任何interface的类
+</span><span class='line'>        HelloWithoutInterface helloCProxy = (HelloWithoutInterface)proxy.generateProxy(HelloWithoutInterface.class);
+</span><span class='line'>        helloCProxy.hello();
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>同样我们debug一下，得到的信息如下，同样生成了代理类，类名称为proxy.sample.HelloImpl$$EnhancerByCGLIB$$b46b6f06，这个稀奇古怪的类名我们后面会分析：</p>
+
+<p><img src="/images/spring/cglib_proxy_debug.png"></p>
+
+<p>下面还是尝试分析CGLib动态代理的原理。默认情况下生成的代理class文件只存储在内存中，我们可以在代码中设置一个环境变量：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>System.setProperty(DebuggingClassWriter.DEBUG_LOCATION_PROPERTY, "/home/xiaobaoqiu/cglib_proxy");</span></code></pre></td></tr></table></div></figure>
+
+
+<p>之后我们在目标目录下得到很多的class，其中的proxy目录包含了生成的class文件。我们发现一大堆的class文件，类名都是稀奇古怪。我们先看看class文件的生成策略。每个Class Generator(比如这里的Enhancer)都继承自AbstractClassGenerator(实现接口ClassGenerator，这个接口只有一个generateClass的方法)，需要实现其generateClass()方法。generateClassName()方法用来生成Class名称：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private String generateClassName(Predicate nameTestPredicate) {
+</span><span class='line'>        return namingPolicy.getClassName(namePrefix, source.name, key, nameTestPredicate);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>//namingPolicy的默认实现NamingPolicy
+</span><span class='line'>public String getClassName(String prefix, String source, Object key, Predicate names) {
+</span><span class='line'>  //prefix为被代理类的路径，
+</span><span class='line'>        String base =
+</span><span class='line'>            prefix + "$$" +                       //prefix为被代理类的路径
+</span><span class='line'>            source.substring(source.lastIndexOf('.') + 1) +       //获取生成代理类的类，比如我们这里的Enhancer
+</span><span class='line'>            getTag() + "$$" +                     //getTag()默认为ByCGLIB
+</span><span class='line'>            Integer.toHexString(STRESS_HASH_CODE ? 0 : key.hashCode());   //hashcode
+</span><span class='line'>        String attempt = base;
+</span><span class='line'>        int index = 2;
+</span><span class='line'>        while (names.evaluate(attempt))       //如果有重复，则再在后面加上下标，小标从2开始
+</span><span class='line'>            attempt = base + "_" + index++;
+</span><span class='line'>        return attempt;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面正是进入class文件的生成原理分析，还是从源代码入手，enhancer.create()最终进入AbstractClassGenerator.create()方法，我们发现最终return的Object是从内部变量obj得来，因此，我们看看ClassLoaderData的生成逻辑</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>protected Object create(Object key) {
+</span><span class='line'>            ClassLoader loader = getClassLoader();
+</span><span class='line'>            Map&lt;ClassLoader, ClassLoaderData&gt; cache = CACHE;
+</span><span class='line'>            ClassLoaderData data = cache.get(loader);
+</span><span class='line'>            if (data == null) {
+</span><span class='line'>                synchronized (AbstractClassGenerator.class) {
+</span><span class='line'>                    data = cache.get(loader);
+</span><span class='line'>                    if (data == null) {
+</span><span class='line'>                        Map&lt;ClassLoader, ClassLoaderData&gt; newCache = new WeakHashMap&lt;ClassLoader, ClassLoaderData&gt;(cache);
+</span><span class='line'>                        data = new ClassLoaderData(classLoader);
+</span><span class='line'>                        newCache.put(classLoader, data);
+</span><span class='line'>                        CACHE = newCache;
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>            this.key = key;
+</span><span class='line'>            Object obj = data.get(this);
+</span><span class='line'>            if (obj instanceof Class) {
+</span><span class='line'>                return firstInstance((Class) obj);
+</span><span class='line'>            }
+</span><span class='line'>            return nextInstance(obj);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public ClassLoaderData(ClassLoader classLoader) {
+</span><span class='line'>            this.classLoader = new WeakReference&lt;ClassLoader&gt;(classLoader);
+</span><span class='line'>            Function&lt;AbstractClassGenerator, Object&gt; load =
+</span><span class='line'>                    new Function&lt;AbstractClassGenerator, Object&gt;() {
+</span><span class='line'>                        public Object apply(AbstractClassGenerator gen) {
+</span><span class='line'>                            Class klass = gen.generate(ClassLoaderData.this); //生成class的关键代码
+</span><span class='line'>                            return gen.wrapCachedClass(klass);
+</span><span class='line'>                        }
+</span><span class='line'>                    };
+</span><span class='line'>            generatedClasses = new LoadingCache&lt;AbstractClassGenerator, Object, Object&gt;(GET_KEY, load);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因此我们将目光转到generate()中：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>//Enhancer的generate()方法
+</span><span class='line'>protected Class generate(ClassLoaderData data) {
+</span><span class='line'>        validate();
+</span><span class='line'>        if (superclass != null) {
+</span><span class='line'>            setNamePrefix(superclass.getName());
+</span><span class='line'>        } else if (interfaces != null) {
+</span><span class='line'>            setNamePrefix(interfaces[ReflectUtils.findPackageProtected(interfaces)].getName());
+</span><span class='line'>        }
+</span><span class='line'>        return super.generate(data);  //父类AbstractClassGenerator
+</span><span class='line'>}
+</span><span class='line'>// AbstractClassGenerator的generate()方法
+</span><span class='line'>protected Class generate(ClassLoaderData data) {
+</span><span class='line'>            //...
+</span><span class='line'>            ClassLoader classLoader = data.getClassLoader();
+</span><span class='line'>            this.setClassName(generateClassName(data.getUniqueNamePredicate()));  //代理类的类名称的生成逻辑
+</span><span class='line'>            //...
+</span><span class='line'>            byte[] b = strategy.generate(this);       //生成策略，默认实现DefaultGeneratorStrategy，生成class文件的字节码
+</span><span class='line'>            String className = ClassNameReader.getClassName(new ClassReader(b));
+</span><span class='line'>            ProtectionDomain protectionDomain = getProtectionDomain();
+</span><span class='line'>            synchronized (classLoader) { // just in case
+</span><span class='line'>                if (protectionDomain == null) {
+</span><span class='line'>                    gen = ReflectUtils.defineClass(className, b, classLoader);
+</span><span class='line'>                } else {
+</span><span class='line'>                    gen = ReflectUtils.defineClass(className, b, classLoader, protectionDomain);
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>            return gen;
+</span><span class='line'>            ...//异常处理
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>//DefaultGeneratorStrategy的generate()方法
+</span><span class='line'>public byte[] generate(ClassGenerator cg) throws Exception {
+</span><span class='line'>        DebuggingClassWriter cw = getClassVisitor();
+</span><span class='line'>        transform(cg).generateClass(cw);      //这里调用最终的generateClass()逻辑,Visitor模式
+</span><span class='line'>        return transform(cw.toByteArray());   //通过Visitor得到最后的字节码
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>所以最终的调用是Enhancer的generateClass()调用。</p>
+
+<p>参考： <a href="http://www.cnblogs.com/cruze/p/3843996.html">http://www.cnblogs.com/cruze/p/3843996.html</a></p>
 
 <h2 id="2.Spring事务">2.Spring事务</h2>
 
