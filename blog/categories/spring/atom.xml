@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Spring | xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/blog/categories/spring/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2016-03-21T18:44:55+08:00</updated>
+  <updated>2016-03-22T16:26:59+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -25,6 +25,7 @@
 <li><a href="#1.1%20%E4%BB%A3%E7%90%86%E6%A8%A1%E5%BC%8F">1.1 代理模式</a></li>
 <li><a href="#1.2%20Java%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86">1.2 Java动态代理</a></li>
 <li><a href="#1.3%20CGLib%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86">1.3 CGLib动态代理</a></li>
+<li><a href="#1.4%20Java%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86%20VS%20CGLib%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86">1.4 Java动态代理 VS CGLib动态代理</a></li>
 </ul>
 </li>
 <li><a href="#2.Spring%E4%BA%8B%E5%8A%A1">2.Spring事务</a>
@@ -103,9 +104,11 @@ public class HelloProxyImpl implements IHello {
 <p>UML图大致如下：
 <img src="/images/spring/proxy_mode.png"></p>
 
-<p>从代码上我们可以看出，代理模式要求(这也是它的限制所在)：
-(1).代理类需要和被代理者一样实现相同的接口；
-(2).代理类包含被代理者的引用；</p>
+<p>从代码上我们可以看出，代理模式要求(这也是它的限制所在)：</p>
+
+<pre><code>(1).代理类需要和被代理者一样实现相同的接口；
+(2).代理类包含被代理者的引用；
+</code></pre>
 
 <h4 id="1.2 Java动态代理">1.2 Java动态代理</h4>
 
@@ -201,7 +204,7 @@ public static void main(String[] args) {
         //没有实现任何interface的类使不能被动态代理的
         System.out.println("-------------------------------------------------");
         HelloWithoutInterface helloC = new HelloWithoutInterface();
-        //生成对象B的动态代理
+        //生成对象C的动态代理
         HelloWithoutInterface helloCProxy = (HelloWithoutInterface) JavaDynamicProxy.generateProxy(helloC);
         helloCProxy.hello();
 </code>
@@ -256,8 +259,8 @@ public Class&lt;?&gt; apply(ClassLoader loader, Class&lt;?&gt;[] interfaces) {
 <p>我们可以自己使用ProxyGenerator来生成代理类并将其字节码记录下来：
 <code>
     // 获取代理类的字节码
-            byte[] classFile = ProxyGenerator.generateProxyClass("$Proxy0", ByeImpl.class.getInterfaces());
-            //将字节码写文件，建议写成.class文件
+    byte[] classFile = ProxyGenerator.generateProxyClass("$Proxy0", ByeImpl.class.getInterfaces());
+    //将字节码写文件，建议写成.class文件
 </code></p>
 
 <p>获取的字节码如下：</p>
@@ -344,7 +347,7 @@ public final class $Proxy0 extends Proxy implements IBye {
 <h4 id="1.3 CGLib动态代理">1.3 CGLib动态代理</h4>
 
 
-<p>鉴于Java动态代理的限制，我们有需要代理没有任何实现接口的类的时候，可以考虑使用CGLib。CGLib的全称是Code Generate Library。CGLib的使用使用十分广泛，我们这里要讲的Spring AOP，已经EasyMock等。</p>
+<p>鉴于Java动态代理的限制，我们有需要代理没有任何实现接口的类的时候，可以考虑使用CGLib。CGLib的全称是Code Generate Library。CGLib的使用使用十分广泛，我们这里要讲的Spring AOP，以及EasyMock等。</p>
 
 <p>同样先上Demo代码，我们只需要实现MethodInterceptor接口：</p>
 
@@ -361,7 +364,7 @@ public class CglibDynamicProxy implements MethodInterceptor {
         enhancer.setCallback(this);
 //        enhancer.setCallbackFilter(); //filter
         enhancer.setSuperclass(cls);
-        return enhancer.create();
+        return enhancer.create();   // Enhancer也包含带参数的create方法
     }
 
     public Object intercept(Object obj, Method method, Object[] args, MethodProxy proxy) throws Throwable {
@@ -415,7 +418,16 @@ public static void main(String[] args) {
 <pre><code>System.setProperty(DebuggingClassWriter.DEBUG_LOCATION_PROPERTY, "/home/xiaobaoqiu/cglib_proxy");
 </code></pre>
 
-<p>之后我们在目标目录下得到很多的class，其中的proxy目录包含了生成的class文件。我们发现一大堆的class文件，类名都是稀奇古怪。我们先看看class文件的生成策略。每个Class Generator(比如这里的Enhancer)都继承自AbstractClassGenerator(实现接口ClassGenerator，这个接口只有一个generateClass的方法)，需要实现其generateClass()方法。generateClassName()方法用来生成Class名称：</p>
+<p>之后我们在目标目录下得到很多的class，其中的proxy目录包含了生成的class文件。我们发现一大堆的class文件，类名都是稀奇古怪：</p>
+
+<pre><code>xiaobaoqiu@xiaobaoqiu:~/cglib_proxy/proxy/javaProxy$ ll
+-rw-rw-r-- 1 xiaobaoqiu xiaobaoqiu 2227  3月 21 18:38 HelloWithoutInterface$$EnhancerByCGLIB$$7d786e36.class
+-rw-rw-r-- 1 xiaobaoqiu xiaobaoqiu 5555  3月 21 18:38 HelloWithoutInterface$$EnhancerByCGLIB$$e4e0e0f1.class
+-rw-rw-r-- 1 xiaobaoqiu xiaobaoqiu 7744  3月 21 18:38 HelloWithoutInterface$$EnhancerByCGLIB$$e4e0e0f1$$FastClassByCGLIB$$814877d5.class
+-rw-rw-r-- 1 xiaobaoqiu xiaobaoqiu 2673  3月 21 18:45 HelloWithoutInterface$$FastClassByCGLIB$$32a767a1.class
+</code></pre>
+
+<p>我们先看看class文件的生成策略。每个Class Generator(比如这里的Enhancer)都继承自AbstractClassGenerator(实现接口ClassGenerator，这个接口只有一个generateClass的方法)，需要实现其generateClass()方法。generateClassName()方法用来生成Class名称：</p>
 
 <pre><code>private String generateClassName(Predicate nameTestPredicate) {
         return namingPolicy.getClassName(namePrefix, source.name, key, nameTestPredicate);
@@ -437,7 +449,7 @@ public String getClassName(String prefix, String source, Object key, Predicate n
 }
 </code></pre>
 
-<p>下面正是进入class文件的生成原理分析，还是从源代码入手，enhancer.create()最终进入AbstractClassGenerator.create()方法，我们发现最终return的Object是从内部变量obj得来，因此，我们看看ClassLoaderData的生成逻辑</p>
+<p>下面正式进入class文件的生成原理分析，还是从源代码入手，enhancer.create()最终进入AbstractClassGenerator.create()方法，我们发现最终return的Object是从内部变量obj得来，因此，我们看看ClassLoaderData的生成逻辑：</p>
 
 <pre><code>protected Object create(Object key) {
             ClassLoader loader = getClassLoader();
@@ -515,9 +527,179 @@ public byte[] generate(ClassGenerator cg) throws Exception {
 }
 </code></pre>
 
-<p>所以最终的调用是Enhancer的generateClass()调用。</p>
+<p>所以最终的调用是Enhancer的generateClass()调用。这代码好晦涩，感觉和JVM加载字节码相关。</p>
 
-<p>参考： <a href="http://www.cnblogs.com/cruze/p/3843996.html">http://www.cnblogs.com/cruze/p/3843996.html</a></p>
+<p>看一下CGLib生成的class文件，这个代理类继承了我们的被代理类并且实现了Factory类，类定义如下：</p>
+
+<pre><code>public class HelloWithoutInterface$$EnhancerByCGLIB$$e4e0e0f1 extends proxy.javaProxy.HelloWithoutInterface implements net.sf.cglib.proxy.Factory {
+    private boolean CGLIB$BOUND;
+    public static java.lang.Object CGLIB$FACTORY_DATA;
+    private static final java.lang.ThreadLocal CGLIB$THREAD_CALLBACKS;
+    private static final net.sf.cglib.proxy.Callback[] CGLIB$STATIC_CALLBACKS;
+    private net.sf.cglib.proxy.MethodInterceptor CGLIB$CALLBACK_0;
+    private static final java.lang.reflect.Method CGLIB$hello$0$Method;
+    private static final net.sf.cglib.proxy.MethodProxy CGLIB$hello$0$Proxy;
+    private static final java.lang.Object[] CGLIB$emptyArgs;
+    private static final java.lang.reflect.Method CGLIB$equals$1$Method;
+    private static final net.sf.cglib.proxy.MethodProxy CGLIB$equals$1$Proxy;
+    private static final java.lang.reflect.Method CGLIB$toString$2$Method;
+    private static final net.sf.cglib.proxy.MethodProxy CGLIB$toString$2$Proxy;
+    private static final java.lang.reflect.Method CGLIB$hashCode$3$Method;
+    private static final net.sf.cglib.proxy.MethodProxy CGLIB$hashCode$3$Proxy;
+    private static final java.lang.reflect.Method CGLIB$clone$4$Method;
+    private static final net.sf.cglib.proxy.MethodProxy CGLIB$clone$4$Proxy;
+
+    static void CGLIB$STATICHOOK1() { /* compiled code */ }
+
+    final void CGLIB$hello$0() { /* compiled code */ }  //代理的方法
+
+    public final void hello() { /* compiled code */ }   //代理的方法
+
+    final boolean CGLIB$equals$1(java.lang.Object o) { /* compiled code */ }
+
+    public final boolean equals(java.lang.Object o) { /* compiled code */ }
+
+    final java.lang.String CGLIB$toString$2() { /* compiled code */ }
+
+    public final java.lang.String toString() { /* compiled code */ }
+
+    final int CGLIB$hashCode$3() { /* compiled code */ }
+
+    public final int hashCode() { /* compiled code */ }
+
+    final java.lang.Object CGLIB$clone$4() throws java.lang.CloneNotSupportedException { /* compiled code */ }
+
+    protected final java.lang.Object clone() throws java.lang.CloneNotSupportedException { /* compiled code */ }
+
+    public static net.sf.cglib.proxy.MethodProxy CGLIB$findMethodProxy(net.sf.cglib.core.Signature signature) { /* compiled code */ }
+
+    public HelloWithoutInterface$$EnhancerByCGLIB$$e4e0e0f1() { /* compiled code */ }
+
+    public static void CGLIB$SET_THREAD_CALLBACKS(net.sf.cglib.proxy.Callback[] callbacks) { /* compiled code */ }
+
+    public static void CGLIB$SET_STATIC_CALLBACKS(net.sf.cglib.proxy.Callback[] callbacks) { /* compiled code */ }
+
+    private static final void CGLIB$BIND_CALLBACKS(java.lang.Object o) { /* compiled code */ }
+
+    public java.lang.Object newInstance(net.sf.cglib.proxy.Callback[] callbacks) { /* compiled code */ }
+
+    public java.lang.Object newInstance(net.sf.cglib.proxy.Callback callback) { /* compiled code */ }
+
+    public java.lang.Object newInstance(java.lang.Class[] classes, java.lang.Object[] objects, net.sf.cglib.proxy.Callback[] callbacks) { /* compiled code */ }
+
+    public net.sf.cglib.proxy.Callback getCallback(int i) { /* compiled code */ }
+
+    public void setCallback(int i, net.sf.cglib.proxy.Callback callback) { /* compiled code */ }
+
+    public net.sf.cglib.proxy.Callback[] getCallbacks() { /* compiled code */ }
+
+    public void setCallbacks(net.sf.cglib.proxy.Callback[] callbacks) { /* compiled code */ }
+}
+</code></pre>
+
+<p>注意，我们生成的动态代理包含两个hello()相关的方法。我们可以使用javap获取其字节码,我们发现和我们被代理者同名的hello()方法是带代理逻辑的，而CGLIB$hello$0()这个则是原始被代理者的直接调用(不包含代理逻辑):</p>
+
+<pre><code>xiaobaoqiu@xiaobaoqiu:~/cglib_proxy/proxy/javaProxy$ javap -c HelloWithoutInterface\$\$EnhancerByCGLIB\$\$e4e0e0f1.class
+...
+  final void CGLIB$hello$0();
+    Code:
+       0: aload_0
+       1: invokespecial #36                 // Method proxy/javaProxy/HelloWithoutInterface.hello:()V
+       4: return
+
+  public final void hello();
+    Code:
+       0: aload_0
+       1: getfield      #38                 // Field CGLIB$CALLBACK_0:Lnet/sf/cglib/proxy/MethodInterceptor;
+       4: dup
+       5: ifnonnull     17
+       8: pop
+       9: aload_0
+      10: invokestatic  #42                 // Method CGLIB$BIND_CALLBACKS:(Ljava/lang/Object;)V
+      13: aload_0
+      14: getfield      #38                 // Field CGLIB$CALLBACK_0:Lnet/sf/cglib/proxy/MethodInterceptor;
+      17: dup
+      18: ifnull        37
+      21: aload_0
+      22: getstatic     #44                 // Field CGLIB$hello$0$Method:Ljava/lang/reflect/Method;
+      25: getstatic     #46                 // Field CGLIB$emptyArgs:[Ljava/lang/Object;
+      28: getstatic     #48                 // Field CGLIB$hello$0$Proxy:Lnet/sf/cglib/proxy/MethodProxy;
+      31: invokeinterface #54,  5           // InterfaceMethod net/sf/cglib/proxy/MethodInterceptor.intercept:(Ljava/lang/Object;Ljava/lang/reflect/Method;[Ljava/lang/Object;Lnet/sf/cglib/proxy/MethodProxy;)Ljava/lang/Object;
+      36: return
+      37: aload_0
+      38: invokespecial #36                 // Method proxy/javaProxy/HelloWithoutInterface.hello:()V
+      41: return
+...
+</code></pre>
+
+<p>遗留问题：
+(1).为什么一个类会生成多个代理类，各个代理类都是什么用处；</p>
+
+<p>CGLib代理同样存在限制,private方法和final方法看代理类的字节码会发现，代理类不会这些函数，因此会自动调用父类的：</p>
+
+<pre><code>(1).private方法无法代理；
+(2).final方法无法代理;
+</code></pre>
+
+<p>参考：
+<a href="http://www.cnblogs.com/cruze/p/3843996.html">cglib源码分析（四）：cglib 动态代理原理分析</a></p>
+
+<p><a href="https://dzone.com/articles/cglib-missing-manual">CGLib: The Missing Manual</a></p>
+
+<h4 id="#1.4 Java动态代理 VS CGLib动态代理">#1.4 Java动态代理 VS CGLib动态代理</h4>
+
+
+<p>简单总结对比一下两种动态代理:</p>
+
+<table>
+<thead>
+<tr>
+<th style="text-align:center;">代理 </th>
+<th style="text-align:center;"> 没有实现interface的类 </th>
+<th style="text-align:center;"> protected方法 </th>
+<th style="text-align:center;"> private方法 </th>
+<th style="text-align:center;"> final类 </th>
+<th style="text-align:center;"> final方法 </th>
+<th style="text-align:center;"> 构造函数private的类 </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">Java动态代理 </td>
+<td style="text-align:center;"> 不支持 </td>
+<td style="text-align:center;"> 不支持 </td>
+<td style="text-align:center;"> 不支持 </td>
+<td style="text-align:center;">支持 </td>
+<td style="text-align:center;"> 支持 </td>
+<td style="text-align:center;"> 支持 </td>
+</tr>
+<tr>
+<td style="text-align:center;">CGLib动态代理 </td>
+<td style="text-align:center;"> 支持 </td>
+<td style="text-align:center;"> 支持  </td>
+<td style="text-align:center;"> 不支持 </td>
+<td style="text-align:center;">不支持 </td>
+<td style="text-align:center;"> 不支持 </td>
+<td style="text-align:center;"> 不支持 </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>关于CGLib对protected方法的支持,可以在生成的代理类中看到.</p>
+
+<pre><code>CGLib报错信息：
+final类: Cannot subclass final class proxy.javaProxy.HelloWithFinal
+构造方法私有的类: No visible constructors in class proxy.javaProxy.HelloWithoutConstructor
+final方法: 不报错，但没有代理逻辑
+</code></pre>
+
+<p>在性能方面，通常认为Java动态代理生成代理类比CGLib生成代理类快，但是CGLib的代理类运行期性能会优于Java动态代理的代理类。不过通常性能都不是问题，如果确实很关心性能，建议直接使用ASM。</p>
+
+<p>参考：
+<a href="http://www.theserverside.com/news/thread.tss?thread_id=45089">Why do you think CGLib proxies are faster than JDK Proxies?</a></p>
+
+<p><a href="https://community.oracle.com/docs/DOC-983406">Implement Your Own Proxy-Based AOP Framework Blog</a></p>
 
 <h2 id="2.Spring事务">2.Spring事务</h2>
 
