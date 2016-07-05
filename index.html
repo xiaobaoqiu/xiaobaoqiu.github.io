@@ -526,22 +526,24 @@
 <li><a href="#1.2%20Java%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86">1.2 Java动态代理</a></li>
 <li><a href="#1.3%20CGLib%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86">1.3 CGLib动态代理</a>
 
-<pre><code>   *  [1.4 Java动态代理 VS CGLib动态代理](#1.4 Java动态代理 VS CGLib动态代理)
+<pre><code> *   [1.4 Java动态代理 VS CGLib动态代理](#1.4 Java动态代理 VS CGLib动态代理)
 </code></pre></li>
 </ul>
 </li>
 <li><a href="#2.Spring%E4%BA%8B%E5%8A%A1">2.Spring事务</a>
 
 <ul>
-<li><a href="#2.1%20%E7%BC%96%E7%A8%8B%E5%BC%8F%E4%BA%8B%E5%8A%A1">2.1 编程式事务</a></li>
-<li><a href="#2.2%20AOP%E5%AE%9E%E7%8E%B0">2.2 AOP实现</a></li>
-<li><a href="#2.3%20Aspectj%E5%AE%9E%E7%8E%B0">2.3 Aspectj实现</a></li>
+<li><a href="#2.1%20%E4%BA%8B%E5%8A%A1%E5%AE%9A%E4%B9%89">2.1 事务定义</a></li>
+<li><a href="#2.2%20%E4%BA%8B%E5%8A%A1%E7%AE%A1%E7%90%86%E5%99%A8">2.2 事务管理器</a>
+
+<pre><code> *   [2.3 How Transactional Work](#2.3 How Transactional Work)
+</code></pre></li>
 </ul>
 </li>
 </ul>
 
 
-<p>最近再项目中发现不少同事不理解默认情况下的Spring事务的AOP机制,导致随意使用事务注解.因此也在很多场景事务不生效。因此想从代理机制开始理一下整个Spring声明式的原理。</p>
+<p>最近再项目中发现不少同事(包括自己)不太理解默认情况下的Spring事务的运行机制(主要是不理解AOP机制),导致随意使用事务注解.因此也在很多场景事务不生效。因此想从代理机制开始理一下整个Spring声明式的原理。</p>
 
 <h2 id="1.代理">1.代理</h2>
 
@@ -1605,11 +1607,13 @@
 <p>遗留问题：
 (1).为什么一个类会生成多个代理类，各个代理类都是什么用处；</p>
 
-<p>CGLib代理同样存在限制,private方法和final方法看代理类的字节码会发现，代理类不会这些函数，因此会自动调用父类的：</p>
+<p>CGLib代理同样存在限制：</p>
 
 <pre><code>(1).private方法无法代理；
 (2).final方法无法代理;
 </code></pre>
+
+<p>private方法和final方法看代理类的字节码会发现，代理类不会这些重写函数(子类没法重写)，因此会自动调用父类的。</p>
 
 <p>参考：
 <a href="http://www.cnblogs.com/cruze/p/3843996.html">cglib源码分析（四）：cglib 动态代理原理分析</a></p>
@@ -1678,7 +1682,473 @@
 <h2 id="2.Spring事务">2.Spring事务</h2>
 
 
-<p>目标: The most common reason for using transactions in an application is to maintain a high degree of data integrity and consistency.</p>
+<p>我们使用事务的目标：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>The most common reason for using transactions in an application is to maintain a high degree of data integrity and consistency.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我的理解Spring事务中包括的几个主要要素，下面会一一讲解：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1.事务定义：事务包含哪些属性
+</span><span class='line'>2.事务管理器：如何将我们对事务的诉求转化为数据库层面的实现
+</span><span class='line'>3.事务切面：Spring底层是如何将业务和事务串起来的</span></code></pre></td></tr></table></div></figure>
+
+
+<p>关于事务的使用是最简单的，通常分为 编程式事务 和 注解式事务：</p>
+
+<h5>编程式事务</h5>
+
+<p>代码直接使用PlatformTransactionManager，因此需要使用者自己管理事务的创建，提交，回滚，挂起等逻辑。</p>
+
+<p>优点：灵活度大；
+缺点：使用难度大，易出错，业务代码侵入大；</p>
+
+<p><a href="http://www.tutorialspoint.com/spring/programmatic_management.htm">一个编程式事务的完整Demo</a></p>
+
+<p>我们可以使用 Spring 提供的 TransactionTemplate 类来简化编程事务：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>TransactionTemplate template = new TransactionTemplate();
+</span><span class='line'>template.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_DEFAULT);
+</span><span class='line'>template.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRED);
+</span><span class='line'>template.setTransactionManager(transactionManager);
+</span><span class='line'>template.execute(new TransactionCallback&lt;UserAo&gt;() {
+</span><span class='line'>    @Override
+</span><span class='line'>    public UserAo doInTransaction(TransactionStatus status) {
+</span><span class='line'>        try {
+</span><span class='line'>            //business logic
+</span><span class='line'>        } catch (Exception e) {
+</span><span class='line'>            status.setRollbackOnly();   //roll back
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>});</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们可以看一下 TransactionTemplate 的实现代码，TransactionTemplate继承了DefaultTransactionDefinition(实现了TransactionDefinition)，使用TransactionDefinition需要我们给定一个TransactionManager，可以修改 事务隔离级别，事务传播行为等事务属性(其实是DefaultTransactionDefinition提供的功能)。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public &lt;T&gt; T execute(TransactionCallback&lt;T&gt; action) throws TransactionException {
+</span><span class='line'>    TransactionStatus status = this.transactionManager.getTransaction(this);    //获取并初始化事务，处理比如事务传播形式等
+</span><span class='line'>    T result;
+</span><span class='line'>    try {
+</span><span class='line'>        result = action.doInTransaction(status);    //业务逻辑，包括自定义的回滚
+</span><span class='line'>    } catch (RuntimeException ex) {
+</span><span class='line'>        // Transactional code threw application exception -&gt; rollback
+</span><span class='line'>        rollbackOnException(status, ex);
+</span><span class='line'>        throw ex;
+</span><span class='line'>    } catch (Error err) {
+</span><span class='line'>        // Transactional code threw error -&gt; rollback
+</span><span class='line'>        rollbackOnException(status, err);
+</span><span class='line'>        throw err;
+</span><span class='line'>    } catch (Exception ex) {
+</span><span class='line'>        // Transactional code threw unexpected exception -&gt; rollback
+</span><span class='line'>        rollbackOnException(status, ex);
+</span><span class='line'>        throw new UndeclaredThrowableException(ex, "TransactionCallback threw undeclared checked exception");
+</span><span class='line'>    }
+</span><span class='line'>    this.transactionManager.commit(status); //事务提交
+</span><span class='line'>    return result;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中 transactionManager.getTransaction(this) 的代码后面会详细分析。</p>
+
+<h5>注解式事务</h5>
+
+<p>使用 @Transactional 来管理事务，我们需要声明一个全局的事务管理器，以及事务对注解的支持：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;bean id="txManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager"&gt;
+</span><span class='line'>    &lt;property name="dataSource" ref="dataSource"/&gt;
+</span><span class='line'>&lt;/bean&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;tx:annotation-driven transaction-manager="txManager"/&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>优点：使用简单，业务代码侵入小；
+缺点：理解有难度；</p>
+
+<p>注意：Spring建议在具体业务实现类上使用Transactional注解，而不是在接口或则接口的方法上配置@Transactional注解：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>The Spring team’s recommendation is that you only annotate concrete classes with the @Transactional annotation, as opposed to annotating interfaces. 
+</span><span class='line'>You certainly can place the @Transactional annotation on an interface (or an interface method), but this will only work as you would expect it to if you are using interface-based proxies. 
+</span><span class='line'>The fact that annotations are not inherited means that if you are using class-based proxies (proxy-target-class=“true“) or the weaving-based aspect (mode=“aspectj“) then the transaction settings will not be recognised by the proxying/weaving infrastructure and the object will not be wrapped in a transactional proxy (which would be decidedly bad). 
+</span><span class='line'>So please do take the Spring team’s advice and only annotate concrete classes (and the methods of concrete classes) with the @Transactional annotation.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Transactional注解上可以设置很多事务相关的参数：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public @interface Transactional {
+</span><span class='line'>    /**
+</span><span class='line'>     * 用于配置事务管理器，当系统中存在多个数据源多个事务管理器的时候有用
+</span><span class='line'>     * 配置 txManager1 这种 bean name
+</span><span class='line'>     */
+</span><span class='line'>    String value() default "";
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务传播级别
+</span><span class='line'>     */
+</span><span class='line'>    Propagation propagation() default Propagation.REQUIRED;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务隔离级别
+</span><span class='line'>     */
+</span><span class='line'>    Isolation isolation() default Isolation.DEFAULT;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务超时时间
+</span><span class='line'>     */
+</span><span class='line'>    int timeout() default TransactionDefinition.TIMEOUT_DEFAULT;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务是否read-only
+</span><span class='line'>     * 注意：这个设置对真实的事务执行系统是一个 hint 而不是 强制要求有这个配置的情况下 write 一定导致失败
+</span><span class='line'>     */
+</span><span class='line'>    boolean readOnly() default false;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 定义0个或多个exception，当事务遇到这些异常的时候，事务会回滚
+</span><span class='line'>     */
+</span><span class='line'>    Class&lt;? extends Throwable&gt;[] rollbackFor() default {};
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 定义0个或多个exception的name，当事务遇到这些异常的时候，事务会回滚
+</span><span class='line'>     * 最好定义完整的路径，比如 javax.servlet.ServletException 会代表 ServletException 本身及子类
+</span><span class='line'>     */
+</span><span class='line'>    String[] rollbackForClassName() default {};
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 定义0个或多个exception，当事务遇到这些异常的时候，事务不会回滚
+</span><span class='line'>     */
+</span><span class='line'>    Class&lt;? extends Throwable&gt;[] noRollbackFor() default {};
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 定义0个或多个exception的name，当事务遇到这些异常的时候，事务不会回滚
+</span><span class='line'>     */
+</span><span class='line'>    String[] noRollbackForClassName() default {};
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h4 id="2.1 事务定义">2.1 事务定义</h4>
+
+
+<p>如何定义一个事务，Spring中使用 TransactionDefinition 来定义一个事务的属性，使用接口的形式：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public interface TransactionDefinition {
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务传播行为,可选项参见 TransactionDefinition 中定义的 PROPAGATION_XXX
+</span><span class='line'>     */
+</span><span class='line'>    int getPropagationBehavior();
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务隔离级别,可选项参见 TransactionDefinition 中定义的 ISOLATION_XXX
+</span><span class='line'>     * 只在 PROPAGATION_REQUIRED 和 PROPAGATION_REQUIRES_NEW 这两个事务传播行为配置下有效
+</span><span class='line'>     */
+</span><span class='line'>    int getIsolationLevel();
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务超时时间,单位秒
+</span><span class='line'>     * 默认 TIMEOUT_DEFAULT = -1 表示使用底层实现的超时时间或者没有(不支持事务超时时间)
+</span><span class='line'>     * 只在 PROPAGATION_REQUIRED 和 PROPAGATION_REQUIRES_NEW 这两个事务传播行为配置下有效
+</span><span class='line'>     * 如果事务管理器不支持设置超时时间，而调用了这个接口会抛出异常
+</span><span class='line'>     */
+</span><span class='line'>    int getTimeout();
+</span><span class='line'>
+</span><span class='line'>    boolean isReadOnly();
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务name，允许为null
+</span><span class='line'>     * 对于申明式事务，默认的name为：完整的class名称.metho名称
+</span><span class='line'>     */
+</span><span class='line'>    String getName();
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>TransactionDefinition 有一个默认实现 DefaultTransactionDefinition，其中定义了事务几个属性的默认值：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private int propagationBehavior = PROPAGATION_REQUIRED;
+</span><span class='line'>private int isolationLevel = ISOLATION_DEFAULT;
+</span><span class='line'>private int timeout = TIMEOUT_DEFAULT;
+</span><span class='line'>private boolean readOnly = false;</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>事务传播</h5>
+
+<p>关于事务的传播行为，这里简单介绍一下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 如果已经存在事务直接使用，如果不存在则创建一个新事务
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_REQUIRED = 0;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 如果已经存在事务直接使用，如果不存在则不使用事务
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_SUPPORTS = 1;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 如果已经存在事务直接使用，如果不存在则抛出异常
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_MANDATORY = 2;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 创建一个新事务，如果如果已经存在事务则将当前事务挂起
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_REQUIRES_NEW = 3;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 不使用事务，如果当前已经存在事务则将当前事务挂起
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_NOT_SUPPORTED = 4;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 不使用事务，如果当前存在事务则跑出异常
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_NEVER = 5;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 如果已经存在事务直接使用，则执行一个嵌套事务，如果当前没有事务就创建一个新事务
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_NESTED = 6;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中 PROPAGATION_NESTED 理解有点困难，可以参考 <a href="http://docs.spring.io/spring/docs/3.2.x/spring-framework-reference/html/transaction.html#tx-propagation">Spring 的文档</a>：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>PROPAGATION_NESTED uses a single physical transaction with multiple savepoints that it can roll back to. 
+</span><span class='line'>Such partial rollbacks allow an inner transaction scope to trigger a rollback for its scope, with the outer transaction being able to continue the physical transaction despite some operations having been rolled back. 
+</span><span class='line'>This setting is typically mapped onto JDBC savepoints, so will only work with JDBC resource transactions. See Spring's DataSourceTransactionManager.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>大致意思就是关于 SavePoint，JDBC定义了java.sql.SavePoint接口，提供在一个更细粒度的事务控制机制。当设置了一个保存点后，可以rollback到该保存点处的状态，而不是rollback整个事务。Connection接口的setSavepoint和releaseSavepoint方法可以设置和释放保存点。
+而Spring中定义了 SavepointManager，用于 SavePoint 的创建(createSavepoint)，回滚(rollbackToSavepoint)，释放(releaseSavepoint)。</p>
+
+<h5>事务隔离级别</h5>
+
+<p>关于事务的隔离级别，也简单介绍一下，除了 ISOLATION_DEFAULT ，其余均使用 java.sql.Connection 中的隔离级别的定义：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 使用底层数据源的隔离级别
+</span><span class='line'> * 参考：java.sql.Connection.getTransactionIsolation()
+</span><span class='line'> */
+</span><span class='line'>int ISOLATION_DEFAULT = -1;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * READ_UNCOMMITTED
+</span><span class='line'> */
+</span><span class='line'>int ISOLATION_READ_UNCOMMITTED = Connection.TRANSACTION_READ_UNCOMMITTED;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * READ_COMMITTED
+</span><span class='line'> */
+</span><span class='line'>int ISOLATION_READ_COMMITTED = Connection.TRANSACTION_READ_COMMITTED;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * REPEATABLE_READ
+</span><span class='line'> */
+</span><span class='line'>int ISOLATION_REPEATABLE_READ = Connection.TRANSACTION_REPEATABLE_READ;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * SERIALIZABLE
+</span><span class='line'> */
+</span><span class='line'>int ISOLATION_SERIALIZABLE = Connection.TRANSACTION_SERIALIZABLE;</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h4 id="2.2 事务管理器">2.2 事务管理器</h4>
+
+
+
+
+<h4 id="2.3 How Transactional Work">2.3 How Transactional Work</h4>
+
 
 <p>代理实现选择器:
 AdviceMode
@@ -1705,15 +2175,6 @@ TransactionTempale</p>
 <p>隔离级别: Isolation
 传播属性: Propagation</p>
 
-<h4 id="2.1 编程式事务">2.1 编程式事务</h4>
-
-
-<h4 id="2.2 AOP实现">2.2 AOP实现</h4>
-
-
-<h4 id="2.3 Aspectj实现">2.3 Aspectj实现</h4>
-
-
 <p>参考:
 <a href="http://openwares.net/java/spring_mybatis_transaction.html">http://openwares.net/java/spring_mybatis_transaction.html</a>
 <a href="http://my.oschina.net/guanzhenxing/blog/214228">http://my.oschina.net/guanzhenxing/blog/214228</a>
@@ -1738,6 +2199,10 @@ aspectj事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=
 <p>Demo:
 编程事务: <a href="http://www.tutorialspoint.com/spring/programmatic_management.htm">http://www.tutorialspoint.com/spring/programmatic_management.htm</a>
 声明事务: <a href="http://www.tutorialspoint.com/spring/declarative_management.htm">http://www.tutorialspoint.com/spring/declarative_management.htm</a></p>
+
+<p>@Transactional注解工作原理：<a href="http://blog.csdn.net/dslztx/article/details/46636079">http://blog.csdn.net/dslztx/article/details/46636079</a>
+分布式事务系列（1.2）Spring的事务体系： <a href="https://yq.aliyun.com/articles/39046">https://yq.aliyun.com/articles/39046</a>
+spring transaction源码分析&ndash;事务架构：<a href="http://www.cnblogs.com/davidwang456/p/4309038.html">http://www.cnblogs.com/davidwang456/p/4309038.html</a></p>
 </div>
   
   
