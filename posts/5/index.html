@@ -9,7 +9,9 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="学习一下虚拟IP和IP漂移的概念。 1.虚拟IP 在 TCP/IP 的架构下，所有想上网的电脑，不论是用何种方式连上网路，都必须要有一个唯一的 IP-address。事实上IP地址是主机硬件地址的一种抽象，简单的说，MAC地址是物理地址，IP地址是逻辑地址。 虚拟IP， &hellip;">
+  <meta name="description" content="MYSQL 5.5 之前， UTF8 编码只支持1-3个字节，只支持BMP这部分的unicode编码区， BMP是从哪到哪，到
+http://en.wikipedia.org/wiki/Mapping_of_Unicode_characters
+这里看，基本就是0000～FFFF这一区。 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -72,6 +74,248 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/04/08/mysql-utf8mb4/">Mysql Utf8mb4</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-04-08T04:50:24+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>8</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:50 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>MYSQL 5.5 之前， UTF8 编码只支持1-3个字节，只支持BMP这部分的unicode编码区， BMP是从哪到哪，到
+<a href="http://en.wikipedia.org/wiki/Mapping_of_Unicode_characters">http://en.wikipedia.org/wiki/Mapping_of_Unicode_characters</a>
+这里看，基本就是0000～FFFF这一区。 从MYSQL5.5开始，可支持4个字节UTF编码utf8mb4，一个字符最多能有4字节，所以能支持更多的字符集。</p>
+
+<p>utf8mb4兼容utf8，且比utf8能表示更多的字符。</p>
+
+<p>在做移动应用时，会遇到ios用户会在文本的区域输入emoji表情，emoji就是表情符号，在手机短信里面已经是很流行使用的一种表情。</p>
+
+<p>因为utf8mb4是utf8的超集，理论上即使client修改字符集为utf8mb4，也会不会对已有的utf8编码读取产生任何问题。</p>
+
+<h1>1.问题</h1>
+
+<pre><code>1.MySQL在处理utf8mb4数据时,要比utf8慢;
+2.存储字符数量,utf8mb4要比utf8少;
+3.TIMESTAMP NOT NULL DEFAULT 类型的字段，当我们在程序中传入NULL时，Mysql 5.5会自动填充默认值，而5.6不会自动填充，这就违反了非空约束，会报错;
+4.在mysql 5.6版本, utf8的表和utf8mb4的表join查询会导致索引失效;
+</code></pre>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/04/03/mysqljia-gou/">Mysql架构</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-04-03T04:07:44+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>4:07 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>这里想总结一下使用Mysql的一些架构，注意不是Mysql源码的架构。</p>
+
+<h1>1.单点</h1>
+
+<p>数据量不大，业务简单的情况下，直接单点的mysql instance足够。</p>
+
+<p><img src="/images/mysql/one_instance.PNG"></p>
+
+<h3>1.1 优点</h3>
+
+<pre><code>1.简单，不存在数据一致性等问题;
+</code></pre>
+
+<h3>1.2 缺点瓶颈</h3>
+
+<pre><code>1.单机存储数据量有限;
+2.数据索引单机内存可能放不下,导致和只能加载部分索引，印象性能;
+3.单机访问速度有极限;
+4.读写混合，不正当的写操作导致的锁表等问题，可能导致读操作也失败，进而拖死整个系统;
+5.无法容灾;
+</code></pre>
+
+<p>很多业务场景简单的，单表可以一般足够，比如对于用户信息这类表 （3个索引），16G内存能放下大概2000W行数据的索引，简单的读和写混合访问量3000/s左右没有问题。</p>
+
+<h1>2.垂直拆分</h1>
+
+<p>当单表遇到瓶颈的时候，最简单的想法是垂直拆分，从业务角度来看，将关联性不强的数据拆分到不同的instance上，从而达到消除瓶颈的目标。</p>
+
+<p>另外，绝大部分的业务常见读写复合2-8原则，即80%的数据库操作会是读操作，因此对于重复读类型比较多的场景，我们还可以加一层cache，来减少对DB的压力。</p>
+
+<p><img src="/images/mysql/v_multi_instance.PNG"></p>
+
+<h3>2.1 优点</h3>
+
+<pre><code>1.业务隔离，互不影响;
+</code></pre>
+
+<h3>2.2 缺点瓶颈</h3>
+
+<pre><code>1.读写混合的问题依然存在;
+</code></pre>
+
+<h1>3.Master-Slave</h1>
+
+<p>基于业务的读写2-8原则，我们将读写分离，即读和写打到不同的数据库服务器，通常读服务器会有多台，这即典型的Master-Slave结构，主库(Master)抗写压力，通过从库(Slave)来分担读压力。MS结构非常适合读多写少的应用场景，比如博客类网站等。</p>
+
+<p><img src="/images/mysql/master_slave.PNG"></p>
+
+<p>Slave通过binlog来同步Master的数据变更：
+<img src="/images/mysql/master-salve.jpg"></p>
+
+<p>主从机器的硬件配置和MySQL版本、各种参数配置最好都要一样，这样才能保证出问题时应用程 序能够平滑地从主库切换到备库上。</p>
+
+<h3>3.1 优点</h3>
+
+<pre><code>1.读写分离，减少相互影响;
+2.实时备份;
+</code></pre>
+
+<h3>3.2 缺点瓶颈</h3>
+
+<pre><code>1.数据一致性难以保障;
+2.主从切换麻烦，而且切换所带来的麻烦会随着备库的增多而逐步上升;
+</code></pre>
+
+<h1>4.Proxy</h1>
+
+<p>在Application和DB中间加以层Proxy，Proxy来解析sql协议，按sharding key 来寻找cluster, 判断是读操作还是写操作来请求主服务器或者从服务器，这一切内部的细节都由proxy来屏蔽。</p>
+
+<p>Proxy做的工作包括：</p>
+
+<pre><code>1.SQL解析
+2.SQL改写
+3.查询Dispatch
+4.读写分离、主从切换逻辑
+5.缓冲区控制
+6.归并+排序
+</code></pre>
+
+<h1>5.Heartbeat+DRBD</h1>
+
+<h3>5.1 Heartbeat介绍</h3>
+
+<p>heartbeat可以资源(VIP地址及程序服务)从一台有故障的服务器快速的转移到另一台正常的服务器提供服务，heartbeat和keepalived相似，heartbeat可以实现failover功能，但不能实现对后端的健康检查。</p>
+
+<p><a href="http://linux-ha.org/wiki/Main_Page">http://linux-ha.org/wiki/Main_Page</a></p>
+
+<h3>5.2 DRBD介绍</h3>
+
+<p>DRBD(Distributed Replicated Block Device)是一个基于块设备级别在远程服务器直接同步和镜像数据的软件，用软件实现的、无共享的、服务器之间镜像块设备内容的存储复制解决方案。</p>
+
+<p>它可以实现在网络中两台服务器之间基于块设备级别的实时镜像或同步复制(两台服务器都写入成功)/异步复制(本地服务器写入成功)，相当于网络的RAID1，由于是基于块设备(磁盘，LVM逻辑卷)，在文件系统的底层，所以数据复制要比cp命令更快。DRBD已经被MySQL官方写入文档手册作为推荐的高可用的方案之一。</p>
+
+<p>官方站点：<a href="http://www.drbd.org/">http://www.drbd.org/</a></p>
+
+<h3>5.3 Heartbeat+DRBD</h3>
+
+<p>适用于数据库访问量不太大，短期内访问量增长不会太快，对数据库可用性要求非常高的场景。</p>
+
+<h1>6.MMM</h1>
+
+<p>主从切换是Master-Slave结构的一个硬伤，如果备库只是用来实时备份数据和承担小部分读压力，那么MM结构将会是取代MS结构的不二之选。MM(Master-Master)就是主主结构,任意一个时刻，只有一个实际意义上的Master，另外一个作为Slave，只有当前的Master出现故障或者问题的使用，两台Master的角色切换，即原始的Master变为Slave，而原始的Slave切换为Master。</p>
+
+<p>MMM(Master-Master replication manager for MySQ)是一套支持双主故障切换和双主日常管理的脚本程序。MMM使用Perl语言开发，主要用来监控和管理MySQL Master-Master复制。</p>
+
+<p>MMM项目来自 Google：<a href="http://code.google.com/p/mysql-master-master">http://code.google.com/p/mysql-master-master</a></p>
+
+<p>官方网站为：<a href="http://mysql-mmm.org">http://mysql-mmm.org</a></p>
+
+<p>虽然叫做双主复制，但是业务上同一时刻只允许对一个主进行写入，另一台备选主上提供部分读服务，以加速在主主切换时刻备选主的预热，可以说MMM这套脚本程序一方面实现了故障切换的功能，另一方面其内部附加的工具脚本也可以实现多个slave的read负载均衡。</p>
+
+<h3>6.1 MMM两种典型的使用</h3>
+
+<p>典型的MM结构，即只有两台数据库Master服务器：
+<img src="/images/mysql/MMM-usage1.png"></p>
+
+<p>MM+Slaves结构，即两台数据库Master服务器加多台Slave服务器：
+<img src="/images/mysql/MMM-usage2.png"></p>
+
+<h3>6.2 Master切换的原理</h3>
+
+<p>MMM主要的功能通过下面三个脚本来实现：</p>
+
+<pre><code>mmm_mond： 负责所有的监控工作的监控守护进程，决定节点的活动;
+mmm_agentd：运行在mysql服务器上的代理守护进程，通过远程服务提供给监控节点;
+mmm_control：通过命令行管理mmm_mond进程;
+</code></pre>
+
+<p>mysql-mmm的监管端会提供多个虚拟IP(VIP)，包括一个可写VIP，多个可读VIP，通过监管端每十秒种(默认间隔)轮询一次MySQL节点来检查其状态，仅其中的一台服务器接收到写入器角色(写的VIP，Master的某一个)，其他的可以拥有阅读器角色(读VIP，包括一个备份的Master),当写库不可用(比如宕机等)，MMM会自动将写VIP给另外一台Master。</p>
+
+<p>Mysql需要创建一个mmm_monitor和多个mmm_agent账户并授权。</p>
+
+<h3>6.3 优点</h3>
+
+<pre><code>1.克服了MS结构主从切换困难的问题;
+2.是一种HA(高可用)架构(Easy Failover)
+</code></pre>
+
+<h3>6.4 缺点瓶颈</h3>
+
+<pre><code>1.MMM不适用于对数据一致性要求很高的环境,某种情况下存在双写的问题
+</code></pre>
+
+<p>其他问题参考：</p>
+
+<pre><code>1.[What's wrong with MMM?](http://www.xaprb.com/blog/2011/05/04/whats-wrong-with-mmm/)
+2.[Problems with MMM for MySQL](http://code.openark.org/blog/mysql/problems-with-mmm-for-mysql)
+</code></pre>
+
+<p>最近我们系统遇到过一次MMM导致的问题：</p>
+
+<pre><code>1.在当前的主Master(称之为Master-A)上有读写请求，从T1时刻开始，由于大量的慢查询，且这台机器善有多个Mysql Instance，导致在业务高峰期，当前的主Master对Monitor(Master-A)没有响应，因此Monitor认为这个Master(Master-A)宕机了，因此在T2时刻将读和写的VIP都漂移到另外一台备份Master(Master-B)上，这种情况下，Master-A和Master-B之间的双写复制中断，但是实际上Master-A上的写操作还在进行，即在T2之后的一段时间内，Master-A和Master-B上都存在写操作，并且不存在双写复制，当Master-A机器恢复，读VIP漂移到Master-A上，开始执行双写复制，发现存在冲突，因此双写导致数据存在冲突(比如自增ID)。
+</code></pre>
+
+<h1>7.PXC</h1>
+
+<h3>7.1 优点</h3>
+
+<h3>7.2 缺点瓶颈</h3>
+
+<p><a href="http://www.infoq.com/cn/news/2013/03/MySQL-Reference-Architectures">http://www.infoq.com/cn/news/2013/03/MySQL-Reference-Architectures</a>
+<a href="http://www.admin10000.com/document/4539.html">http://www.admin10000.com/document/4539.html</a>
+<a href="http://www.open-open.com/lib/view/open1341302877043.html">http://www.open-open.com/lib/view/open1341302877043.html</a>
+<a href="http://mysql-mmm.org/mysql-mmm.html">http://mysql-mmm.org/mysql-mmm.html</a>
+<a href="http://www.cnblogs.com/gomysql/p/3671896.html">http://www.cnblogs.com/gomysql/p/3671896.html</a>
+<a href="http://www.luocs.com/archives/849.http">http://www.luocs.com/archives/849.http</a>
+html://wiki.corp.qunar.com/download/attachments/63242976/%E5%91%A8%E5%BD%A6%E4%BC%9F%E3%80%8AMySQL%E9%AB%98%E5%8F%AF%E7%94%A8%E6%9E%B6%E6%9E%84%E6%BC%94%E5%8F%98%E4%B9%8B%E8%B7%AF_%E4%BB%8EMMM%E5%88%B0PXC%E3%80%8B.pdf?version=1&amp;modificationDate=1418272276416</p>
+
+<p><a href="http://www.cnblogs.com/bamboos/p/3543309.html">http://www.cnblogs.com/bamboos/p/3543309.html</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1248,258 +1492,6 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/02/10/squidxue-xi/">Squid学习</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-02-10T21:14:57+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>10</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>9:14 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>之前在处理图片下载延时比较大问题的时候，OPS说使用Squid这个东东，抽时间看看这个东西。</p>
-
-<p>简而言之，Squid就是一个Web缓存代理服务器。</p>
-
-<h1>1.什么是代理服务器</h1>
-
-<p>代理服务器是介于浏览器和Web服务器之间的另一台服务器。有了该服务器之后，浏览器发出的信息会先送到代理服务器，由代理服务器来取回网页内容并传送给客户的浏览器。对于企业网络而言，代理服务器可以起到控制网络访问并屏蔽不安全信息，以及网络加速的目的。</p>
-
-<h1>2.Squid简介</h1>
-
-<p>Squid官方网站 ： <a href="http://www.squid-cache.org/">http://www.squid-cache.org/</a></p>
-
-<p>Squid 是一个 Web 缓存代理，支持 HTTP, HTTPS, FTP, 以及更多。它通过缓存与重用经常请求的web页面，减少带宽使用同时提升了响应时间，并设置过滤。使用Squid可以通过访问控制特性来灵活的控制用户访问时间、站点等限制。</p>
-
-<h3>2.1 原理简介</h3>
-
-<p>客户端请求访问 WEB 服务时，DNS 将访问的域名解析为 Squid 代理服务器的 IP 地址，这样客户端的 URL 请求将被发送到代理服务器。如果 Squid代理服务器中缓存了该请求的资源，则将该请求的资源直接返回给客户端，否则代理服务器将向后台的WEB服务器请求资源，然后将请求的应答返回给客户端，同时也将该应答缓存在本地，供下一个请求者使用。</p>
-
-<h3>2.2 缓存限制</h3>
-
-<p>Squid 代理一般只缓存可缓冲的数据（比如 html 网页和图片等），而一些ASP、JSP 之类的动态程序默认不缓存。它根据从 WEB 服务器返回的 HTTP 头标记来缓冲静态页面。有四个最重要 HTTP 头标记：</p>
-
-<pre><code>Last-Modified: 告诉代理页面什么时间被修改
-Expires: 告诉代理页面什么时间应该从缓冲区中删除
-Cache-Control: 告诉代理页面是否应该被缓冲
-Pragma: 用来包含实现特定的指令，最常用的是 Pragma:no-cache
-</code></pre>
-
-<h1>3.Squid安装</h1>
-
-<pre><code>(1).下载 squid，这里下载的是3.4版本 : http://www.squid-cache.org/Versions/v3/3.4/
-(2).解压缩
-```
-xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
-```
-(3).配置
-(待续...)
-</code></pre>
-
-<h1>4.参考</h1>
-
-<p><a href="http://www.ibm.com/developerworks/cn/linux/l-cn-squid/">http://www.ibm.com/developerworks/cn/linux/l-cn-squid/</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/02/09/ncming-ling/">Nc命令</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-02-09T19:36:17+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>9</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:36 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>nc(netcat)是网络工具中的瑞士军刀。</p>
-
-<h1>1.参数</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ nc -h
-</span><span class='line'>OpenBSD netcat (Debian patchlevel 1.105-7ubuntu1)
-</span><span class='line'>This is nc from the netcat-openbsd package. An alternative nc is available
-</span><span class='line'>in the netcat-traditional package.
-</span><span class='line'>usage: nc [-46bCDdhjklnrStUuvZz] [-I length] [-i interval] [-O length]
-</span><span class='line'>      [-P proxy_username] [-p source_port] [-q seconds] [-s source]
-</span><span class='line'>      [-T toskeyword] [-V rtable] [-w timeout] [-X proxy_protocol]
-</span><span class='line'>      [-x proxy_address[:port]] [destination] [port]
-</span><span class='line'>    Command Summary:
-</span><span class='line'>        -4          使用IPv4
-</span><span class='line'>        -6          使用IPv6
-</span><span class='line'>        -b          允许广播(broadcast)
-</span><span class='line'>        -C          每行结尾加上CRLF(回车换行符)，即自动换行
-</span><span class='line'>        -D          启动debug sock选项
-</span><span class='line'>        -d          从stdin解绑(Detach from stdin)
-</span><span class='line'>        -h          帮助文档
-</span><span class='line'>        -I length   设置TCP接受的buffer长度
-</span><span class='line'>        -i secs     设置消息发送及端口扫描时间间隔，单位秒
-</span><span class='line'>        -j          Use jumbo frame
-</span><span class='line'>        -k          当一个连接结束时，强制nc监听另一个连接。必须和-l一起使用
-</span><span class='line'>        -l          监听模式，监听进入进入的连接(inbound connects)
-</span><span class='line'>        -n          直接使用IP地址，而不通过域名服务器
-</span><span class='line'>        -O length   设置TCP发送的buffer长度
-</span><span class='line'>        -P proxyuser    代理权限使用的用户名
-</span><span class='line'>        -p port     设置本地主机使用的通信端口
-</span><span class='line'>        -q secs     quit after EOF on stdin and delay of secs
-</span><span class='line'>        -r          随机指定本地主机使用的通信端口
-</span><span class='line'>        -S          Enable the TCP MD5 signature option
-</span><span class='line'>        -s addr     设置本地主机送出数据包的IP地址
-</span><span class='line'>        -T toskeyword   指定链接的IP服务类型
-</span><span class='line'>        -t          Answer TELNET negotiation
-</span><span class='line'>        -U          Use UNIX domain socket
-</span><span class='line'>        -u          使用UDP传输协议
-</span><span class='line'>        -V rtable   指定可选的路由表
-</span><span class='line'>        -v          显示指令执行过程
-</span><span class='line'>        -w secs     设置连接的超时时间，单位秒
-</span><span class='line'>        -X proto    指定代理协议: "4", "5" (SOCKS) or "connect"
-</span><span class='line'>        -x addr[:port]  指定代理地址和端口号
-</span><span class='line'>        -Z          DCCP mode
-</span><span class='line'>        -z          0输入输出模式(只在端口扫描的时候使用)
-</span><span class='line'>
-</span><span class='line'>    注意：参数中端口号可以为单个端口，也可以是端口区间:low-high(闭区间)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.典型使用case</h1>
-
-<p>下面列举了几个典型的使用，更多使用case参见：
-<a href="http://xmodulo.com/useful-netcat-examples-linux.html">http://xmodulo.com/useful-netcat-examples-linux.html</a></p>
-
-<h3>2.1.文件传输</h3>
-
-<p>在线上机器和本地机器之间传输文件，使用scp的话通常需要多次scp，并且通常需要密码，这是nc命令就显示其强大之处：</p>
-
-<p>文件源端：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>sudo cat abc.gz | nc -l 192.168.111.222 45678</span></code></pre></td></tr></table></div></figure>
-
-
-<p>文件目的端：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>nc 192.168.111.222 45678 &gt; abc.gz</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.2.端口扫描</h3>
-
-<p>测试远端机器的某一个端口是否打开，succeeded表示打开：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ nc -v -w 2 192.168.111.222 -z 21-24
-</span><span class='line'>Connection to 192.168.111.222 21 port [tcp/ftp] succeeded!
-</span><span class='line'>Connection to 192.168.111.222 22 port [tcp/ssh] succeeded!
-</span><span class='line'>nc: connect to 192.168.111.222 port 23 (tcp) failed: Connection refused
-</span><span class='line'>nc: connect to 192.168.111.222 port 24 (tcp) failed: Connection refused</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.3.简单聊天工具</h3>
-
-<p>一端打开：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ nc -l 1234
-</span><span class='line'>hello
-</span><span class='line'>yes</span></code></pre></td></tr></table></div></figure>
-
-
-<p>另外一端连接，就可以聊天了：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ nc 192.168.111.222 1234
-</span><span class='line'>hello
-</span><span class='line'>yes</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.参考</h1>
-
-<p><a href="http://xmodulo.com/useful-netcat-examples-linux.html">http://xmodulo.com/useful-netcat-examples-linux.html</a></p>
-
-<p><a href="http://mylinuxbook.com/linux-netcat-command/">http://mylinuxbook.com/linux-netcat-command/</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/6">&larr; Older</a>
@@ -1519,23 +1511,23 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务-AOP</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务-Spring事务</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
       </li>
     
       <li class="post">
-        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务</a>
+        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务-代理</a>
       </li>
     
       <li class="post">
         <a href="/blog/2016/02/03/strace/">Strace</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2016/01/28/who-eat-jvms-memory/">Who Eats JVM's Memory</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a>
       </li>
     
   </ul>
@@ -1562,7 +1554,7 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (8)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (6)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

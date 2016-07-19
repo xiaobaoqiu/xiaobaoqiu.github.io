@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Spring | xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/blog/categories/spring/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2016-07-06T17:35:37+08:00</updated>
+  <updated>2016-07-19T10:08:03+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -14,7 +14,812 @@
 
   
   <entry>
-    <title type="html"><![CDATA[从代理到Spring事务]]></title>
+    <title type="html"><![CDATA[从代理到Spring事务-AOP]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/"/>
+    <updated>2016-07-15T14:26:22+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.Spring%20AOP">1.Spring AOP</a>
+
+<ul>
+<li><a href="#1.1%20%E4%BB%A3%E7%90%86%E7%B1%BB%E5%9E%8B%E9%80%89%E6%8B%A9">1.1 代理类型选择</a></li>
+<li><a href="#1.2%20%E4%BB%A3%E7%90%86%E8%B0%83%E7%94%A8">11.2 代理调用</a></li>
+<li><a href="#1.3%20Understanding%20AOP%20Proxies">1.3 Understanding AOP Proxies</a></li>
+<li><a href="#1.4%20Spring%E5%A6%82%E4%BD%95%E8%AF%86%E5%88%AB%E5%B9%B6%E8%A7%A3%E6%9E%90%E9%85%8D%E7%BD%AE">1.4 Spring如何识别并解析配置</a></li>
+<li><a href="#1.5%20Spring%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E4%BB%A3%E7%90%86%E5%AE%9E%E7%8E%B0AOP">1.5 Spring如何使用代理实现AOP</a></li>
+</ul>
+</li>
+</ul>
+
+
+<h2 id="1.Spring AOP">2.Spring AOP</h2>
+
+
+<p>Spring的AOP(Aspect Oriented Programming，面向切面编程)是一个强大的机制，常用场景在日志、安全、异常处理、事务等。Spring AOP的原理正是基于代理。</p>
+
+<p>我想了解的问题包括：</p>
+
+<pre><code>(1).Spring AOP使用什么机制做代理；
+(2).Spring 怎么使用代理达到AOP目的；
+</code></pre>
+
+<h4 id="#1.1 代理类型选择">#1.1 代理类型选择</h4>
+
+
+<p>先看看Spring是如何选择代理，先看看 <a href="http://docs.spring.io/spring/docs/3.0.x/reference/aop.html">Spring官方AOP文档</a> 的说明：</p>
+
+<pre><code>Spring AOP defaults to using standard J2SE dynamic proxies for AOP proxies. This enables any interface (or set of interfaces) to be proxied.
+
+Spring AOP can also use CGLIB proxies. This is necessary to proxy classes, rather than interfaces. CGLIB is used by default if a business object does not implement an interface. As it is good practice to program to interfaces rather than classes, business classes normally will implement one or more business interfaces. It is possible to force the use of CGLIB, in those (hopefully rare) cases where you need to advise a method that is not declared on an interface, or where you need to pass a proxied object to a method as a concrete type.
+</code></pre>
+
+<p>官方文档的结论是：当业务Bean实现了一个或多个接口的时候，默认使用Java动态代理，当业务Bean没有实现任何接口的时候使用CGLib。</p>
+
+<p>我们来看看相关代码，Spring使用AopProxy表示AOP中的代理，它的作用只要一个：创建代理对象。它有两个实现类：JdkDynamicAopProxy 和 CglibAopProxy ：</p>
+
+<pre><code>public interface AopProxy {
+    Object getProxy();
+
+    Object getProxy(ClassLoader classLoader);
+}
+
+// JdkDynamicAopProxy 实现了 InvocationHandler，实际产生代理类使用 Proxy
+final class JdkDynamicAopProxy implements AopProxy, InvocationHandler, Serializable {
+    public Object getProxy(ClassLoader classLoader) {
+        ...
+        return Proxy.newProxyInstance(classLoader, proxiedInterfaces, this);
+    }
+}
+
+final class CglibAopProxy implements AopProxy, Serializable {
+    public Object getProxy(ClassLoader classLoader) {
+        Class&lt;?&gt; rootClass = this.advised.getTargetClass();
+
+        // 配置 CGLIB Enhancer...
+        Enhancer enhancer = createEnhancer();
+        enhancer.setSuperclass(proxySuperClass);
+        enhancer.setStrategy(new UndeclaredThrowableStrategy(UndeclaredThrowableException.class));
+        enhancer.setInterfaces(AopProxyUtils.completeProxiedInterfaces(this.advised));
+        enhancer.setInterceptDuringConstruction(false);
+
+        Callback[] callbacks = getCallbacks(rootClass);
+        enhancer.setCallbacks(callbacks);
+        enhancer.setCallbackFilter(new ProxyCallbackFilter(
+                this.advised.getConfigurationOnlyCopy(), this.fixedInterceptorMap, this.fixedInterceptorOffset));
+
+        Class&lt;?&gt;[] types = new Class[callbacks.length]; //CGLib的回调机制
+        for (int x = 0; x &lt; types.length; x++) {
+            types[x] = callbacks[x].getClass();
+        }
+        enhancer.setCallbackTypes(types);
+
+        // 产生代理类并产生代理类的一个instance
+        Object proxy;
+        if (this.constructorArgs != null) {
+            proxy = enhancer.create(this.constructorArgTypes, this.constructorArgs);
+        } else {
+            proxy = enhancer.create();
+        }
+
+        return proxy;
+    }
+}
+</code></pre>
+
+<p>AopProxyFactory的默认实现类DefaultAopProxyFactory：</p>
+
+<pre><code>    public AopProxy createAopProxy(AdvisedSupport config) throws AopConfigException {
+        if (config.isOptimize() || config.isProxyTargetClass() || hasNoUserSuppliedProxyInterfaces(config)) {
+            Class targetClass = config.getTargetClass();
+            if (targetClass == null) {
+                throw new AopConfigException("TargetSource cannot determine target class: " +
+                        "Either an interface or a target is required for proxy creation.");
+            }
+            if (targetClass.isInterface()) {    //被代理类，实现了接口，就使用Java动态代理
+                return new JdkDynamicAopProxy(config);
+            }
+            return CglibProxyFactory.createCglibProxy(config);  //没有实现接口使用 CGLib代理
+        }
+        else {
+            return new JdkDynamicAopProxy(config);
+        }
+    }
+</code></pre>
+
+<p>其中 AdvisedSupport 是 AOP配置管理的基类。这几个配置的说明可以参见 ProxyConfig 类。其中我注释的地方和官方文档是一致的。</p>
+
+<h4 id="#1.2 代理调用">#1.2 代理调用</h4>
+
+
+<p>得到代理对象之后的下一步就是调用代理逻辑，这部分实现直接看 JdkDynamicAopProxy.invoke() 代码：</p>
+
+<pre><code>public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+    //TargetSource包括被代理者的一些属性
+    TargetSource targetSource = this.advised.targetSource;
+    try {
+        Object retVal;
+
+        // 具体的被代理对象
+        target = targetSource.getTarget();
+        if (target != null) {
+            targetClass = target.getClass();
+        }
+
+        // 从代理配置中获取方法上的 MethodInterceptor
+        List&lt;Object&gt; chain = this.advised.getInterceptorsAndDynamicInterceptionAdvice(method, targetClass);
+
+        // 没有 MethodInterceptor，直接反射调用
+        if (chain.isEmpty()) {
+            retVal = AopUtils.invokeJoinpointUsingReflection(target, method, args);
+        } else {
+            // 创建 MethodInvocation 并调用
+            invocation = new ReflectiveMethodInvocation(proxy, target, method, args, targetClass, chain);
+            retVal = invocation.proceed();
+        }
+
+        return retVal;
+    }
+}
+</code></pre>
+
+<p>先看看如何获取方法上的 MethodInterceptor，AdvisedSupport其实只是对这个做缓存，实际调用 DefaultAdvisorChainFactory.getInterceptorsAndDynamicInterceptionAdvice：</p>
+
+<pre><code>/**
+ * 从提供的配置实例config中获取advisor列表,遍历处理这些advisor
+ * 如果是PointcutAdvisor,则判断此Advisor能否应用到目标方法method上.
+ * 将满足条件的Advisor通过AdvisorAdaptor转化成Interceptor列表返回
+ */
+public List&lt;Object&gt; getInterceptorsAndDynamicInterceptionAdvice(
+        Advised config, Method method, Class targetClass) {
+
+    List&lt;Object&gt; interceptorList = new ArrayList&lt;Object&gt;(config.getAdvisors().length);
+    boolean hasIntroductions = hasMatchingIntroductions(config, targetClass);
+    AdvisorAdapterRegistry registry = GlobalAdvisorAdapterRegistry.getInstance();
+    for (Advisor advisor : config.getAdvisors()) {
+        if (advisor instanceof PointcutAdvisor) {
+            PointcutAdvisor pointcutAdvisor = (PointcutAdvisor) advisor;
+            if (config.isPreFiltered() || pointcutAdvisor.getPointcut().getClassFilter().matches(targetClass)) {
+                //将Advisor转化成Interceptor
+                MethodInterceptor[] interceptors = registry.getInterceptors(advisor);
+                MethodMatcher mm = pointcutAdvisor.getPointcut().getMethodMatcher();
+
+                //检查当前advisor的pointcut是否可以匹配当前方法
+                if (MethodMatchers.matches(mm, method, targetClass, hasIntroductions)) {
+                    if (mm.isRuntime()) {
+                        // Creating a new object instance in the getInterceptors() method
+                        // isn't a problem as we normally cache created chains.
+                        for (MethodInterceptor interceptor : interceptors) {
+                            interceptorList.add(new InterceptorAndDynamicMethodMatcher(interceptor, mm));
+                        }
+                    }
+                    else {
+                        interceptorList.addAll(Arrays.asList(interceptors));
+                    }
+                }
+            }
+        }
+        ...
+    }
+    return interceptorList;
+}
+</code></pre>
+
+<p>下面看看这些 Interceptor 是如何起作用的，看 ReflectiveMethodInvocation 的 proceed() 方法逻辑：</p>
+
+<pre><code>public Object proceed() throws Throwable {
+    // currentInterceptorIndex 表示 Interceptor 链中的当前调用的下标
+    Object interceptorOrInterceptionAdvice = this.interceptorsAndDynamicMethodMatchers.get(++this.currentInterceptorIndex);
+    if (interceptorOrInterceptionAdvice instanceof InterceptorAndDynamicMethodMatcher) {
+        InterceptorAndDynamicMethodMatcher dm = (InterceptorAndDynamicMethodMatcher) interceptorOrInterceptionAdvice;
+        // 运行时参数(arguments)是否满足匹配条件
+        if (dm.methodMatcher.matches(this.method, this.targetClass, this.arguments)) {
+            return dm.interceptor.invoke(this);
+        } else {
+            // 不匹配，直接跳过当前这个 Interceptor，执行下一个 Interceptor
+            return proceed();
+        }
+    }
+}
+</code></pre>
+
+<h4 id="#1.3 Understanding AOP Proxies">#1.3 Understanding AOP Proxies</h4>
+
+
+<p>这里其实完全参考Spring AOP官方文档的一节就行了：<a href="http://docs.spring.io/spring/docs/3.0.x/reference/aop.html#aop-understanding-aop-proxies">http://docs.spring.io/spring/docs/3.0.x/reference/aop.html#aop-understanding-aop-proxies</a></p>
+
+<p>看懂了这一节，能很明白为什么内部调用的方法上的事务注解无效，我们日常犯的错误基本不会有了。</p>
+
+<h4 id="#1.4 Spring如何识别并解析配置">#1.4 Spring如何识别并解析配置</h4>
+
+
+<p>我们都是通过XML文件的形式使用Spring，Spring使用XmlBeanDefinitionReader类来读取解析XML文件，XmlBeanDefinitionReader使用DefaultBeanDefinitionDocumentReader，再调用BeanDefinitionParserDelegate，其中会根据配置的不同找到对应的NamespaceHandler来处理对应的标签。NamespaceHandler是一个接口，一个具体接口就是解析XML中的一个Element得到一个Spring容器中的一个Bean。</p>
+
+<pre><code>public interface NamespaceHandler {
+    BeanDefinition parse(Element element, ParserContext parserContext);
+}
+</code></pre>
+
+<p>NamespaceHandler的具体实现类很多，其中几个我们感兴趣的AopNamespaceHandler，MvcNamespaceHandler，QScheduleNamespaceHandler，QConfigNamespaceHandler，QmqClientNamespaceHandler等，看到这里大家应该很熟悉了。我们来看两个实现吧：</p>
+
+<pre><code>public class AopNamespaceHandler extends NamespaceHandlerSupport {
+    public void init() {
+        registerBeanDefinitionParser("config", new ConfigBeanDefinitionParser());
+        registerBeanDefinitionParser("aspectj-autoproxy", new AspectJAutoProxyBeanDefinitionParser());
+        registerBeanDefinitionDecorator("scoped-proxy", new ScopedProxyBeanDefinitionDecorator());
+        registerBeanDefinitionParser("spring-configured", new SpringConfiguredBeanDefinitionParser());
+    }
+}
+
+public class MvcNamespaceHandler extends NamespaceHandlerSupport {
+    public void init() {
+        registerBeanDefinitionParser("annotation-driven", new AnnotationDrivenBeanDefinitionParser());
+        registerBeanDefinitionParser("default-servlet-handler", new DefaultServletHandlerBeanDefinitionParser());
+        registerBeanDefinitionParser("interceptors", new InterceptorsBeanDefinitionParser());
+        registerBeanDefinitionParser("resources", new ResourcesBeanDefinitionParser());
+        registerBeanDefinitionParser("view-controller", new ViewControllerBeanDefinitionParser());
+    }
+}
+</code></pre>
+
+<p>就是说Spring将配置根据作用分成不同的namespace，每个NamespaceHandler只解析自己独有的几个配置，比如AopNamespaceHandler负责解析scoped-proxy等几个配置，比如我们在配置文件配上：</p>
+
+<p>```</p>
+
+<!--aop就表示namespace-->
+
+
+<p>&lt;aop:config proxy-target-class=&ldquo;true&rdquo;/></p>
+
+<p>```
+最后就会找到AopNamespaceHandler类解析这个配置。那出了这些带namespace的配置，正常的配置谁来解析？DefaultBeanDefinitionDocumentReader。</p>
+
+<p>spring在解析的过程中，会去收集spring.*.jar/META-INF下的spring.handlers,spring.schemas文件，这2个文件就是指明了解析spring中自定义标签的Namespace类。如果自己开发Spring组件，需要增加新的标签，也可以按照这个机制。<a href="www.qunar.com">我司</a>的同学可以看看qmq-client包下的META-INF下的这两个文件。</p>
+
+<p>到目前为止，大致知道了谁来解析AOP相关的标签。我们继续看看 AopNamespaceHandler 的代码，它的init()的方法就是给每个标签找一个解析器，比如 aop:config 这个配置就会找到 ConfigBeanDefinitionParser 这个解析器。,些解析器只有一个parse入口函数。</p>
+
+<p>最后放一张AOP相关的图(来源：<a href="http://blog.csdn.net/moreevan/article/details/11977115">http://blog.csdn.net/moreevan/article/details/11977115</a>)</p>
+
+<p><img src="/images/spring/aop_class.png"></p>
+
+<h4 id="#1.5 Spring如何使用代理实现AOP">#1.5 Spring如何使用代理实现AOP</h4>
+
+
+<p>最后我们整理一下Spring使用代理实现AOP整个流程的步骤。</p>
+
+<p>1.我们在代码中使用引入bean；
+2.Spring从BeanFactory总获取bean(ApplicationContext.getBean)，参见AbstractBeanFactory.getBean代码：</p>
+
+<pre><code>    public Object getBean(String name) throws BeansException {
+        return doGetBean(name, null, null, false);
+    }
+    protected &lt;T&gt; T doGetBean(final String name, final Class&lt;T&gt; requiredType, final Object[] args, boolean typeCheckOnly)
+            throws BeansException {
+
+        final String beanName = transformedBeanName(name);
+        Object bean;
+
+        // 创建单例的bean
+        if (mbd.isSingleton()) {
+            sharedInstance = getSingleton(beanName, new ObjectFactory&lt;Object&gt;() {
+                public Object getObject() throws BeansException {
+                    try {
+                        return createBean(beanName, mbd, args);    //创建Bean
+                    }
+                }
+            });
+            bean = getObjectForBeanInstance(sharedInstance, name, beanName, mbd);
+        }
+    }
+</code></pre>
+
+<p>3.触发Bean的创建，参考AbstractAutowireCapableBeanFactory.createBean代码：</p>
+
+<pre><code>    public Object createBean(Class beanClass, int autowireMode, boolean dependencyCheck) throws BeansException {
+        // Use non-singleton bean definition, to avoid registering bean as dependent bean.
+        RootBeanDefinition bd = new RootBeanDefinition(beanClass, autowireMode, dependencyCheck);
+        bd.setScope(BeanDefinition.SCOPE_PROTOTYPE);
+        return createBean(beanClass.getName(), bd, null);       //---1
+    }
+    protected Object createBean(final String beanName, final RootBeanDefinition mbd, final Object[] args)
+            throws BeanCreationException {
+        ...
+        Object beanInstance = doCreateBean(beanName, mbd, args);        //---2
+        return beanInstance;
+    }
+    protected Object doCreateBean(final String beanName, final RootBeanDefinition mbd, final Object[] args) {
+        // Eagerly cache singletons to be able to resolve circular references
+        // even when triggered by lifecycle interfaces like BeanFactoryAware.
+        boolean earlySingletonExposure = (mbd.isSingleton() &amp;&amp; this.allowCircularReferences &amp;&amp;
+                isSingletonCurrentlyInCreation(beanName));
+        if (earlySingletonExposure) {
+            addSingletonFactory(beanName, new ObjectFactory() {
+                public Object getObject() throws BeansException {
+                    return getEarlyBeanReference(beanName, mbd, bean);      //---3
+                }
+            });
+        }
+
+        // Initialize the bean instance.
+        ...
+        return exposedObject;
+    }
+    protected Object getEarlyBeanReference(String beanName, RootBeanDefinition mbd, Object bean) {
+        Object exposedObject = bean;
+        if (bean != null &amp;&amp; !mbd.isSynthetic() &amp;&amp; hasInstantiationAwareBeanPostProcessors()) {
+            for (BeanPostProcessor bp : getBeanPostProcessors()) {
+                if (bp instanceof SmartInstantiationAwareBeanPostProcessor) {
+                    SmartInstantiationAwareBeanPostProcessor ibp = (SmartInstantiationAwareBeanPostProcessor) bp;
+                    exposedObject = ibp.getEarlyBeanReference(exposedObject, beanName);     //---逐层包装bean
+                    if (exposedObject == null) {
+                        return exposedObject;
+                    }
+                }
+            }
+        }
+        return exposedObject;
+    }
+</code></pre>
+
+<ol>
+<li>触发代理类对象的创建，见 AbstractAutoProxyCreator，这个其实是一个 BeanPostProcessor，关于BeanPostProcessor的作用见它的注释：</li>
+</ol>
+
+
+<pre><code> * Factory hook that allows for custom modification of new bean instances,
+ * e.g. checking for marker interfaces or wrapping them with proxies.
+</code></pre>
+
+<p>AbstractAutoProxyCreator代码：</p>
+
+<pre><code>    public Object getEarlyBeanReference(Object bean, String beanName) throws BeansException {
+        Object cacheKey = getCacheKey(bean.getClass(), beanName);
+        this.earlyProxyReferences.put(cacheKey, Boolean.TRUE);
+        return wrapIfNecessary(bean, beanName, cacheKey);
+    }
+    protected Object wrapIfNecessary(Object bean, String beanName, Object cacheKey) {
+        // 获取被代理bean上的所有的 Advisor
+        Object[] specificInterceptors = getAdvicesAndAdvisorsForBean(bean.getClass(), beanName, null);
+        if (specificInterceptors != DO_NOT_PROXY) {
+            this.advisedBeans.put(cacheKey, Boolean.TRUE);
+            //为制定类创建代理bean
+            Object proxy = createProxy(bean.getClass(), beanName, specificInterceptors, new SingletonTargetSource(bean));
+            this.proxyTypes.put(cacheKey, proxy.getClass());
+            return proxy;
+        }
+    }
+
+    protected Object createProxy(
+            Class&lt;?&gt; beanClass, String beanName, Object[] specificInterceptors, TargetSource targetSource) {
+        // ProxyFactory 继承自 ProxyConfig，局部变量
+        ProxyFactory proxyFactory = new ProxyFactory();
+        proxyFactory.copyFrom(this);
+
+        // shouldProxyTargetClass表示显示的定义了proxy-target-class="true"
+        // 没有定义则可能需要被代理类的 interface 信息
+        if (!shouldProxyTargetClass(beanClass, beanName)) {
+            Class&lt;?&gt;[] targetInterfaces = ClassUtils.getAllInterfacesForClass(beanClass, this.proxyClassLoader);
+            for (Class&lt;?&gt; targetInterface : targetInterfaces) {
+                proxyFactory.addInterface(targetInterface);
+            }
+        }
+
+        Advisor[] advisors = buildAdvisors(beanName, specificInterceptors);
+        for (Advisor advisor : advisors) {
+            proxyFactory.addAdvisor(advisor);
+        }
+
+        proxyFactory.setTargetSource(targetSource); //被代理者
+        ...
+        // 创建代理对象
+        return proxyFactory.getProxy(this.proxyClassLoader);
+    }
+</code></pre>
+
+<p>ProxyFactory.java:</p>
+
+<pre><code>    public Object getProxy(ClassLoader classLoader) {
+        return createAopProxy().getProxy(classLoader);
+    }
+    protected final synchronized AopProxy createAopProxy() {
+        if (!this.active) {
+            activate();
+        }
+        return getAopProxyFactory().createAopProxy(this);
+    }
+</code></pre>
+
+<p>DefaultAopProxyFactory.java的createAopProxy，回到了我们 1.1 代理类型选择 中涉及的内容，整个过程串起来了。</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[从代理到Spring事务-Spring事务]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2016/07/07/springshi-wu/"/>
+    <updated>2016-07-07T18:45:10+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2016/07/07/springshi-wu</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.Spring%E4%BA%8B%E5%8A%A1">1.Spring事务</a>
+
+<ul>
+<li><a href="#1.1%20%E4%BA%8B%E5%8A%A1%E5%AE%9A%E4%B9%89">1.1 事务定义</a></li>
+<li><a href="#1.2%20%E4%BA%8B%E5%8A%A1%E7%AE%A1%E7%90%86%E5%99%A8">1.2 事务管理器</a></li>
+<li><a href="#1.3%20How%20Transactional%20Works">1.3 How Transactional Works</a></li>
+<li><a href="#1.4%20Roll%20Back">1.4 Roll Back</a></li>
+<li><a href="#1.4%20Pitfalls">1.5 Pitfalls</a></li>
+</ul>
+</li>
+</ul>
+
+
+<h2 id="1.Spring事务">1.Spring事务</h2>
+
+
+<p>我们使用事务的目标：</p>
+
+<pre><code>The most common reason for using transactions in an application is to maintain a high degree of data integrity and consistency.
+</code></pre>
+
+<p>我的理解Spring事务中包括的几个主要要素，下面会一一讲解：</p>
+
+<pre><code>1.事务定义：事务包含哪些属性
+2.事务管理器：如何将我们对事务的诉求转化为数据库层面的实现
+3.事务切面：Spring底层是如何将业务和事务串起来的
+</code></pre>
+
+<p>关于事务的使用是最简单的，通常分为 编程式事务 和 注解式事务：</p>
+
+<h5>编程式事务</h5>
+
+<p>代码直接使用PlatformTransactionManager，因此需要使用者自己管理事务的创建，提交，回滚，挂起等逻辑。</p>
+
+<p>优点：灵活度大；
+缺点：使用难度大，易出错，业务代码侵入大；</p>
+
+<p><a href="http://www.tutorialspoint.com/spring/programmatic_management.htm">一个编程式事务的完整Demo</a></p>
+
+<p>我们可以使用 Spring 提供的 TransactionTemplate 类来简化编程事务：</p>
+
+<pre><code>    TransactionTemplate template = new TransactionTemplate();
+    template.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_DEFAULT);
+    template.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRED);
+    template.setTransactionManager(transactionManager);
+    template.execute(new TransactionCallback&lt;UserAo&gt;() {
+        @Override
+        public UserAo doInTransaction(TransactionStatus status) {
+             //business logic
+        }
+    });
+</code></pre>
+
+<p>我们可以看一下 TransactionTemplate 的实现代码，TransactionTemplate继承了DefaultTransactionDefinition(实现了TransactionDefinition)，使用TransactionDefinition需要我们给定一个TransactionManager，可以修改 事务隔离级别，事务传播行为等事务属性(其实是DefaultTransactionDefinition提供的功能)。</p>
+
+<pre><code>    public &lt;T&gt; T execute(TransactionCallback&lt;T&gt; action) throws TransactionException {
+        TransactionStatus status = this.transactionManager.getTransaction(this);    //获取并初始化事务，处理比如事务传播形式等
+        T result;
+        try {
+            result = action.doInTransaction(status);    //业务逻辑，包括自定义的回滚
+        } catch (RuntimeException ex) {
+            // Transactional code threw application exception -&gt; rollback
+            rollbackOnException(status, ex);
+            throw ex;
+        } catch (Error err) {
+            // Transactional code threw error -&gt; rollback
+            rollbackOnException(status, err);
+            throw err;
+        } catch (Exception ex) {
+            // Transactional code threw unexpected exception -&gt; rollback
+            rollbackOnException(status, ex);
+            throw new UndeclaredThrowableException(ex, "TransactionCallback threw undeclared checked exception");
+        }
+        this.transactionManager.commit(status); //事务提交
+        return result;
+    }
+</code></pre>
+
+<p>其中 transactionManager.getTransaction(this) 的代码后面会详细分析。</p>
+
+<h5>注解式事务</h5>
+
+<p>使用 @Transactional 来管理事务，我们需要声明一个全局的事务管理器，以及事务对注解的支持：</p>
+
+<pre><code>    &lt;bean id="txManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager"&gt;
+        &lt;property name="dataSource" ref="dataSource"/&gt;
+    &lt;/bean&gt;
+
+    &lt;tx:annotation-driven transaction-manager="txManager"/&gt;
+</code></pre>
+
+<p>优点：使用简单，业务代码侵入小；
+缺点：理解有难度；</p>
+
+<p>注意：Spring建议在具体业务实现类上使用Transactional注解，而不是在接口或则接口的方法上配置@Transactional注解：</p>
+
+<pre><code>The Spring team’s recommendation is that you only annotate concrete classes with the @Transactional annotation, as opposed to annotating interfaces. 
+You certainly can place the @Transactional annotation on an interface (or an interface method), but this will only work as you would expect it to if you are using interface-based proxies. 
+The fact that annotations are not inherited means that if you are using class-based proxies (proxy-target-class=“true“) or the weaving-based aspect (mode=“aspectj“) then the transaction settings will not be recognised by the proxying/weaving infrastructure and the object will not be wrapped in a transactional proxy (which would be decidedly bad). 
+So please do take the Spring team’s advice and only annotate concrete classes (and the methods of concrete classes) with the @Transactional annotation.
+</code></pre>
+
+<p>Transactional注解上可以设置很多事务相关的参数：</p>
+
+<pre><code>public @interface Transactional {
+    /**
+     * 用于配置事务管理器，当系统中存在多个数据源多个事务管理器的时候有用
+     * 配置 txManager1 这种 bean name
+     */
+    String value() default "";
+
+    /**
+     * 事务传播级别
+     */
+    Propagation propagation() default Propagation.REQUIRED;
+
+    /**
+     * 事务隔离级别
+     */
+    Isolation isolation() default Isolation.DEFAULT;
+
+    /**
+     * 事务超时时间
+     */
+    int timeout() default TransactionDefinition.TIMEOUT_DEFAULT;
+
+    /**
+     * 事务是否read-only
+     * 注意：这个设置对真实的事务执行系统是一个 hint 而不是 强制要求有这个配置的情况下 write 一定导致失败
+     */
+    boolean readOnly() default false;
+
+    /**
+     * 定义0个或多个exception，当事务遇到这些异常的时候，事务会回滚
+     */
+    Class&lt;? extends Throwable&gt;[] rollbackFor() default {};
+
+    /**
+     * 定义0个或多个exception的name，当事务遇到这些异常的时候，事务会回滚
+     * 最好定义完整的路径，比如 javax.servlet.ServletException 会代表 ServletException 本身及子类
+     */
+    String[] rollbackForClassName() default {};
+
+    /**
+     * 定义0个或多个exception，当事务遇到这些异常的时候，事务不会回滚
+     */
+    Class&lt;? extends Throwable&gt;[] noRollbackFor() default {};
+
+    /**
+     * 定义0个或多个exception的name，当事务遇到这些异常的时候，事务不会回滚
+     */
+    String[] noRollbackForClassName() default {};
+}
+</code></pre>
+
+<h4 id="1.1 事务定义">1.1 事务定义</h4>
+
+
+<p>如何定义一个事务，Spring中使用 TransactionDefinition 来定义一个事务的属性，使用接口的形式：</p>
+
+<pre><code>public interface TransactionDefinition {
+    /**
+     * 事务传播行为,可选项参见 TransactionDefinition 中定义的 PROPAGATION_XXX
+     */
+    int getPropagationBehavior();
+
+    /**
+     * 事务隔离级别,可选项参见 TransactionDefinition 中定义的 ISOLATION_XXX
+     * 只在 PROPAGATION_REQUIRED 和 PROPAGATION_REQUIRES_NEW 这两个事务传播行为配置下有效
+     */
+    int getIsolationLevel();
+
+    /**
+     * 事务超时时间,单位秒
+     * 默认 TIMEOUT_DEFAULT = -1 表示使用底层实现的超时时间或者没有(不支持事务超时时间)
+     * 只在 PROPAGATION_REQUIRED 和 PROPAGATION_REQUIRES_NEW 这两个事务传播行为配置下有效
+     * 如果事务管理器不支持设置超时时间，而调用了这个接口会抛出异常
+     */
+    int getTimeout();
+
+    boolean isReadOnly();
+
+    /**
+     * 事务name，允许为null
+     * 对于申明式事务，默认的name为：完整的class名称.metho名称
+     */
+    String getName();
+}
+</code></pre>
+
+<p>TransactionDefinition 有一个默认实现 DefaultTransactionDefinition，其中定义了事务几个属性的默认值：</p>
+
+<pre><code>    private int propagationBehavior = PROPAGATION_REQUIRED;
+    private int isolationLevel = ISOLATION_DEFAULT;
+    private int timeout = TIMEOUT_DEFAULT;
+    private boolean readOnly = false;
+</code></pre>
+
+<h5>事务传播</h5>
+
+<p>关于事务的传播行为，这里简单介绍一下：</p>
+
+<pre><code>    /**
+     * 如果已经存在事务直接使用，如果不存在则创建一个新事务
+     */
+    int PROPAGATION_REQUIRED = 0;
+
+    /**
+     * 如果已经存在事务直接使用，如果不存在则不使用事务
+     */
+    int PROPAGATION_SUPPORTS = 1;
+
+    /**
+     * 如果已经存在事务直接使用，如果不存在则抛出异常
+     */
+    int PROPAGATION_MANDATORY = 2;
+
+    /**
+     * 创建一个新事务，如果如果已经存在事务则将当前事务挂起
+     */
+    int PROPAGATION_REQUIRES_NEW = 3;
+
+    /**
+     * 不使用事务，如果当前已经存在事务则将当前事务挂起
+     */
+    int PROPAGATION_NOT_SUPPORTED = 4;
+
+    /**
+     * 不使用事务，如果当前存在事务则跑出异常
+     */
+    int PROPAGATION_NEVER = 5;
+
+    /**
+     * 如果已经存在事务直接使用，则执行一个嵌套事务，如果当前没有事务就创建一个新事务
+     */
+    int PROPAGATION_NESTED = 6;
+</code></pre>
+
+<p>其中 PROPAGATION_NESTED 理解有点困难，可以参考 <a href="http://docs.spring.io/spring/docs/3.2.x/spring-framework-reference/html/transaction.html#tx-propagation">Spring 的文档</a>：</p>
+
+<pre><code>PROPAGATION_NESTED uses a single physical transaction with multiple savepoints that it can roll back to. 
+Such partial rollbacks allow an inner transaction scope to trigger a rollback for its scope, with the outer transaction being able to continue the physical transaction despite some operations having been rolled back. 
+This setting is typically mapped onto JDBC savepoints, so will only work with JDBC resource transactions. See Spring's DataSourceTransactionManager.
+</code></pre>
+
+<p>大致意思就是关于 SavePoint，JDBC定义了java.sql.SavePoint接口，提供在一个更细粒度的事务控制机制。当设置了一个保存点后，可以rollback到该保存点处的状态，而不是rollback整个事务。Connection接口的setSavepoint和releaseSavepoint方法可以设置和释放保存点。
+而Spring中定义了 SavepointManager，用于 SavePoint 的创建(createSavepoint)，回滚(rollbackToSavepoint)，释放(releaseSavepoint)。</p>
+
+<h5>事务隔离级别</h5>
+
+<p>关于事务的隔离级别，也简单介绍一下，除了 ISOLATION_DEFAULT ，其余均使用 java.sql.Connection 中的隔离级别的定义：</p>
+
+<pre><code>    /**
+     * 使用底层数据源的隔离级别
+     * 参考：java.sql.Connection.getTransactionIsolation()
+     */
+    int ISOLATION_DEFAULT = -1;
+
+    /**
+     * READ_UNCOMMITTED
+     */
+    int ISOLATION_READ_UNCOMMITTED = Connection.TRANSACTION_READ_UNCOMMITTED;
+
+    /**
+     * READ_COMMITTED
+     */
+    int ISOLATION_READ_COMMITTED = Connection.TRANSACTION_READ_COMMITTED;
+
+    /**
+     * REPEATABLE_READ
+     */
+    int ISOLATION_REPEATABLE_READ = Connection.TRANSACTION_REPEATABLE_READ;
+
+    /**
+     * SERIALIZABLE
+     */
+    int ISOLATION_SERIALIZABLE = Connection.TRANSACTION_SERIALIZABLE;
+</code></pre>
+
+<h4 id="1.2 事务管理器">1.2 事务管理器</h4>
+
+
+<p>事务管理 Spring 使用 PlatformTransactionManager 定义，其中包含一个事务的三个主要操作，在业务开始之前开始事务，执行业务逻辑之后提交事务，业务逻辑异常则回滚事务：</p>
+
+<pre><code>public interface PlatformTransactionManager {
+    /**
+     * 根据事务定义(TransactionDefinition),返回当前active事务或者创建一个新的事务
+     * 注意：
+     * 1.TransactionDefinition 中的隔离级别超时时间等设置只在创建了新事物的时候有效，如果使用当前已存在的事务则无效
+     * 2.不是所有的事务管理器都支持 TransactionDefinition 中的所有属性，当事务管理器遇到不支持的属性则抛异常
+     * 3.上条规则的例外是 read-only这个属性，如果事务管理器不支持这个属性直接忽略
+     */
+    TransactionStatus getTransaction(TransactionDefinition definition) throws TransactionException;
+
+    /**
+     * 事务提交
+     */
+    void commit(TransactionStatus status) throws TransactionException;
+
+    /**
+     * 回滚事务
+     */
+    void rollback(TransactionStatus status) throws TransactionException;
+}
+</code></pre>
+
+<p>我们熟悉的 JDBC 支持的事务管理器 DataSourceTransactionManager 就是其一个实现，其他还包括 JtaTransactionManager 等。</p>
+
+<p>同时，Spring提供了一个 TransactionStatus 的就看便于再代码中控制事务以及获取事物状态。在PlatformTransactionManager中获取事务的返回值就是一个 TransactionStatus 对象。</p>
+
+<h4 id="1.3 How Transactional Works">1.3 How Transactional Works</h4>
+
+
+<p>下面会讲解我们使用的 Transactional 注解的工作原理，即当我们在Service的某个public方法上加上 @Transactional之后，从编译到调用这个方法整个过程中会发生什么，事务再其中如何起作用。</p>
+
+<p>这个好像没什么讲的，就是AOP的实现原理。简单的说就是创建Bean的时候会创建一个代理Bean，使用AOP实现事务，参考上一届的AOP实现原理。我们可以参考 TransactionInterceptor 的代码。</p>
+
+<h4 id="1.4 线程保持">1.4 线程保持</h4>
+
+
+
+
+<h4 id="1.5 Roll Back">1.5 Roll Back</h4>
+
+
+<p>主要关注Spring事务的回滚，其实主要就是要搞明白Spring在什么情况下会回滚。</p>
+
+<h4 id="1.6 Pitfalls">1.6 Pitfalls</h4>
+
+
+<p>事务的坑
+<a href="http://www.ibm.com/developerworks/library/j-ts1/">http://www.ibm.com/developerworks/library/j-ts1/</a></p>
+
+<p>代理实现选择器:
+AdviceMode
+TransactionManagementConfigurationSelector</p>
+
+<p>声明事务切面实现:
+TransactionInterceptor</p>
+
+<p>事务实现
+Connection关闭自动提交
+ConnectionHolder来保持Connection</p>
+
+<p>参考:
+<a href="http://openwares.net/java/spring_mybatis_transaction.html">http://openwares.net/java/spring_mybatis_transaction.html</a>
+<a href="http://my.oschina.net/guanzhenxing/blog/214228">http://my.oschina.net/guanzhenxing/blog/214228</a>
+<a href="http://www.mybatis.org/spring/zh/transactions.html">http://www.mybatis.org/spring/zh/transactions.html</a>
+<a href="http://tracylihui.github.io/2015/07/28/spring/Spring%E5%A3%B0%E6%98%8E%E5%BC%8F%E4%BA%8B%E5%8A%A1%E7%AE%A1%E7%90%86/">http://tracylihui.github.io/2015/07/28/spring/Spring%E5%A3%B0%E6%98%8E%E5%BC%8F%E4%BA%8B%E5%8A%A1%E7%AE%A1%E7%90%86/</a>
+<a href="http://www.cnblogs.com/davenkin/archive/2013/02/16/java-tranaction-1.html">http://www.cnblogs.com/davenkin/archive/2013/02/16/java-tranaction-1.html</a>
+<a href="http://www.importnew.com/12300.html">http://www.importnew.com/12300.html</a>
+详细介绍Spring事务管理: <a href="http://developer.51cto.com/art/200906/129854.htm">http://developer.51cto.com/art/200906/129854.htm</a>
+spring事务原理1-事务的抽象: <a href="http://sqtds.github.io/2014/06/09/2014/spring-tx1/">http://sqtds.github.io/2014/06/09/2014/spring-tx1/</a>
+Spring官方文档Transaction Management: <a href="http://docs.spring.io/autorepo/docs/spring/3.2.x/spring-framework-reference/html/transaction.html">http://docs.spring.io/autorepo/docs/spring/3.2.x/spring-framework-reference/html/transaction.html</a>
+Spring官方文档Aspect Oriented Programming with Spring: <a href="http://docs.spring.io/spring/docs/3.0.x/reference/aop.html">http://docs.spring.io/spring/docs/3.0.x/reference/aop.html</a>
+StackOverFlow Spring - @Transactional - What happens in background?: <a href="http://stackoverflow.com/questions/1099025/spring-transactional-what-happens-in-background">http://stackoverflow.com/questions/1099025/spring-transactional-what-happens-in-background</a>
+Transaction strategies: Understanding transaction pitfalls: <a href="http://www.ibm.com/developerworks/library/j-ts1/">http://www.ibm.com/developerworks/library/j-ts1/</a>
+Annotation-based Transactions in Spring: <a href="http://springinpractice.com/2008/03/18/annotation-based-transactions-in-spring">http://springinpractice.com/2008/03/18/annotation-based-transactions-in-spring</a>
+Design principle behind Transaction framework with Spring 3: <a href="http://stackoverflow.com/questions/11789857/design-principle-behind-transaction-framework-with-spring-3">http://stackoverflow.com/questions/11789857/design-principle-behind-transaction-framework-with-spring-3</a>
+Chapter 6. 使用Spring进行面向切面编程（AOP）: <a href="http://shouce.jb51.net/spring/aop.html">http://shouce.jb51.net/spring/aop.html</a>
+wiki: <a href="http://wiki.corp.qunar.com/display/~yushen.ma/Spring+3.x-JDBC+Transaction">http://wiki.corp.qunar.com/display/~yushen.ma/Spring+3.x-JDBC+Transaction</a>
+spring事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=52084161">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=52084161</a>
+spring 事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=93338632">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=93338632</a>
+aspectj事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=92656954">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=92656954</a></p>
+
+<p>Demo:
+编程事务: <a href="http://www.tutorialspoint.com/spring/programmatic_management.htm">http://www.tutorialspoint.com/spring/programmatic_management.htm</a>
+声明事务: <a href="http://www.tutorialspoint.com/spring/declarative_management.htm">http://www.tutorialspoint.com/spring/declarative_management.htm</a></p>
+
+<p>@Transactional注解工作原理：<a href="http://blog.csdn.net/dslztx/article/details/46636079">http://blog.csdn.net/dslztx/article/details/46636079</a>
+分布式事务系列（1.2）Spring的事务体系： <a href="https://yq.aliyun.com/articles/39046">https://yq.aliyun.com/articles/39046</a>
+spring transaction源码分析&ndash;事务架构：<a href="http://www.cnblogs.com/davidwang456/p/4309038.html">http://www.cnblogs.com/davidwang456/p/4309038.html</a></p>
+
+<p><a href="http://blog.csdn.net/szwangdf/article/details/41516239">http://blog.csdn.net/szwangdf/article/details/41516239</a></p>
+
+<p>AopProxy
+DefaultAopProxyFactory</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[从代理到Spring事务-代理]]></title>
     <link href="http://xiaobaoqiu.github.io/blog/2016/03/11/cong-dai-li-dao-springshi-wu/"/>
     <updated>2016-03-11T17:15:46+08:00</updated>
     <id>http://xiaobaoqiu.github.io/blog/2016/03/11/cong-dai-li-dao-springshi-wu</id>
@@ -28,18 +833,17 @@
 <a href="#1.4%20Java%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86%20VS%20CGLib%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86">1.4 Java动态代理 VS CGLib动态代理</a></li>
 </ul>
 </li>
-<li><a href="#2.Spring%E4%BA%8B%E5%8A%A1">2.Spring事务</a>
-
-<ul>
-<li><a href="#2.1%20%E4%BA%8B%E5%8A%A1%E5%AE%9A%E4%B9%89">2.1 事务定义</a></li>
-<li><a href="#2.2%20%E4%BA%8B%E5%8A%A1%E7%AE%A1%E7%90%86%E5%99%A8">2.2 事务管理器</a>
-<a href="#2.3%20How%20Transactional%20Work">2.3 How Transactional Work</a></li>
-</ul>
-</li>
 </ul>
 
 
-<p>最近再项目中发现不少同事(包括自己)不太理解默认情况下的Spring事务的运行机制(主要是不理解AOP机制),导致随意使用事务注解.因此也在很多场景事务不生效。因此想从代理机制开始理一下整个Spring声明式的原理。</p>
+<p>最近再项目中发现不少同事(包括自己)不太理解默认情况下的Spring事务的运行机制(主要是不理解AOP机制),导致随意使用事务注解.因此也在很多场景事务不生效。因此想从代理机制开始理一下整个Spring声明式事务的原理。</p>
+
+<p>因为篇幅太长，分成三个部分：</p>
+
+<pre><code>(1).代理
+(2).Spring的AOP
+(3).Spring的事务
+</code></pre>
 
 <h2 id="1.代理">1.代理</h2>
 
@@ -703,305 +1507,14 @@ final方法: 不报错，但没有代理逻辑
 
 <p><a href="https://community.oracle.com/docs/DOC-983406">Implement Your Own Proxy-Based AOP Framework Blog</a></p>
 
-<h2 id="2.Spring事务">2.Spring事务</h2>
+<p>BeanDefinitionParserDelegate
+AnnotationDrivenBeanDefinitionParser</p>
 
+<p>参考：
+Spring加载资源分析：<a href="http://www.blogjava.net/heavensay/archive/2013/10/28/405699.html">http://www.blogjava.net/heavensay/archive/2013/10/28/405699.html</a></p>
 
-<p>我们使用事务的目标：</p>
-
-<pre><code>The most common reason for using transactions in an application is to maintain a high degree of data integrity and consistency.
-</code></pre>
-
-<p>我的理解Spring事务中包括的几个主要要素，下面会一一讲解：</p>
-
-<pre><code>1.事务定义：事务包含哪些属性
-2.事务管理器：如何将我们对事务的诉求转化为数据库层面的实现
-3.事务切面：Spring底层是如何将业务和事务串起来的
-</code></pre>
-
-<p>关于事务的使用是最简单的，通常分为 编程式事务 和 注解式事务：</p>
-
-<h5>编程式事务</h5>
-
-<p>代码直接使用PlatformTransactionManager，因此需要使用者自己管理事务的创建，提交，回滚，挂起等逻辑。</p>
-
-<p>优点：灵活度大；
-缺点：使用难度大，易出错，业务代码侵入大；</p>
-
-<p><a href="http://www.tutorialspoint.com/spring/programmatic_management.htm">一个编程式事务的完整Demo</a></p>
-
-<p>我们可以使用 Spring 提供的 TransactionTemplate 类来简化编程事务：</p>
-
-<pre><code>    TransactionTemplate template = new TransactionTemplate();
-    template.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_DEFAULT);
-    template.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRED);
-    template.setTransactionManager(transactionManager);
-    template.execute(new TransactionCallback&lt;UserAo&gt;() {
-        @Override
-        public UserAo doInTransaction(TransactionStatus status) {
-             //business logic
-        }
-    });
-</code></pre>
-
-<p>我们可以看一下 TransactionTemplate 的实现代码，TransactionTemplate继承了DefaultTransactionDefinition(实现了TransactionDefinition)，使用TransactionDefinition需要我们给定一个TransactionManager，可以修改 事务隔离级别，事务传播行为等事务属性(其实是DefaultTransactionDefinition提供的功能)。</p>
-
-<pre><code>    public &lt;T&gt; T execute(TransactionCallback&lt;T&gt; action) throws TransactionException {
-        TransactionStatus status = this.transactionManager.getTransaction(this);    //获取并初始化事务，处理比如事务传播形式等
-        T result;
-        try {
-            result = action.doInTransaction(status);    //业务逻辑，包括自定义的回滚
-        } catch (RuntimeException ex) {
-            // Transactional code threw application exception -&gt; rollback
-            rollbackOnException(status, ex);
-            throw ex;
-        } catch (Error err) {
-            // Transactional code threw error -&gt; rollback
-            rollbackOnException(status, err);
-            throw err;
-        } catch (Exception ex) {
-            // Transactional code threw unexpected exception -&gt; rollback
-            rollbackOnException(status, ex);
-            throw new UndeclaredThrowableException(ex, "TransactionCallback threw undeclared checked exception");
-        }
-        this.transactionManager.commit(status); //事务提交
-        return result;
-    }
-</code></pre>
-
-<p>其中 transactionManager.getTransaction(this) 的代码后面会详细分析。</p>
-
-<h5>注解式事务</h5>
-
-<p>使用 @Transactional 来管理事务，我们需要声明一个全局的事务管理器，以及事务对注解的支持：</p>
-
-<pre><code>    &lt;bean id="txManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager"&gt;
-        &lt;property name="dataSource" ref="dataSource"/&gt;
-    &lt;/bean&gt;
-
-    &lt;tx:annotation-driven transaction-manager="txManager"/&gt;
-</code></pre>
-
-<p>优点：使用简单，业务代码侵入小；
-缺点：理解有难度；</p>
-
-<p>注意：Spring建议在具体业务实现类上使用Transactional注解，而不是在接口或则接口的方法上配置@Transactional注解：</p>
-
-<pre><code>The Spring team’s recommendation is that you only annotate concrete classes with the @Transactional annotation, as opposed to annotating interfaces. 
-You certainly can place the @Transactional annotation on an interface (or an interface method), but this will only work as you would expect it to if you are using interface-based proxies. 
-The fact that annotations are not inherited means that if you are using class-based proxies (proxy-target-class=“true“) or the weaving-based aspect (mode=“aspectj“) then the transaction settings will not be recognised by the proxying/weaving infrastructure and the object will not be wrapped in a transactional proxy (which would be decidedly bad). 
-So please do take the Spring team’s advice and only annotate concrete classes (and the methods of concrete classes) with the @Transactional annotation.
-</code></pre>
-
-<p>Transactional注解上可以设置很多事务相关的参数：</p>
-
-<pre><code>public @interface Transactional {
-    /**
-     * 用于配置事务管理器，当系统中存在多个数据源多个事务管理器的时候有用
-     * 配置 txManager1 这种 bean name
-     */
-    String value() default "";
-
-    /**
-     * 事务传播级别
-     */
-    Propagation propagation() default Propagation.REQUIRED;
-
-    /**
-     * 事务隔离级别
-     */
-    Isolation isolation() default Isolation.DEFAULT;
-
-    /**
-     * 事务超时时间
-     */
-    int timeout() default TransactionDefinition.TIMEOUT_DEFAULT;
-
-    /**
-     * 事务是否read-only
-     * 注意：这个设置对真实的事务执行系统是一个 hint 而不是 强制要求有这个配置的情况下 write 一定导致失败
-     */
-    boolean readOnly() default false;
-
-    /**
-     * 定义0个或多个exception，当事务遇到这些异常的时候，事务会回滚
-     */
-    Class&lt;? extends Throwable&gt;[] rollbackFor() default {};
-
-    /**
-     * 定义0个或多个exception的name，当事务遇到这些异常的时候，事务会回滚
-     * 最好定义完整的路径，比如 javax.servlet.ServletException 会代表 ServletException 本身及子类
-     */
-    String[] rollbackForClassName() default {};
-
-    /**
-     * 定义0个或多个exception，当事务遇到这些异常的时候，事务不会回滚
-     */
-    Class&lt;? extends Throwable&gt;[] noRollbackFor() default {};
-
-    /**
-     * 定义0个或多个exception的name，当事务遇到这些异常的时候，事务不会回滚
-     */
-    String[] noRollbackForClassName() default {};
-}
-</code></pre>
-
-<h4 id="2.1 事务定义">2.1 事务定义</h4>
-
-
-<p>如何定义一个事务，Spring中使用 TransactionDefinition 来定义一个事务的属性，使用接口的形式：</p>
-
-<pre><code>public interface TransactionDefinition {
-    /**
-     * 事务传播行为,可选项参见 TransactionDefinition 中定义的 PROPAGATION_XXX
-     */
-    int getPropagationBehavior();
-
-    /**
-     * 事务隔离级别,可选项参见 TransactionDefinition 中定义的 ISOLATION_XXX
-     * 只在 PROPAGATION_REQUIRED 和 PROPAGATION_REQUIRES_NEW 这两个事务传播行为配置下有效
-     */
-    int getIsolationLevel();
-
-    /**
-     * 事务超时时间,单位秒
-     * 默认 TIMEOUT_DEFAULT = -1 表示使用底层实现的超时时间或者没有(不支持事务超时时间)
-     * 只在 PROPAGATION_REQUIRED 和 PROPAGATION_REQUIRES_NEW 这两个事务传播行为配置下有效
-     * 如果事务管理器不支持设置超时时间，而调用了这个接口会抛出异常
-     */
-    int getTimeout();
-
-    boolean isReadOnly();
-
-    /**
-     * 事务name，允许为null
-     * 对于申明式事务，默认的name为：完整的class名称.metho名称
-     */
-    String getName();
-}
-</code></pre>
-
-<p>TransactionDefinition 有一个默认实现 DefaultTransactionDefinition，其中定义了事务几个属性的默认值：</p>
-
-<pre><code>    private int propagationBehavior = PROPAGATION_REQUIRED;
-    private int isolationLevel = ISOLATION_DEFAULT;
-    private int timeout = TIMEOUT_DEFAULT;
-    private boolean readOnly = false;
-</code></pre>
-
-<h5>事务传播</h5>
-
-<p>关于事务的传播行为，这里简单介绍一下：</p>
-
-<pre><code>    /**
-     * 如果已经存在事务直接使用，如果不存在则创建一个新事务
-     */
-    int PROPAGATION_REQUIRED = 0;
-
-    /**
-     * 如果已经存在事务直接使用，如果不存在则不使用事务
-     */
-    int PROPAGATION_SUPPORTS = 1;
-
-    /**
-     * 如果已经存在事务直接使用，如果不存在则抛出异常
-     */
-    int PROPAGATION_MANDATORY = 2;
-
-    /**
-     * 创建一个新事务，如果如果已经存在事务则将当前事务挂起
-     */
-    int PROPAGATION_REQUIRES_NEW = 3;
-
-    /**
-     * 不使用事务，如果当前已经存在事务则将当前事务挂起
-     */
-    int PROPAGATION_NOT_SUPPORTED = 4;
-
-    /**
-     * 不使用事务，如果当前存在事务则跑出异常
-     */
-    int PROPAGATION_NEVER = 5;
-
-    /**
-     * 如果已经存在事务直接使用，则执行一个嵌套事务，如果当前没有事务就创建一个新事务
-     */
-    int PROPAGATION_NESTED = 6;
-</code></pre>
-
-<p>其中 PROPAGATION_NESTED 理解有点困难，可以参考 <a href="http://docs.spring.io/spring/docs/3.2.x/spring-framework-reference/html/transaction.html#tx-propagation">Spring 的文档</a>：</p>
-
-<pre><code>PROPAGATION_NESTED uses a single physical transaction with multiple savepoints that it can roll back to. 
-Such partial rollbacks allow an inner transaction scope to trigger a rollback for its scope, with the outer transaction being able to continue the physical transaction despite some operations having been rolled back. 
-This setting is typically mapped onto JDBC savepoints, so will only work with JDBC resource transactions. See Spring's DataSourceTransactionManager.
-</code></pre>
-
-<p>大致意思就是关于 SavePoint，JDBC定义了java.sql.SavePoint接口，提供在一个更细粒度的事务控制机制。当设置了一个保存点后，可以rollback到该保存点处的状态，而不是rollback整个事务。Connection接口的setSavepoint和releaseSavepoint方法可以设置和释放保存点。
-而Spring中定义了 SavepointManager，用于 SavePoint 的创建(createSavepoint)，回滚(rollbackToSavepoint)，释放(releaseSavepoint)。</p>
-
-<h5>事务隔离级别</h5>
-
-<p>关于事务的隔离级别，也简单介绍一下，除了 ISOLATION_DEFAULT ，其余均使用 java.sql.Connection 中的隔离级别的定义：</p>
-
-<pre><code>    /**
-     * 使用底层数据源的隔离级别
-     * 参考：java.sql.Connection.getTransactionIsolation()
-     */
-    int ISOLATION_DEFAULT = -1;
-
-    /**
-     * READ_UNCOMMITTED
-     */
-    int ISOLATION_READ_UNCOMMITTED = Connection.TRANSACTION_READ_UNCOMMITTED;
-
-    /**
-     * READ_COMMITTED
-     */
-    int ISOLATION_READ_COMMITTED = Connection.TRANSACTION_READ_COMMITTED;
-
-    /**
-     * REPEATABLE_READ
-     */
-    int ISOLATION_REPEATABLE_READ = Connection.TRANSACTION_REPEATABLE_READ;
-
-    /**
-     * SERIALIZABLE
-     */
-    int ISOLATION_SERIALIZABLE = Connection.TRANSACTION_SERIALIZABLE;
-</code></pre>
-
-<h4 id="2.2 事务管理器">2.2 事务管理器</h4>
-
-
-<p>事务管理 Spring 使用 PlatformTransactionManager 定义，其中包含一个事务的三个主要操作，在业务开始之前开始事务，执行业务逻辑之后提交事务，业务逻辑异常则回滚事务：</p>
-
-<pre><code>public interface PlatformTransactionManager {
-    /**
-     * 根据事务定义(TransactionDefinition),返回当前active事务或者创建一个新的事务
-     * 注意：
-     * 1.TransactionDefinition 中的隔离级别超时时间等设置只在创建了新事物的时候有效，如果使用当前已存在的事务则无效
-     * 2.不是所有的事务管理器都支持 TransactionDefinition 中的所有属性，当事务管理器遇到不支持的属性则抛异常
-     * 3.上条规则的例外是 read-only这个属性，如果事务管理器不支持这个属性直接忽略
-     */
-    TransactionStatus getTransaction(TransactionDefinition definition) throws TransactionException;
-
-    /**
-     * 事务提交
-     */
-    void commit(TransactionStatus status) throws TransactionException;
-
-    /**
-     * 回滚事务
-     */
-    void rollback(TransactionStatus status) throws TransactionException;
-}
-</code></pre>
-
-<p>我们熟悉的 JDBC 支持的事务管理器 DataSourceTransactionManager 就是其一个实现，其他还包括 JtaTransactionManager 等。</p>
-
-<h4 id="2.3 How Transactional Work">2.3 How Transactional Work</h4>
-
-
-<p>下面会讲解我们使用的 Transactional 注解的工作原理，即当我们在Service的某个public方法上加上 @Transactional之后，从编译到调用这个方法整个过程中会发生什么，事务再其中如何起作用。</p>
+<p>事务的坑
+<a href="http://www.ibm.com/developerworks/library/j-ts1/">http://www.ibm.com/developerworks/library/j-ts1/</a></p>
 
 <p>代理实现选择器:
 AdviceMode
@@ -1010,23 +1523,9 @@ TransactionManagementConfigurationSelector</p>
 <p>声明事务切面实现:
 TransactionInterceptor</p>
 
-<p>事务管理器
-PlatformTransactionManager
-DataSourceTransactionManager</p>
-
 <p>事务实现
 Connection关闭自动提交
 ConnectionHolder来保持Connection</p>
-
-<p>事务模板
-TransactionTempale</p>
-
-<p>AOP简化事务模板</p>
-
-<p>核心类: PlatformTransactionManager</p>
-
-<p>隔离级别: Isolation
-传播属性: Propagation</p>
 
 <p>参考:
 <a href="http://openwares.net/java/spring_mybatis_transaction.html">http://openwares.net/java/spring_mybatis_transaction.html</a>
@@ -1058,6 +1557,9 @@ aspectj事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=
 spring transaction源码分析&ndash;事务架构：<a href="http://www.cnblogs.com/davidwang456/p/4309038.html">http://www.cnblogs.com/davidwang456/p/4309038.html</a></p>
 
 <p><a href="http://blog.csdn.net/szwangdf/article/details/41516239">http://blog.csdn.net/szwangdf/article/details/41516239</a></p>
+
+<p>AopProxy
+DefaultAopProxyFactory</p>
 ]]></content>
   </entry>
   
@@ -2021,887 +2523,6 @@ proxy.foo();
 <code>
 &lt;aop:aspectj-autoproxy proxy-target-class="true"/&gt;
 </code></p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Spring SpEL语法]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/04/09/spring-spelyu-fa/"/>
-    <updated>2015-04-09T07:25:44+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/04/09/spring-spelyu-fa</id>
-    <content type="html"><![CDATA[<p>最近项目中遇到一个问题，无意中发现Spring SpEL语法，Spring的Cache正是基于此实现的，感觉很强大，学习一下。</p>
-
-<h1>1.简介</h1>
-
-<p>SpEL官网：<a href="http://docs.spring.io/spring/docs/current/spring-framework-reference/html/expressions.html">http://docs.spring.io/spring/docs/current/spring-framework-reference/html/expressions.html</a></p>
-
-<p>Spring表达式语言全称为Spring Expression Language(缩写为SpEL)，能在运行时构建复杂表达式、存取对象图属性、对象方法调用等等，并且能与Spring功能完美整合，如能用来配置Bean定义。
-表达式语言给静态Java语言增加了动态功能。</p>
-
-<p>SpEL是单独模块，只依赖于core模块，不依赖于其他模块，可以单独使用。</p>
-
-<p>SpEL支持以下功能:</p>
-
-<pre><code>1.文本表达式(Literal expressions)
-2.布尔操作和关系操作(Boolean and relational operators)
-3.正则表达式(Regular expressions)
-4.类表达式(Class expressions)
-5.访问属性,数组,list和map(Accessing properties, arrays, lists, maps)
-6.方法调用(Method invocation)
-7.关系操作符(Relational operators)
-8.赋值(Assignment)
-9.调用构造器(Calling constructors)
-10.Bean引用(Bean references)
-11.数组构造(Array construction)
-12.内脸list(Inline lists)
-13.内联Map(Inline maps)
-14.三元运算符(Ternary operator)
-15.变量(Variables)
-16.自定义函数(User defined functions)
-17.集合投影(Collection projection)
-18.集合筛选(Collection selection)
-19.模板表达式(Templated expressions)
-</code></pre>
-
-<h1>2.SpEL使用</h1>
-
-<p>下面通过一些简单的case来示范SpEL的使用.</p>
-
-<h3>2.1 第一个SpEL</h3>
-
-<p>SpEL表达式可以直接使用ExpressionParser解析,主要是调用ExpressionParser的parseExpression()方法:
-<code>
-public static void test2_1(){
-    Expression expression = parser.parseExpression("'Testing Spring Expression Framework'");
-    String message = (String) expression.getValue();
-    System.out.println("Message is " + message);
-}
-</code></p>
-
-<h3>2.2 字面量表达式</h3>
-
-<p>SpEL支持的字面量包括字符串、数字类型（int、long、float、double）、bool类型、null类型,注意字符串必须要单引号括起来:
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_2(){
-</span><span class='line'>    // evals to &ldquo;Hello World&rdquo;
-</span><span class='line'>    String helloWorld = (String) parser.parseExpression(&ldquo;&lsquo;Hello World&rsquo;&rdquo;).getValue();
-</span><span class='line'>    double avogadrosNumber = (Double) parser.parseExpression(&ldquo;6.0221415E+23&rdquo;).getValue();&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;// evals to 2147483647
-</span><span class='line'>int maxValue = (Integer) parser.parseExpression("0x7FFFFFFF").getValue();
-</span><span class='line'>boolean trueValue = (Boolean) parser.parseExpression("true").getValue();
-</span><span class='line'>Object nullValue = parser.parseExpression("null").getValue();
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>2.3 算数运算表达式</h3>
-
-<p>SpEL支持加(+)、减(-)、乘(*)、除(/)、求余（%）、幂（^）运算,SpEL还提供求余（MOD）和除（DIV）而外两个运算符，与"%&ldquo;和&rdquo;/&ldquo;等价，不区分大小写:
-<code>
-public static void test2_3(){
-    int result1 = parser.parseExpression("1+2-3*4/2").getValue(Integer.class);
-    int result2 = parser.parseExpression("4%3").getValue(Integer.class);
-    int result3 = parser.parseExpression("2^3").getValue(Integer.class);
-}
-</code></p>
-
-<h3>2.4 关系表达式</h3>
-
-<p>等于（==）、不等于(!=)、大于(>)、大于等于(>=)、小于(&lt;)、小于等于(&lt;=)，区间（between）运算:
-<code>
-public static void test2_4(){
-    boolean result1 = parser.parseExpression("1&gt;2").getValue(boolean.class);
-    boolean result2 = parser.parseExpression("1 between {1, 2}").getValue(boolean.class);
-}
-</code>
-between运算符右边操作数必须是列表类型，且只能包含2个元素。第一个元素为开始，第二个元素为结束，区间运算是包含边界值的。</p>
-
-<p>SpEL同样提供了等价的"EQ" 、"NE"、 &ldquo;GT"、"GE"、 "LT&rdquo; 、"LE"来表示等于、不等于、大于、大于等于、小于、小于等于，不区分大小写。</p>
-
-<h3>2.5 逻辑表达式</h3>
-
-<p>且（and）、或(or)、非(!或NOT),注意,逻辑运算符不支持 Java中的 &amp;&amp; 和 ||:
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_5() {
-</span><span class='line'>    String expression1 = &ldquo;2&gt;1 and (!true or !false)&rdquo;;
-</span><span class='line'>    boolean result1 = parser.parseExpression(expression1).getValue(boolean.class);&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;String expression2 = "2&gt;1 and (NOT true or NOT false)";
-</span><span class='line'>boolean result2 = parser.parseExpression(expression2).getValue(boolean.class);
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>2.6 字符串连接及截取表达式</h3>
-
-<p>使用"+&ldquo;进行字符串连接，使用&rdquo;&lsquo;String&rsquo;[0] [index]&ldquo;来截取一个字符，目前只支持截取一个，如&rdquo;&lsquo;Hello &rsquo; + &lsquo;World!&rsquo;&ldquo;得到"Hello World!"；而&rdquo;&lsquo;Hello World!&rsquo;[0]&ldquo;将返回"H"。
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_6() {
-</span><span class='line'>//    String expression1 = &rdquo;&lsquo;Hello Spring SpEL&rsquo;[0] [5]&ldquo;;
-</span><span class='line'>//    String result1 = parser.parseExpression(expression1).getValue(String.class);
-</span><span class='line'>//    System.out.println("result1=&rdquo; + result1);&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;String expression2 = "'Hello' + 'Spring' + 'SpEL.'";
-</span><span class='line'>String result2 = parser.parseExpression(expression2).getValue(String.class);
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;//    System.out.println(&ldquo;result1=&rdquo; + result1);
-</span><span class='line'>    System.out.println(&ldquo;result2=&rdquo; + result2);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>2.7 三目运算</h3>
-
-<p>三目运算符 &ldquo;表达式1?表达式2:表达式3"用于构造三目运算表达式，如"2>1?true:false"将返回true；
-<code>
-public static void test2_7() {
-    boolean result1 = parser.parseExpression("2&gt;1?true:false").getValue(boolean.class);
-    System.out.println("result1=" + result1);
-}
-</code></p>
-
-<h3>2.8 正则表达式</h3>
-
-<p>可以正则,格式为:str matches regex
-<code>
-public static void test2_8() {
-    boolean result1 = parser.parseExpression("'123' matches '\\d{3}'").getValue(boolean.class);
-    System.out.println("result1=" + result1);
-}
-</code></p>
-
-<h3>2.9 括号优先级表达式</h3>
-
-<p>使用"(表达式)&ldquo;构造，括号里的具有高优先级
-<code>
-public static void test2_9() {
-    int result1 = parser.parseExpression("1+2-3*4/2").getValue(Integer.class);
-    int result2 = parser.parseExpression("1+(2-3)*4/2").getValue(Integer.class);
-    System.out.println("result1=" + result1);
-    System.out.println("result2=" + result2);
-}
-</code></p>
-
-<h3>2.10 类类型表达式</h3>
-
-<p>使用"T(Type)&ldquo;来表示java.lang.Class实例，"Type"必须是类全限定名，"java.lang"包除外，即该包下的类可以不指定包名；使用类类型表达式还可以进行访问类静态方法及类静态字段。
-<code>
-public static void test2_10() {
-    //java.lang包类访问
-    Class&lt;String&gt; result1 = parser.parseExpression("T(String)").getValue(Class.class);
-    System.out.println("result1=" + result1);
-    //其他包类访问
-    String expression2 = "T(com.qunar.scm.spel.SpelParser)";
-    Class&lt;String&gt; result2 = parser.parseExpression(expression2).getValue(Class.class);
-    System.out.println("result2=" + result2);
-    //类静态字段访问
-    int result3=parser.parseExpression("T(Integer).MAX_VALUE").getValue(int.class);
-    System.out.println("result3=" + result3);
-    //类静态方法调用
-    int result4 = parser.parseExpression("T(Integer).parseInt('1')").getValue(int.class);
-    System.out.println("result4=" + result4);
-}
-</code></p>
-
-<h3>2.11 类实例化</h3>
-
-<p>类实例化同样使用java关键字"new"，类名必须是全限定名，但java.lang包内的类型除外，如String、Integer.
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_11() {
-</span><span class='line'>    String result1 = parser.parseExpression(&ldquo;new String(&lsquo;Spring SpEL&rsquo;)&rdquo;).getValue(String.class);
-</span><span class='line'>    System.out.println(&ldquo;result1=&rdquo; + result1);&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;Date result2 = parser.parseExpression("new java.util.Date()").getValue(Date.class);
-</span><span class='line'>System.out.println("result2=" + result2);
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>2.12 instanceof表达式</h3>
-
-<p>SpEL支持instanceof运算符，跟Java内使用同义:
-<code>
-public static void test2_12() {
-    boolean result1 = parser.parseExpression("'Spring SpEL' instanceof T(String)").getValue(Boolean.class);
-    System.out.println("result1=" + result1);
-}
-</code></p>
-
-<h3>2.13 变量定义及引用</h3>
-
-<p>变量定义通过EvaluationContext接口的setVariable(variableName, value)方法定义；在表达式中使用"#variableName"引用；</p>
-
-<p>除了引用自定义变量，SpE还允许引用根对象及当前上下文对象，使用"#root"引用根对象，使用"#this"引用当前上下文对象；
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_13() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>    context.setVariable(&ldquo;variable&rdquo;, &ldquo;Spring SpEL&rdquo;);
-</span><span class='line'>    String result1 = parser.parseExpression(&ldquo;#variable&rdquo;).getValue(context, String.class);
-</span><span class='line'>    System.out.println(&ldquo;result1=&rdquo; + result1);   //Spring SpEL&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;context = new StandardEvaluationContext("Spring SpEL");
-</span><span class='line'>String result2 = parser.parseExpression("#root").getValue(context, String.class);
-</span><span class='line'>System.out.println("result2=" + result2);   //Spring SpEL
-</span><span class='line'>String result3 = parser.parseExpression("#this").getValue(context, String.class);
-</span><span class='line'>System.out.println("result3=" + result3);   //Spring SpEL
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>2.14 自定义函数</h3>
-
-<p>学习编写自定义的函数并将其注册,这样这个函数就可以在SpEL表达式中使用.</p>
-
-<p>首先是两个工具类的代码
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class CollectionUtils {
-</span><span class='line'>    /&lt;em&gt;*
-</span><span class='line'>     * 集合中的最大元素
-</span><span class='line'>     * @param collection
-</span><span class='line'>     * @return
-</span><span class='line'>     &lt;/em&gt;/
-</span><span class='line'>    public static Integer maxElement(Collection&lt;Integer&gt; collection) {
-</span><span class='line'>        Integer maxElement = null;
-</span><span class='line'>        Iterator iterator = collection.iterator();
-</span><span class='line'>        while (iterator.hasNext()) {&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;        Integer integer = (Integer) iterator.next();
-</span><span class='line'>
-</span><span class='line'>        if (maxElement == null) {
-</span><span class='line'>            maxElement = integer;
-</span><span class='line'>        } else {
-</span><span class='line'>            if (integer.intValue() &gt; maxElement.intValue()) {
-</span><span class='line'>                maxElement = integer;
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>    return maxElement;
-</span><span class='line'>}
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;public class MathUtils {
-</span><span class='line'>    /&lt;em&gt;*
-</span><span class='line'>     * 测试一个数字是否为素数
-</span><span class='line'>     * @param number
-</span><span class='line'>     * @return
-</span><span class='line'>     &lt;/em&gt;/
-</span><span class='line'>    public static boolean isPrime(Integer number) {&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;    if (number == 0) {
-</span><span class='line'>        return false;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    for (int index = 2; index &lt; number; index++) {
-</span><span class='line'>        if (number % index == 0) {
-</span><span class='line'>            return false;
-</span><span class='line'>        } else {
-</span><span class='line'>            continue;
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>    return true;
-</span><span class='line'>}
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure>
-下面,我们首先初始化一个EvaluationContext,具体类是StandardEvaluationContext.</p>
-
-<p>一个context evaluation object能用来存储任意多个对象,这些对象会在在随后的表达式解析中使用.
-另外evaluation context也能用来注册用户自定义的方法.
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void main(String[] args) throws Exception {
-</span><span class='line'>        ExpressionParser parser = new SpelExpressionParser();&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;    StandardEvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>    Method method = null;
-</span><span class='line'>    Expression expression = null;
-</span><span class='line'>    Boolean value = null;
-</span><span class='line'>
-</span><span class='line'>    // 注册方法 isPrime() 为 prime
-</span><span class='line'>    method = MathUtils.class.getMethod("isPrime", Integer.class);
-</span><span class='line'>    context.registerFunction("prime", method);
-</span><span class='line'>
-</span><span class='line'>    expression = parser.parseExpression("#prime(10)");
-</span><span class='line'>    value = expression.getValue(context, Boolean.class);
-</span><span class='line'>    System.out.println("Number 10 is prime: " + value);
-</span><span class='line'>
-</span><span class='line'>    expression = parser.parseExpression("#prime(37)");
-</span><span class='line'>    value = expression.getValue(context, Boolean.class);
-</span><span class='line'>    System.out.println("Number 37 is prime: " + value);
-</span><span class='line'>
-</span><span class='line'>    // 注册方法 maxElement() 为 max
-</span><span class='line'>    method = CollectionUtils.class.getMethod("maxElement", Collection.class);
-</span><span class='line'>    context.registerFunction("max", method);
-</span><span class='line'>
-</span><span class='line'>    // Collection为参数maxElement()
-</span><span class='line'>    expression = parser.parseExpression("#max({10, 43, 45, 98, 32, 1})");
-</span><span class='line'>    Integer maxElement = expression.getValue(context, Integer.class);
-</span><span class='line'>    System.out.println("Max element in the list is : " + maxElement);
-</span><span class='line'>}
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;注：EvaluationContext开销较大，所以多用于数据变化较少的情况。如果数据变化频繁，我们可以考虑直接引用对象（比如上例中的simple）以减小开销。 
-</span><span class='line'>###2.15 赋值表达式
-</span><span class='line'>SpEL即允许给自定义变量赋值，也允许给跟对象赋值，直接使用"#variableName=value"即可赋值：
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;public static void test2_15() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>    //1.给自定义变量赋值
-</span><span class='line'>    context.setVariable(&ldquo;variable&rdquo;, &ldquo;Spring SpEL&rdquo;);
-</span><span class='line'>    String result1 = parser.parseExpression(&ldquo;#variable&rdquo;).getValue(context, String.class);
-</span><span class='line'>    System.out.println(&ldquo;result1=&rdquo; + result1);&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;//修改
-</span><span class='line'>String result2 = parser.parseExpression("#variable='ABC'").getValue(context, String.class);
-</span><span class='line'>System.out.println("result2=" + result2);
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>2.16 对象属性存取及安全导航表达式</h3>
-
-<p>对象属性获取非常简单，即使用如"a.property.property"这种点缀式获取，SpEL对于属性名首字母是不区分大小写的；修改对象属性值则可以通过赋值表达式或Expression接口的setValue方法修改。</p>
-
-<p>对于当前上下文对象属性及方法访问，可以直接使用属性或方法名访问，注意此处属性名首字母不区分大小写。
-<code>
-public static void test2_16() {
-    ExpressionParser parser = new SpelExpressionParser();
-    // 1.访问root对象属性
-    Date date = new Date();
-    System.out.println("date=" + date);
-    StandardEvaluationContext context = new StandardEvaluationContext(date);
-    int result1 = parser.parseExpression("Month").getValue(context, int.class);
-    System.out.println("result1=" + result1);
-    int result2 = parser.parseExpression("month").getValue(context, int.class);
-    System.out.println("result2=" + result2);
-}
-</code>
-SpEL还引入了Groovy语言中的安全导航运算符"(对象|属性)?.属性"，用来避免但"?.&ldquo;前边的表达式为null时抛出空指针异常，而是返回null；
-<code>
-public static void test2_16() {
-    ExpressionParser parser = new SpelExpressionParser();
-    // 2.安全访问
-    context.setRootObject(null);
-    Object result3 = parser.parseExpression("#root?.year").getValue(context, Object.class);
-    System.out.println("result3=" + result3);   //null
-}
-</code></p>
-
-<h3>2.17 对象方法调用</h3>
-
-<p>对象方法调用更简单，跟Java语法一样；如"&lsquo;Spring&rsquo;.substring(2,4)&ldquo;将返回"ri"；而对于根对象可以直接调用方法；
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_17() {
-</span><span class='line'>    String result1 = parser.parseExpression(&rdquo;&lsquo;Spring SpEL&rsquo;.substring(2,4)&ldquo;).getValue(String.class);
-</span><span class='line'>    System.out.println("result1=&rdquo; + result1);&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;//root对象date方法"getYear"可以直接调用
-</span><span class='line'>Date date = new Date();
-</span><span class='line'>StandardEvaluationContext context = new StandardEvaluationContext(date);
-</span><span class='line'>int result2 = parser.parseExpression("getMonth()").getValue(context, int.class);
-</span><span class='line'>System.out.println("result2=" + result2);
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>2.18 Bean引用</h3>
-
-<p>SpEL支持使用"@&ldquo;符号来引用Bean，在引用Bean时需要使用BeanResolver接口实现来查找Bean，Spring提供BeanFactoryResolver实现；
-<code>
-public static void test2_18() {
-    ClassPathXmlApplicationContext ctx = new ClassPathXmlApplicationContext();
-    ctx.refresh();
-    ExpressionParser parser = new SpelExpressionParser();
-    StandardEvaluationContext context = new StandardEvaluationContext();
-    context.setBeanResolver(new BeanFactoryResolver(ctx));
-    Properties result1 = parser.parseExpression("@systemProperties").getValue(context, Properties.class);
-    System.out.println("result1=" + result1);
-}
-</code>
-在示例中我们首先初始化了一个IoC容器，ClassPathXmlApplicationContext实现默认会把"System.getProperties()"注册为"systemProperties"Bean，因此我们使用 &rdquo;@systemProperties"来引用该Bean。</p>
-
-<h3>2.19 内联List</h3>
-
-<pre><code>public static void test2_19() {
-    // 将返回不可修改的空List
-    List&lt;Integer&gt; result0 = parser.parseExpression("{}").getValue(List.class);
-    System.out.println("result0=" + result0);   //[]
-
-    //对于字面量列表也将返回不可修改的List
-    List&lt;Integer&gt; result1 = parser.parseExpression("{1,2,3}").getValue(List.class);
-    System.out.println("result1=" + result1);   //[1, 2, 3]
-    Assert.assertEquals(new Integer(1), result1.get(0));
-    try {
-        result1.set(0, 2);
-        //不可能执行到这，对于字面量列表不可修改
-    } catch (Exception e) {
-        e.printStackTrace();
-    }
-
-    //对于列表中只要有一个不是字面量表达式，将只返回原始List， 会进行不可修改处理
-    String expression3 = "\{\{1+2,2+4\},\{3,4+4\}\}";
-    List&lt;List&lt;Integer&gt;&gt; result2 = parser.parseExpression(expression3).getValue(List.class);
-    System.out.println("result2=" + result2);   //[[3, 6], [3, 8]]
-}
-</code></pre>
-
-<h3>2.20 内联数组</h3>
-
-<p>和Java 数组定义类似，只是在定义时进行多维数组初始化
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_20() {
-</span><span class='line'>    //定义一维数组并初始化
-</span><span class='line'>    int[] result1 = parser.parseExpression(&ldquo;new int[1]{8}&rdquo;).getValue(int[].class);
-</span><span class='line'>    System.out.println(&ldquo;result1.length=&rdquo; + result1.length + &ldquo;,result1=&rdquo; + result1);&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;// 定义多维数组但不初始化, 多维数组不能初始化
-</span><span class='line'>String expression1 = "new int[1][2]";
-</span><span class='line'>//String expression2 = "new int[1][2]\{\{1}\{2\}\}"; //多维数组不能初始化
-</span><span class='line'>int[][] result2 = parser.parseExpression(expression1).getValue(int[][].class);
-</span><span class='line'>System.out.println("result2.length=" + result2.length + ",result2=" + result2);
-</span><span class='line'>
-</span><span class='line'>//解析到多维数据
-</span><span class='line'>String expression3 = "\{\{3,4\},\{5,6\}\}";
-</span><span class='line'>int[][] result3 = parser.parseExpression(expression3).getValue(int[][].class);
-</span><span class='line'>System.out.println("result3=" + result3);   //[[3, 6], [3, 8]]
-</span><span class='line'>for (int[] row : result3) {
-</span><span class='line'>    for(int data : row) {
-</span><span class='line'>        System.out.print(data + "   ");
-</span><span class='line'>    }
-</span><span class='line'>    System.out.println();
-</span><span class='line'>}
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>2.21 集合，字典元素访问</h3>
-
-<p>SpEL目前支持所有集合类型和字典类型的元素访问，使用"集合[索引]&ldquo;访问集合元素，使用"map[key]"访问字典元素；
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_21() {
-</span><span class='line'>    // SpEL内联List访问
-</span><span class='line'>    int result1 = parser.parseExpression(&rdquo;{1,2,3}[0]&ldquo;).getValue(int.class);
-</span><span class='line'>    System.out.println("result1=&rdquo; + result1);   //1&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>
-</span><span class='line'>//SpEL目前支持所有集合类型的访问
-</span><span class='line'>Collection&lt;Integer&gt; collection = new HashSet&lt;Integer&gt;();
-</span><span class='line'>collection.add(1);
-</span><span class='line'>collection.add(2);
-</span><span class='line'>context.setVariable("collection", collection);
-</span><span class='line'>int result2 = parser.parseExpression("#collection[1]").getValue(context, int.class);
-</span><span class='line'>System.out.println("result2=" + result2);   //2
-</span><span class='line'>
-</span><span class='line'>//SpEL对Map字典元素访问的支持
-</span><span class='line'>Map&lt;String, Integer&gt; map = new HashMap&lt;String, Integer&gt;();
-</span><span class='line'>map.put("A", 3);
-</span><span class='line'>context.setVariable("map", map);
-</span><span class='line'>int result3 = parser.parseExpression("#map['A']").getValue(context, int.class);
-</span><span class='line'>System.out.println("result3=" + result3);
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>2.22 列表，字典，数组元素修改</h3>
-
-<p>可以使用赋值表达式或Expression接口的setValue方法修改
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_22() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;//1.修改数组元素值
-</span><span class='line'>int[] array = new int[] {1, 2};
-</span><span class='line'>context.setVariable("array", array);
-</span><span class='line'>int result1 = parser.parseExpression("#array[1] = 3").getValue(context, int.class);
-</span><span class='line'>System.out.println("result1=" + result1);   //3
-</span><span class='line'>
-</span><span class='line'>//2.修改集合值
-</span><span class='line'>Collection&lt;Integer&gt; collection = new ArrayList&lt;Integer&gt;();
-</span><span class='line'>collection.add(1);
-</span><span class='line'>collection.add(2);
-</span><span class='line'>context.setVariable("collection", collection);
-</span><span class='line'>int result2 = parser.parseExpression("#collection[1] = 4").getValue(context, int.class);
-</span><span class='line'>System.out.println("result2=" + result2);   //4
-</span><span class='line'>parser.parseExpression("#collection[1]").setValue(context, 5);
-</span><span class='line'>int result3 = parser.parseExpression("#collection[1]").getValue(context, int.class);
-</span><span class='line'>System.out.println("result3=" + result3);   //5
-</span><span class='line'>
-</span><span class='line'>//3.修改map元素值
-</span><span class='line'>Map&lt;String, Integer&gt; map = new HashMap&lt;String, Integer&gt;();
-</span><span class='line'>map.put("A", 1);
-</span><span class='line'>context.setVariable("map", map);
-</span><span class='line'>int result4 = parser.parseExpression("#map['A'] = 6").getValue(context, int.class);
-</span><span class='line'>System.out.println("result4=" + result4);   //6
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>2.23 集合投影</h3>
-
-<p>在SQL中投影指从表中选择出列，而在SpEL指根据集合中的元素中通过选择来构造另一个集合，该集合和原集合具有相同数量的元素；SpEL使用"（list|map）.![投影表达式]&ldquo;来进行投影运算.</p>
-
-<p>对于集合或数组使用如上表达式进行投影运算，其中投影表达式中"#this"代表每个集合或数组元素，可以使用比如"#this.property"来获取集合元素的属性，其中"#this"可以省略。</p>
-
-<p>SpEL投影运算还支持Map投影，但Map投影最终只能得到List结果，如上所示，对于投影表达式中的"#this"将是Map.Entry，所以可以使用"value"来获取值，使用"key"来获取键。
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_23() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;//1.首先准备测试数据
-</span><span class='line'>Collection&lt;Integer&gt; collection = new ArrayList&lt;Integer&gt;();
-</span><span class='line'>collection.add(4);
-</span><span class='line'>collection.add(5);
-</span><span class='line'>
-</span><span class='line'>Map&lt;String, Integer&gt; map = new HashMap&lt;String, Integer&gt;();
-</span><span class='line'>map.put("A", 1);
-</span><span class='line'>map.put("B", 2);
-</span><span class='line'>
-</span><span class='line'>//2.collection中每个值加1
-</span><span class='line'>context.setVariable("collection", collection);
-</span><span class='line'>Collection&lt;Integer&gt; result1 = parser.parseExpression("#collection.![#this+1]").getValue(context,
-</span><span class='line'>        Collection.class);
-</span><span class='line'>System.out.println("result1.size()=" + result1.size() + ", result1=" + result1);//result1.size()=2, result1=[5, 6]
-</span><span class='line'>
-</span><span class='line'>//3.测试map
-</span><span class='line'>context.setVariable("map", map);
-</span><span class='line'>List&lt;Integer&gt; result2 = parser.parseExpression("#map.![value+1]").getValue(context, List.class);
-</span><span class='line'>System.out.println("result2.size()=" + result2.size() + ", result2=" + result2);    //result2.size()=2, result2=[2, 3]
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>2.24 集合选择</h3>
-
-<p>在SQL中指使用select进行选择行数据，而在SpEL指根据原集合通过条件表达式选择出满足条件的元素并构造为新的集合，SpEL使用"(list|map).?[选择表达式]&ldquo;，其中选择表达式结果必须是boolean类型，如果true则选择的元素将添加到新集合中，false将不添加到新集合中。
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_24() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;// 1.首先准备测试数据
-</span><span class='line'>Collection&lt;Integer&gt; collection = new ArrayList&lt;Integer&gt;();
-</span><span class='line'>collection.add(4);
-</span><span class='line'>collection.add(5);
-</span><span class='line'>
-</span><span class='line'>Map&lt;String, Integer&gt; map = new HashMap&lt;String, Integer&gt;();
-</span><span class='line'>map.put("A", 1);
-</span><span class='line'>map.put("B", 2);
-</span><span class='line'>
-</span><span class='line'>// 2.集合或数组测试:出集合元素值大于4的所有元素
-</span><span class='line'>context.setVariable("collection", collection);
-</span><span class='line'>Collection&lt;Integer&gt; result1 = parser.parseExpression("#collection.?[#this&gt;4]").getValue(context,
-</span><span class='line'>        Collection.class);
-</span><span class='line'>System.out.println("result1.size()=" + result1.size() + ", result1=" + result1); // result1.size()=1, result1=[5]
-</span><span class='line'>
-</span><span class='line'>// 3.字典测试:选择键值不等于"A"的,注意map选择表达式中"#this"是Map.Entry类型
-</span><span class='line'>context.setVariable("map", map);
-</span><span class='line'>Map&lt;String, Integer&gt; result2 = parser.parseExpression("#map.?[#this.key != 'A']").getValue(context, Map.class);
-</span><span class='line'>System.out.println("result2=" + result2); // result2={B=2}
-</span><span class='line'>
-</span><span class='line'>List&lt;Integer&gt; result3 = parser.parseExpression("#map.?[key != 'A'].![value+1]").getValue(context, List.class);
-</span><span class='line'>System.out.println("result3.size()=" + result3.size() + ", result3=" + result3); // result3.size()=1,
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>2.25 表达式模板</h3>
-
-<h1>3.Spring Cache</h1>
-
-<p>Spring 3.1引入了激动人心的基于注释(annotation)的缓存(cache)技术，它本质上不是一个具体的缓存实现方案(例如 EHCache等)，而是一个对缓存使用的抽象,通过在既有代码中添加少量它定义的各种 annotation,即能够达到缓存方法的返回对象的效果。</p>
-
-<p>Spring Cache是使用SpEL表达式的一个地方.将会另起一篇单独介绍Sping Cache.</p>
-
-<h1>4.参考</h1>
-
-<p><a href="http://sishuok.com/forum/blogPost/list/2463.html">http://sishuok.com/forum/blogPost/list/2463.html</a></p>
 ]]></content>
   </entry>
   
