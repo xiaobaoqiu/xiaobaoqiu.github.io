@@ -13,7 +13,7 @@
 2.问题重现
 3.死锁分析 3.1 SQL加锁
 3.2 锁冲突 4.解决
-5.锁等待 最近线上业务报了几次死锁问题，决定跟进。 1.背景 有一个业务数据表business，维护了一个名为contract id的外键，一个contract id对应多个business数据。 &hellip;">
+5.锁等待 最近线上业务报了几次死锁问题，决定跟进。 1.背景 有一个业务数据表business，维护了一个名为c_id的外键，一个c_id对应多个business数据。 在业务数据新增或者修改的时候， &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -117,9 +117,9 @@
 <h2 id="1.背景">1.背景</h2>
 
 
-<p>有一个业务数据表business，维护了一个名为contract <em>id的外键，一个contract </em>id对应多个business数据。</p>
+<p>有一个业务数据表business，维护了一个名为c_id的外键，一个c_id对应多个business数据。</p>
 
-<p>在业务数据新增或者修改的时候，需要同步的维护 business 的数据，这时候正确的做法是diff新旧数据，得到需要删除的一部分数据，需要新增的一部分数据以及需要更新的一部分数据，这种实现有点麻烦(其实也不麻烦，使用Guava的集合操作)，因此工程师们的通常做法是先根据contract _id删除现有数据，再插入新数据。这个时候很容易出现死锁。</p>
+<p>在业务数据新增或者修改的时候，需要同步的维护 business 的数据，这时候正确的做法是diff新旧数据，得到需要删除的一部分数据，需要新增的一部分数据以及需要更新的一部分数据，这种实现有点麻烦(其实也不麻烦，使用Guava的集合操作)，因此工程师们的通常做法是先根据c_id删除现有数据，再插入新数据。这个时候很容易出现死锁。</p>
 
 <p>这里也解释一下外键，在业务DB中，出于性能考虑，通常禁止使用外键，通常的做法是，外键这种关系的维护都体现在表中手动维护一个外键。</p>
 
@@ -160,17 +160,17 @@
 <span class='line-number'>20</span>
 <span class='line-number'>21</span>
 <span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>CREATE TABLE `ct_contract_business` (
-</span><span class='line'>  `id` int(11) unsigned NOT NULL AUTO_INCREMENT COMMENT '自增主键',
-</span><span class='line'>  `contract_id` int(11) NOT NULL DEFAULT '0' COMMENT '合同ID',
-</span><span class='line'>  `business_id` tinyint(3) unsigned NOT NULL DEFAULT '0' COMMENT '业务ID',
+</pre></td><td class='code'><pre><code class=''><span class='line'>CREATE TABLE `business` (
+</span><span class='line'>  `id` int(11) unsigned NOT NULL AUTO_INCREMENT COMMENT '',
+</span><span class='line'>  `c_id` int(11) NOT NULL DEFAULT '0' COMMENT '',
+</span><span class='line'>  `business_id` tinyint(3) unsigned NOT NULL DEFAULT '0' COMMENT '',
 </span><span class='line'>  PRIMARY KEY (`id`),
-</span><span class='line'>  UNIQUE KEY `uniq_idx_contract_id_business_id` (`contract_id`,`business_id`)
+</span><span class='line'>  UNIQUE KEY `uniq_idx_c_id_business_id` (`c_id`,`business_id`)
 </span><span class='line'>) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='';
 </span><span class='line'>
-</span><span class='line'>mysql&gt; select * from ct_contract_business;
+</span><span class='line'>mysql&gt; select * from business;
 </span><span class='line'>+----+-------------+-------------+
-</span><span class='line'>| id | contract_id | business_id |
+</span><span class='line'>| id | c_id | business_id |
 </span><span class='line'>+----+-------------+-------------+
 </span><span class='line'>| 20 |           1 |           2 |
 </span><span class='line'>| 21 |           1 |           3 |
@@ -210,26 +210,26 @@
 </tr>
 <tr>
 <td style="text-align:center;">3 </td>
-<td style="text-align:left;"> mysql> delete from ct_contract_business where contract_id = 6;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
+<td style="text-align:left;"> mysql> delete from business where c_id = 6;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
 <td style="text-align:left;">  </td>
 <td style="text-align:left;"> 事务1：Gap锁，锁住区域(5, +∞) </td>
 </tr>
 <tr>
 <td style="text-align:center;">4 </td>
 <td style="text-align:left;">  </td>
-<td style="text-align:left;"> mysql> delete from ct_contract_business where contract_id = 7;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
+<td style="text-align:left;"> mysql> delete from business where c_id = 7;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
 <td style="text-align:left;"> 事务2：Gap锁，锁住区域(5, +∞)  </td>
 </tr>
 <tr>
 <td style="text-align:center;">5 </td>
-<td style="text-align:left;"> mysql> insert into ct_contract_business (contract_id, business_id) values (6, 1);<br><br>等待&hellip; </td>
+<td style="text-align:left;"> mysql> insert into business (c_id, business_id) values (6, 1);<br><br>等待&hellip; </td>
 <td style="text-align:left;">  </td>
-<td style="text-align:left;"> 事务1：插入意向锁(Insert Intention Lock)，期望获取(5, 6)这个Gap锁和一个contract_id=6的Recored锁。<br>但是因为 事务2 已经锁住了区域(5, +∞)因此这时候，事务1只能等待 事务2 释放锁. </td>
+<td style="text-align:left;"> 事务1：插入意向锁(Insert Intention Lock)，期望获取(5, 6)这个Gap锁和一个c_id=6的Recored锁。<br>但是因为 事务2 已经锁住了区域(5, +∞)因此这时候，事务1只能等待 事务2 释放锁. </td>
 </tr>
 <tr>
 <td style="text-align:center;">6 </td>
 <td style="text-align:left;">  </td>
-<td style="text-align:left;"> mysql> insert into ct_contract_business (contract_id, business_id) values (7, 1); <br><br>ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting transaction </td>
+<td style="text-align:left;"> mysql> insert into business (c_id, business_id) values (7, 1); <br><br>ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting transaction </td>
 <td style="text-align:left;"> 和上面第5步类似， 事务2：等待获取事务1的锁<br><br>出现循环等待，死锁(roll back这个事务，事务2的锁释放) </td>
 </tr>
 <tr>
@@ -268,8 +268,8 @@
 </span><span class='line'>+---------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+------------------------+
 </span><span class='line'>| lock_id       | lock_trx_id | lock_mode | lock_type | lock_table                    | lock_index                       | lock_space | lock_page | lock_rec | lock_data              |
 </span><span class='line'>+---------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+------------------------+
-</span><span class='line'>| 203797:20:4:1 | 203797      | X         | RECORD    | `test`.`ct_contract_business` | uniq_idx_contract_id_business_id |         20 |         4 |        1 | supremum pseudo-record |
-</span><span class='line'>| 203798:20:4:1 | 203798      | X         | RECORD    | `test`.`ct_contract_business` | uniq_idx_contract_id_business_id |         20 |         4 |        1 | supremum pseudo-record |
+</span><span class='line'>| 203797:20:4:1 | 203797      | X         | RECORD    | `test`.`business` | uniq_idx_c_id_business_id |         20 |         4 |        1 | supremum pseudo-record |
+</span><span class='line'>| 203798:20:4:1 | 203798      | X         | RECORD    | `test`.`business` | uniq_idx_c_id_business_id |         20 |         4 |        1 | supremum pseudo-record |
 </span><span class='line'>+---------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+------------------------+
 </span><span class='line'>
 </span><span class='line'>// 锁等待信息
@@ -346,9 +346,9 @@
 </span><span class='line'>mysql tables in use 1, locked 1
 </span><span class='line'>LOCK WAIT 3 lock struct(s), heap size 360, 2 row lock(s), undo log entries 1
 </span><span class='line'>MySQL thread id 9, OS thread handle 0x7f6b90db7700, query id 144 localhost root update
-</span><span class='line'>insert into ct_contract_business (contract_id, business_id) values (6, 1)
+</span><span class='line'>insert into business (c_id, business_id) values (6, 1)
 </span><span class='line'>*** (1) WAITING FOR THIS LOCK TO BE GRANTED:
-</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_contract_id_business_id` of table `test`.`ct_contract_business` trx id 203797 lock_mode X insert intention waiting
+</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_c_id_business_id` of table `test`.`business` trx id 203797 lock_mode X insert intention waiting
 </span><span class='line'>Record lock, heap no 1 PHYSICAL RECORD: n_fields 1; compact format; info bits 0
 </span><span class='line'> 0: len 8; hex 73757072656d756d; asc supremum;;
 </span><span class='line'>
@@ -357,14 +357,14 @@
 </span><span class='line'>mysql tables in use 1, locked 1
 </span><span class='line'>3 lock struct(s), heap size 360, 2 row lock(s), undo log entries 1
 </span><span class='line'>MySQL thread id 10, OS thread handle 0x7f6b90de8700, query id 147 localhost root update
-</span><span class='line'>insert into ct_contract_business (contract_id, business_id) values (7, 1)
+</span><span class='line'>insert into business (c_id, business_id) values (7, 1)
 </span><span class='line'>*** (2) HOLDS THE LOCK(S):
-</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_contract_id_business_id` of table `test`.`ct_contract_business` trx id 203798 lock_mode X
+</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_c_id_business_id` of table `test`.`business` trx id 203798 lock_mode X
 </span><span class='line'>Record lock, heap no 1 PHYSICAL RECORD: n_fields 1; compact format; info bits 0
 </span><span class='line'> 0: len 8; hex 73757072656d756d; asc supremum;;
 </span><span class='line'>
 </span><span class='line'>*** (2) WAITING FOR THIS LOCK TO BE GRANTED:
-</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_contract_id_business_id` of table `test`.`ct_contract_business` trx id 203798 lock_mode X insert intention waiting
+</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_c_id_business_id` of table `test`.`business` trx id 203798 lock_mode X insert intention waiting
 </span><span class='line'>Record lock, heap no 1 PHYSICAL RECORD: n_fields 1; compact format; info bits 0
 </span><span class='line'> 0: len 8; hex 73757072656d756d; asc supremum;;
 </span><span class='line'>
@@ -470,7 +470,9 @@
 <p>其实仔细读<a href="https://dev.mysql.com/doc/refman/5.6/en/innodb-locking.html">Mysql官方文档</a>，我们也能发现上面的两个delete的Gap锁是兼容的：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Gap locks in InnoDB are “purely inhibitive”, which means they only stop other transactions from inserting to the gap. They do not prevent different transactions from taking gap locks on the same gap. Thus, a gap X-lock has the same effect as a gap S-lock.</span></code></pre></td></tr></table></div></figure>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Gap locks in InnoDB are “purely inhibitive”, which means they only stop other transactions from inserting to the gap. 
+</span><span class='line'>They do not prevent different transactions from taking gap locks on the same gap. Thus, a gap X-lock has the same effect as a gap S-lock.</span></code></pre></td></tr></table></div></figure>
 
 
 <p>意思就是说Gap锁的作用是只防止其他事务在这个Gap内的插入，而不排斥其他事务在同一个Gap加上Gap锁。因此Gap X锁和Gap S锁效果相同。
@@ -479,7 +481,7 @@
 <h2 id="4.解决">4.解决</h2>
 
 
-<p>DBA的建议：先根据 contract_id 查询id，根据 id 删除;</p>
+<p>DBA的建议：先根据 c_id 查询id，根据 id 删除;</p>
 
 <p>其实只要保证数据存在再区删除就没问题，我们假设我们执行两个以存在数据的先删除再插入。</p>
 
@@ -506,9 +508,9 @@
 <span class='line-number'>12</span>
 <span class='line-number'>13</span>
 <span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from ct_contract_business;
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from business;
 </span><span class='line'>+----+-------------+-------------+
-</span><span class='line'>| id | contract_id | business_id |
+</span><span class='line'>| id | c_id | business_id |
 </span><span class='line'>+----+-------------+-------------+
 </span><span class='line'>| 20 |           1 |           2 |
 </span><span class='line'>| 21 |           1 |           3 |
@@ -545,17 +547,17 @@
 </tr>
 <tr>
 <td style="text-align:center;">3 </td>
-<td style="text-align:left;"> mysql> delete from ct_contract_business where contract_id = 3;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
+<td style="text-align:left;"> mysql> delete from business where c_id = 3;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
 <td style="text-align:left;">  </td>
 </tr>
 <tr>
 <td style="text-align:center;">4 </td>
 <td style="text-align:left;">  </td>
-<td style="text-align:left;"> mysql> delete from ct_contract_business where contract_id = 4;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
+<td style="text-align:left;"> mysql> delete from business where c_id = 4;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
 </tr>
 <tr>
 <td style="text-align:center;">5 </td>
-<td style="text-align:left;"> mysql> insert into ct_contract_business (contract_id, business_id) values (3, 1);<br><br>等待&hellip;</td>
+<td style="text-align:left;"> mysql> insert into business (c_id, business_id) values (3, 1);<br><br>等待&hellip;</td>
 <td style="text-align:left;">  </td>
 </tr>
 </tbody>
@@ -591,8 +593,8 @@
 </span><span class='line'>+----------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+-----------+
 </span><span class='line'>| lock_id        | lock_trx_id | lock_mode | lock_type | lock_table                    | lock_index                       | lock_space | lock_page | lock_rec | lock_data |
 </span><span class='line'>+----------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+-----------+
-</span><span class='line'>| 204349:20:4:12 | 204349      | S         | RECORD    | `test`.`ct_contract_business` | uniq_idx_contract_id_business_id |         20 |         4 |       12 | 4, 1      |
-</span><span class='line'>| 204350:20:4:12 | 204350      | X         | RECORD    | `test`.`ct_contract_business` | uniq_idx_contract_id_business_id |         20 |         4 |       12 | 4, 1      |
+</span><span class='line'>| 204349:20:4:12 | 204349      | S         | RECORD    | `test`.`business` | uniq_idx_c_id_business_id |         20 |         4 |       12 | 4, 1      |
+</span><span class='line'>| 204350:20:4:12 | 204350      | X         | RECORD    | `test`.`business` | uniq_idx_c_id_business_id |         20 |         4 |       12 | 4, 1      |
 </span><span class='line'>+----------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+-----------+</span></code></pre></td></tr></table></div></figure>
 
 
@@ -619,9 +621,9 @@
 </span><span class='line'>mysql tables in use 1, locked 1
 </span><span class='line'>LOCK WAIT 5 lock struct(s), heap size 1184, 4 row lock(s), undo log entries 2
 </span><span class='line'>MySQL thread id 20, OS thread handle 0x7fd7ee4bf700, query id 250 localhost root update
-</span><span class='line'>insert into ct_contract_business (contract_id, business_id) values (3, 1)
+</span><span class='line'>insert into business (c_id, business_id) values (3, 1)
 </span><span class='line'>------- TRX HAS BEEN WAITING 6 SEC FOR THIS LOCK TO BE GRANTED:
-</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_contract_id_business_id` of table `test`.`ct_contract_business` trx id 204349 lock mode S waiting
+</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_c_id_business_id` of table `test`.`business` trx id 204349 lock mode S waiting
 </span><span class='line'>Record lock, heap no 12 PHYSICAL RECORD: n_fields 3; compact format; info bits 32
 </span><span class='line'> 0: len 4; hex 80000004; asc     ;;
 </span><span class='line'> 1: len 1; hex 01; asc  ;;
@@ -631,6 +633,8 @@
 <p>这里没明白的一点好事务1(事务id:204349)的insert一个(3, 1)的数据为什么会在(4, 1)上加一个S锁?</p>
 
 <p>不过实验了一下，去掉UNIQUE KEY，使用普通的key，就没有这个锁等到问题。这个问题有待进一步深入查资料。</p>
+
+<p><a href="http://blog.csdn.net/fei33423/article/details/46731891">http://blog.csdn.net/fei33423/article/details/46731891</a></p>
 </div>
 
 
