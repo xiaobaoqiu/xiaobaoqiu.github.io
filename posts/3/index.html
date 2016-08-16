@@ -9,7 +9,11 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer. 其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用, &hellip;">
+  <meta name="description" content="1.toString实现 测试不同的toString实现方式的效率，目前包括的case： 1.String的+连接生成；
+2.StringBuilder生成；
+3.StringBuffer生成；
+4.Guava的ToStringHelper生成；
+5.Apache.commons. &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -73,155 +77,6 @@
     <div id="content">
       <div class="blog-index">
   
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/08/08/oomkiller/">Oomkiller</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-08-08T12:33:53+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>8</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>12:33 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer.</p>
-
-<p>其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用,每个Tomcat至少要求了0.5G的内存,很多要求的是默认的2G的内存.</p>
-
-<p>这里主要简单介绍一下oomkiller是什么东西,原理是什么,以及对我们的影响.</p>
-
-<h1>1.oomkiller简介</h1>
-
-<p>简单的说,Linux 内核有个机制叫OOM killer(Out-Of-Memory killer)，该机制会监控那些占用内存过大，尤其是瞬间很快消耗大量内存的进程(为什么后面会讲到)，为了防止内存耗尽而内核会把该进程杀掉,从而腾出内存留给系统用。</p>
-
-<p>现象就是相关的日志文件(/var/log/messages)里面会看到下面类似的 Out of memory: Kill process 信息(日志里面把机器host去掉了),还包括一些如pid，process name，cpu mask，trace等信息:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Aug  4 22:03:18  kernel: Out of memory: Kill process 21447 (java) score 81 or sacrifice child
-</span><span class='line'>Aug  4 22:03:18  kernel: Killed process 21447, UID 40001, (java) total-vm:4242176kB, anon-rss:711240kB, file-rss:1832kB
-</span><span class='line'>Aug  5 01:17:21  ntpd[1195]: synchronized to Xx.xx.xxx.xx, stratum 3
-</span><span class='line'>Aug  5 01:35:52  kernel: java invoked oom-killer: gfp_mask=0xd0, order=0, oom_adj=0, oom_score_adj=0
-</span><span class='line'>Aug  5 01:35:52  kernel: java cpuset=/ mems_allowed=0
-</span><span class='line'>Aug  5 01:35:52  kernel: Pid: 17391, comm: java Not tainted 2.6.32-358.23.2.el6.x86_64 #1</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.oomkiller原理</h1>
-
-<p>Linux 内核根据应用程序的要求分配内存，通常来说应用程序分配了内存但是并没有实际全部使用，为了提高性能，这部分没用的内存可以留作它用，这部分内存是属于每个进程的，内核直接回收利用的话比较麻烦，所以内核采用一种过度分配内存(over-commit memory)的办法来间接利用这部分 “空闲” 的内存，提高整体内存的使用效率。</p>
-
-<p>所谓的过度分配内存,可以理解为"打白条",进程A告诉系统我需要2G内存,系统只会答应不会拒绝,因为系统认为任何一个进程不可能每时每刻都全部占用其申请的内存.所以实际上系统并没有给进程A完整的2G内存,而是需要使用的时候才临时分配.这就好像银行现金肯定远远小于所以储户的总值,因为银行认为不可能所以储户同一时间把所以的钱都取出来.</p>
-
-<p>一般来说这样做没有问题，但当大多数应用程序都消耗完自己的内存的时候麻烦就来了，因为这些应用程序的内存需求加起来超出了物理内存(包括 swap)的容量，内核(OOM killer)必须杀掉一些进程才能腾出空间保障系统正常运行。</p>
-
-<p>用银行的例子来讲可能更容易懂一些，部分储户取钱的时候银行不怕，银行有足够的存款应付，当全国所以的储户(或者绝大多数储户)都取钱而且每个人都想把自己钱取完的时候银行的麻烦就来了，银行实际上是没有这么多钱给大家取的。</p>
-
-<h3>2.1 根据什么kill</h3>
-
-<p>内核检测到系统内存不足,然后挑选并杀掉某个进程的过程可以参考内核源代码 linux/mm/oom_kill.c，当系统内存不足的时候，oom_kill被触发，然后选择一个进程杀掉，如何判断和选择一个进程呢，总不能随机选吧?系统会根据进程使用内存的情况给进程打分,选择进程kill的时候主要根据这个分数,打分的机制很朴素:最占用内存的进程。</p>
-
-<p>每个进程的分数都由进程的oom_score记录:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$cat /proc/26893/oom_score
-</span><span class='line'>76
-</span><span class='line'>[baoqiu.xiao@Xxx ~]$ cat /proc/14969/oom_score
-</span><span class='line'>82</span></code></pre></td></tr></table></div></figure>
-
-
-<p>另外一个重要的参数就是进程的oom_adj,表示该pid进程被oom killer杀掉的权重，介于 [-17,15]之间，越高的权重，意味着更可能被oom killer选中，-17表示禁止被kill掉。默认为0.</p>
-
-<p>一些其他的细节:</p>
-
-<pre><code>1.子进程会继承父进程的oom_adj;
-2.OOM不适合于解决内存泄漏(Memory leak)的问题;
-3.有时free查看还有充足的内存，但还是会触发OOM，是因为该进程可能占用了特殊的内存地址空间;
-</code></pre>
-
-<h3>2.2 如何关闭oomkiller</h3>
-
-<p>有几种方法关闭oomkiller机制:</p>
-
-<ul>
-<li>1.调整oom_adj
-将进程的oom_adj设置为17即禁止了该进程被kill.</li>
-</ul>
-
-
-<p>比如系统的ssh一般是禁止oom的:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@ ~]$ ps aux | grep sshd
-</span><span class='line'>root      1208  0.0  0.0  64116   296 ?        Ss   May28   1:47 /usr/sbin/sshd
-</span><span class='line'>[baoqiu.xiao@ ~]$ cat /proc/1208/oom_adj 
-</span><span class='line'>-17</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其他需要禁用,可以如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>pgrep -f "sshd" | while read PID; do echo -17 &gt; /proc/$PID/oom_adj;done</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其实在oom-killer的日志中我们是可以看到未-17的一些应用:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Aug  5 01:35:52 l-crm4.des.dev.cn0 kernel: [ pid ]   uid  tgid total_vm      rss cpu oom_adj oom_score_adj name
-</span><span class='line'>...
-</span><span class='line'>Aug  5 01:35:52 l-crm4.des.dev.cn0 kernel: [ 1187]     0  1187    16029       73   2     -17         -1000 sshd
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<ul>
-<li><p>2.修改内核参数
-sysctl 下有2个可配置选项：</p>
-
-<p>  vm.panic_on_oom = 0                 #内存不够时内核是否直接panic,0表示开启
-  vm.oom_kill_allocating_task = 1         #oom-killer是否选择当前正在申请内存的进程进行kill</p></li>
-</ul>
-
-
-<p>只要设置/etc/sysctl.conf文件中vm.panic_on_oom=1就表示关闭oom-killer(线上环境一般不推荐):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># sysctl -w vm.panic_on_oom=1
-</span><span class='line'>vm.panic_on_oom = 1   //1表示关闭，默认为0表示开启OOM
-</span><span class='line'># sysctl -p</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参考: <a href="http://lwn.net/Articles/317814/">http://lwn.net/Articles/317814/</a></p>
-</div>
-  
-  
-
-
-    </article>
   
   
     <article>
@@ -3341,6 +3196,622 @@ sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
 
     </article>
   
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/06/03/mysql-innodbsi-suo/">Mysql InnoDB锁和死锁</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-06-03T01:09:23+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>1:09 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>在使用Mysql的业务中,经常会碰到各种Mysql的死锁.一直以来,都对Mysql的死锁不甚了解,这次我们的发布中也出现了一次死锁,趁这次机会,好好学习一下Mysql的死锁.我们的死锁的讨论是在InnoDB引擎基础上的.</p>
+
+<h1>1.MySQL索引</h1>
+
+<h3>1.1 聚簇索引(Clustered Indexes)</h3>
+
+<p>InnoDB存储引擎的数据组织方式,是聚簇索引表：完整的记录,存储在主键索引中,通过主键索引,就可以获取记录所有的列.</p>
+
+<p>每个InnoDB的表有一个特殊的索引称之为聚簇索引,每行的数据就是存储在聚簇索引中.通常,聚簇索引和主键同义.</p>
+
+<p>当你在你的表上面定义一个主键时,InnoDB将其作为聚簇索引.建议为你的表都创建一个主键.如果没有唯一并且非空的一列或者多列(用来做你的主键),那么可以创建一个自动填充的自增列(比如ID)</p>
+
+<p>如果你的表没有定义主键,MySQL会将第一个所有列都非空的UNIQUE索引作为聚簇索引.</p>
+
+<p>如果你的表不存在这样的UNIQUE索引(见上),InnoDB内部会自动隐式生成一个包含行ID的列并在其上面建立聚簇索引.这一列按行ID排序.行ID是一个6-byte的严格单调自增的字段.因此,按照行在物理上是按照插入顺序排序的.</p>
+
+<p>聚簇所有是如何加速查询的呢?通过聚簇所有访问一行非常快,这是因为在聚簇索引上搜索会直接定位到包含你需要的行的数据所在的页上(page).</p>
+
+<p>参考: <a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-index-types.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-index-types.html</a></p>
+
+<h3>1.2 二级索引(Secondary Indexes)</h3>
+
+<p>除了聚簇索引其他索引都是二级索引.在InnoDB中每个二级索引记录都包含了这一行的主键列和当前这个二级索引包含的列.InnoDB使用二级索引中包含的主键取索引这一行对应的聚簇索引,进而找到这一行完整的数据.</p>
+
+<p>如果主键很长,则二级索引会占有更多的空间,因此建议使用短的列做主键.</p>
+
+<h1>2.MySQL锁</h1>
+
+<p>Innodb具备表锁和行锁,其中表锁是MySQL提供的,跟存储引擎无关;行锁是Innodb存储引擎实现.</p>
+
+<h3>2.1 共享锁和排他锁</h3>
+
+<pre><code>1.共享锁(S)
+允许一个事务去读一行,阻止其他事务获得相同数据集的排他锁.
+2.排他锁(X)
+允许获得排他锁的事务更新数据,阻止其他事务取得相同数据集的共享读锁和排他写锁.
+</code></pre>
+
+<p>另外,为了允许行锁和表锁共存,实现多粒度锁机制,InnoDB还有两种内部使用的意向锁(Intention Locks),这两种意向锁都是表锁.</p>
+
+<pre><code>1.意向共享锁(IS)
+事务打算给数据行加行共享锁,事务在给一个数据行加共享锁前必须先取得该表的IS锁.
+2.意向排他锁(IX)
+事务打算给数据行加行排他锁,事务在给一个数据行加排他锁前必须先取得该表的IX锁.
+</code></pre>
+
+<p>上面这四种锁的兼容性Conflict表示冲突不能共存,Compatible表示可以共存:</p>
+
+<pre><code>   |     X     |      IX     |      S     |  IS
+X  | Conflict  |  Conflict   | Conflict   | Conflict
+IX | Conflict  |  Compatible | Conflict   | Compatible
+S  | Conflict  |  Conflict   | Compatible | Compatible
+IS | Conflict  |  Compatible | Compatible | Compatible
+</code></pre>
+
+<h3>2.2 什么时候会加锁</h3>
+
+<pre><code>1.共享锁(S)
+    SELECT * FROM table_name WHERE ... LOCK IN SHARE MODE
+2.排他锁(X)
+    SELECT * FROM table_name WHERE ... FOR UPDATE
+</code></pre>
+
+<p>参考: <a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-lock-modes.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-lock-modes.html</a></p>
+
+<h3>2.3 当前请求锁</h3>
+
+<p>使用show engine innodb status命令查看当前请求锁的信息.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show engine innodb status \G;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>可以从information_schema.INNODB_LOCKS表中查看锁的信息.
+比如事物A:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from t;
+</span><span class='line'>+----+------+
+</span><span class='line'>| id | num  |
+</span><span class='line'>+----+------+
+</span><span class='line'>| 10 |    0 |
+</span><span class='line'>|  1 |    1 |
+</span><span class='line'>|  3 |    4 |
+</span><span class='line'>|  2 |    7 |
+</span><span class='line'>| 11 |    8 |
+</span><span class='line'>|  4 |    9 |
+</span><span class='line'>+----+------+
+</span><span class='line'>6 rows in set (0.00 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; select * from t where num &lt; 4 lock in share mode;
+</span><span class='line'>+----+------+
+</span><span class='line'>| id | num  |
+</span><span class='line'>+----+------+
+</span><span class='line'>| 10 |    0 |
+</span><span class='line'>|  1 |    1 |
+</span><span class='line'>+----+------+
+</span><span class='line'>2 rows in set (0.00 sec)
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>然后事物B去做插入就可能被阻塞:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; insert into t(num) values(4);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这是很可以查询锁信息:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from information_schema.INNODB_LOCKS \G;
+</span><span class='line'>*************************** 1. row ***************************
+</span><span class='line'>    lock_id: 5E05:0:138228:3
+</span><span class='line'>lock_trx_id: 5E05
+</span><span class='line'>  lock_mode: X,GAP
+</span><span class='line'>  lock_type: RECORD
+</span><span class='line'> lock_table: `test`.`t`
+</span><span class='line'> lock_index: `n`
+</span><span class='line'> lock_space: 0
+</span><span class='line'>  lock_page: 138228
+</span><span class='line'>   lock_rec: 3
+</span><span class='line'>  lock_data: 7, 2
+</span><span class='line'>*************************** 2. row ***************************
+</span><span class='line'>    lock_id: 5E02:0:138228:3
+</span><span class='line'>lock_trx_id: 5E02
+</span><span class='line'>  lock_mode: S
+</span><span class='line'>  lock_type: RECORD
+</span><span class='line'> lock_table: `test`.`t`
+</span><span class='line'> lock_index: `n`
+</span><span class='line'> lock_space: 0
+</span><span class='line'>  lock_page: 138228
+</span><span class='line'>   lock_rec: 3
+</span><span class='line'>  lock_data: 7, 2</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2.2 锁的算法(Record Lock,Gap Lock,Next-Key Lock)</h3>
+
+<p>InnoDB有三种类型的行锁:record locks,gap locks和next-key locks:索引锁是在单个索引记录上的锁;区间锁是两个索引记录之间的锁,或者第一个索引之前的锁,或者最后一个索引之后的锁;Next-Key锁是索引锁和该索引之前的gap锁的结合.</p>
+
+<pre><code>1.索引锁(Record Lock)
+索引锁总是锁定索引(可能多条),即使表上面没有索引(这种情况,InnoDB会隐式的用自增id创建一个聚簇索引).一级索引只对一级索引加锁,二级索引对二级索引和对应的一级索引加锁.注意记录锁锁的是索引记录,不是具体的数据记录.
+
+2.区间锁(Gap Lock)
+锁定索引记录间隙的锁,确保索引记录的间隙不变,间隙锁是针对事务隔离等级是可重复读(Repeatable Read)或以上级别而言的.
+
+间隙锁一般是针对非唯一索引而言的
+
+3.Next-Key Lock
+默认情况,InnoDB使用REPEATABLE READ事物隔离级别,并且innodb_locks_unsafe_for_binlog这个系统设置无效.这时InnoDB使用next-key锁来做搜索(searches)和索引扫描(index scans),以此来防止幻读(参考:http://dev.mysql.com/doc/refman/5.6/en/innodb-next-key-locking.html).
+</code></pre>
+
+<h3>2.3 区间锁</h3>
+
+<p>区间锁的一个简单例子:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>CREATE TABLE `t` (
+</span><span class='line'>  `id` int(11) unsigned NOT NULL AUTO_INCREMENT COMMENT '自增主键',
+</span><span class='line'>  `num` int(11) DEFAULT NULL,
+</span><span class='line'>  PRIMARY KEY (`id`),
+</span><span class='line'>  KEY `n` (`num`)
+</span><span class='line'>) ENGINE=InnoDB DEFAULT CHARSET=utf8
+</span><span class='line'>
+</span><span class='line'>insert into t(`num`) values(1, 7, 4, 9);
+</span><span class='line'>
+</span><span class='line'>mysql&gt; select * from t;
+</span><span class='line'>+----+------+
+</span><span class='line'>| id | num  |
+</span><span class='line'>+----+------+
+</span><span class='line'>|  1 |    1 |
+</span><span class='line'>|  3 |    4 |
+</span><span class='line'>|  2 |    7 |
+</span><span class='line'>|  4 |    9 |
+</span><span class='line'>+----+------+
+</span><span class='line'>4 rows in set (0.01 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>表中现在有4条记录,其中普通索引(二级索引n)生成了5个Gap:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>(负无穷, 1), (1, 4), (4, 7), (7, 9), (9, 正无穷)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>现在Session A以共享锁获取num=4的数据,Session B想要插入数据,就有可能造成锁等待导致超时从而重启事务,因为Session A以共享锁获取num=4的数据,会产生gap锁将区间(1, 4)和区间(4, 7)锁住,因此这两个区间的插入会失败:</p>
+
+<p><img src="/images/mysql/gap_lock.png"></p>
+
+<p>间隙锁在InnoDB的作用就是防止其它事务的插入操作，以此来达到防止幻读的发生。另外，在上面的例子中，我们选择的是一个普通（非唯一）索引字段来测试的，这不是随便选的，因为如果InnoDB扫描的是一个主键、或是一个唯一索引的话，那InnoDB只会采用行锁方式来加锁，而不会使用Next-Key Lock的方式，也就是说不会对索引之间的间隙加锁.</p>
+
+<p>要禁止间隙锁的话，可以把隔离级别降为读已提交，或者开启参数innodb_locks_unsafe_for_binlog.</p>
+
+<p>参考:
+<a href="http://www.cnblogs.com/sliverdang/p/3163455.html">http://www.cnblogs.com/sliverdang/p/3163455.html</a></p>
+
+<p><a href="http://ouyanggod.iteye.com/blog/2166215">http://ouyanggod.iteye.com/blog/2166215</a></p>
+
+<p><a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html</a></p>
+
+<h1>3.snapshot read和current read</h1>
+
+<p>MySQL的两种read方式:</p>
+
+<pre><code>1.快照读(snapshot read或者consistent read)
+快照读,读取的是记录的可见版本(有可能是历史版本),不用加锁;
+
+通常,简单的select操作,属于快照读,不加锁,比如:
+```
+select * from table where ?
+```
+2.当前读(current read或者lock read)
+当前读,读取的是记录的最新版本,并且,当前读返回的记录,都会加上锁,保证其他事务不会再并发修改这条记录.
+
+特殊的读操作,插入/更新/删除操作,属于当前读,需要加锁.比如:
+```
+select * from table where ? lock in share mode
+select * from table where ? for update
+insert into table values (…)
+update table set ? where ?
+delete from table where ?
+```
+所有以上的语句,都属于当前读,读取记录的最新版本.并且,读取之后,还需要保证其他并发事务不能修改当前记录,对读取记录加锁.其中,除了第一条语句,对读取记录加S锁 (共享锁)外,其他的操作,都加的是X锁(排它锁).
+</code></pre>
+
+<p>总之一句话:有加锁的查询都认为是当前读.</p>
+
+<p>快照读大大的提高了数据读取的并发.快照读的一个简单示意图,快照数据就是当前数据之前的版本数据,可能有多个版本的快照数据,每个快照数据中包含了版本信息(如时间戳等):</p>
+
+<p><img src="/images/mysql/snapshot_read.png"></p>
+
+<p>为什么将插入/更新/删除操作,都归为当前读?可以看看下面这个更新操作,在数据库中的执行流程：</p>
+
+<p><img src="/images/mysql/update-lock.jpg"></p>
+
+<p>从图中,可以看到,一个Update操作的具体流程.当Update SQL被发给MySQL后,MySQL Server会根据where条件,读取第一条满足条件的记录,然后InnoDB引擎会将第一条记录返回,并加锁(current read).待MySQL Server收到这条加锁的记录之后,会再发起一个Update请求,更新这条记录.一条记录操作完成,再读取下一条记录,直至没有满足条件的记录为止.因此,Update操作内部,就包含了一个当前读.同理,Delete操作也一样.Insert操作会稍微有些不同,简单来说,就是Insert操作可能会触发Unique Key的冲突检查,也会进行一个当前读.</p>
+
+<p>注：根据上图的交互,针对一条当前读的SQL语句,InnoDB与MySQL Server的交互,是一条一条进行的,因此,加锁也是一条一条进行的.先对一条满足条件的记录加锁,返回给MySQL Server,做一些DML操作；然后在读取下一条加锁,直至读取完毕.</p>
+
+<h3>3.1不同隔离界别下的snapshot read</h3>
+
+<p>在Read Committed级别下,快照读总是读取被锁定行的最新的快照数据.而在Repeatable Read和Serializable级别,快照读读取的是事物开始时候的行数据版本.</p>
+
+<p>下面是一个简单的例子,一个很简单的表,插入一条数据:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>CREATE TABLE `parent` (   `id` int(10) NOT NULL,   PRIMARY KEY (`id`) ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+</span><span class='line'>
+</span><span class='line'>insert into parent (id) values(1);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们起两个事务,一个读取(Session A),一个更新(Session B),用来验证不同事务隔离级别下快照读的差异:</p>
+
+<pre><code>1.Session A中首先开始事物,查询id=1的数据,这时候,无论在Read Committed还是Repeatable Read级别,结果都是1;
+2.Session B然后开始事物,并执行update操作,没有commit;
+3.这时候Session A再查询id=1的数据,显然Read Committed还是Repeatable Read级别,结果都是1;(在Read Uncommited灰度到未提交的脏数据).
+4.Session B提交事物;
+5.这时候Session A再查询id=1的数据,就发现差异:Read Committed级别下读取到被修改的数据,而Repeatable Read读取的还是老数据.因为Read Committed只读取最新的快照数据,而Repeatable Read是参考当前事物开始时间来读取快照数据.
+</code></pre>
+
+<p>首先是Repeatable Read的结果:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; SELECT @@session.tx_isolation;
+</span><span class='line'>+------------------------+
+</span><span class='line'>| @@session.tx_isolation |
+</span><span class='line'>+------------------------+
+</span><span class='line'>| REPEATABLE-READ        |
+</span><span class='line'>+------------------------+
+</span><span class='line'>
+</span><span class='line'>mysql&gt; select * from parent where id = 1;
+</span><span class='line'>+----+
+</span><span class='line'>| id |
+</span><span class='line'>+----+
+</span><span class='line'>|  1 |
+</span><span class='line'>+----+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><img src="/images/mysql/snapshot_read_RR.png"></p>
+
+<p>下面是Read Committed的结果(Session B一旦提交,Session A未commit的情况下就能读到Session B提交的数据.):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; SELECT @@session.tx_isolation;
+</span><span class='line'>+------------------------+
+</span><span class='line'>| @@session.tx_isolation |
+</span><span class='line'>+------------------------+
+</span><span class='line'>| READ-COMMITTED         |
+</span><span class='line'>+------------------------+
+</span><span class='line'>
+</span><span class='line'>mysql&gt; select * from parent where id = 1;
+</span><span class='line'>+----+
+</span><span class='line'>| id |
+</span><span class='line'>+----+
+</span><span class='line'>|  1 |
+</span><span class='line'>+----+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><img src="/images/mysql/snapshot_read_RC.png"></p>
+
+<h1>4.InnoDB MVCC</h1>
+
+<p>InnoDB是一种多版本存储引擎,它必须保存各行老版本信息,这个信息存在一个称之为回滚段(rollback segment)的数据结构中.</p>
+
+<p>在Mysql内部,InnoDB为每行数据额外增加三个字段:</p>
+
+<pre><code>1.一个6-byte的名为DB_TRX_ID字段,用来表示最后一个插入(insert)或者更新(update)这行记录的事物的标记.注意,删除(delete)也被当成一种更新,只是标记这一行的一个额外的bit位来表征这个数据被删除.
+2.一个7-byte的名为DB_ROLL_PTR字段,称之为回滚指针(roll pointer).这个指针指向写在rollback segment中的undo log记录.如果这一行被更新了,undo log就包含了能够将这一行完全恢复到修改之前的信息.
+3.一个6-byte的DB_ROW_ID字段,用来存行id(row ID),行id是插入数据的时候自动严格递增生成的.如果InnoDB自动产生了一个聚簇索引(clustered index),这个索引就包含行id.否在行id就不会在任何索引中出现.
+</code></pre>
+
+<p>InnoDB使用存储在rollback segment中的信息(undo log)去实现事物回滚时候的undo操作.另外,InnoDB也是使用这个信息构建快照读(consistent read或者snapshot read)时候的行数据.</p>
+
+<p>rollback segment中的Undo logs分为插入(insert)和更新(update)的undo logs.</p>
+
+<p>经常提交你的事物,包括那些只是consistent reads的事物.否则(长时间不提事物)会导致InnoDB不能及时废弃update undo logs中的数据,进而导致rollback segment中数据太大挤占你的表空间(tablespace).</p>
+
+<p>rollback segment中undo log记录的物理大小(physical size)通常小于对应的插入或者更新的行数.你可以使用这个信息取计算你的rollback segment需要的空间.</p>
+
+<p>在InnoDB多版本方案中,当你删除一行记录,实际上行不会立即被物理删除.只有当这个删除对应的update undo log被废弃的时候这行记录才会真正被物理删除.此删除操作被称为清除(purge)是通过Purge后台进程实现的,这个过程非常的快,通常其顺序和SQL语句执行删除的顺序一致.Purge进程定期扫描InnoDB的undo,按照先读老undo,再读新undo的顺序,读取每条undo record.</p>
+
+<p>参考:
+<a href="http://hedengcheng.com/?p=148">http://hedengcheng.com/?p=148</a>
+<a href="https://dev.mysql.com/doc/refman/5.0/en/innodb-multi-versioning.html">https://dev.mysql.com/doc/refman/5.0/en/innodb-multi-versioning.html</a></p>
+
+<h1>5.隔离级别(Isolation Level)</h1>
+
+<h3>5.1 InnoDB的4种隔离级别</h3>
+
+<p>MySQL InnoDB定义的4种隔离级别：</p>
+
+<pre><code>1.Read Uncommited
+2.Read Committed (RC)
+3.Repeatable Read (RR)
+4.Serializable
+</code></pre>
+
+<p>Read Uncommited安全级别比较低,因此很少使用.Serializable隔离级别读写冲突,因此并发度急剧下降,在MySQL/InnoDB下不建议使用.
+Repeatable Read是InnoDB默认的事物级别.Oracle和MS SQL的默认级别是Read Committed.</p>
+
+<h3>5.2脏读,不可重复读,幻读</h3>
+
+<p>在事务并行下出现的几个问题:</p>
+
+<pre><code>1.脏读
+可能读取到其他会话中未提交事务修改的数据,在Read Uncommited级别下可能出现.
+2.不可重复读
+同一个事物中前后两次读取的内容不一致,在Read Uncommited和Read Committed会出现.
+3.幻读
+如果另一个事务同时提交了新数据(本事务查询时候感知不到这个变更),本事务再更新时,就会惊奇的发现了这些新数据(比如触发违反了uniq key等),就好像之前读到的数据是鬼影一样的幻觉.这种情况就是上述说的,快照读和当前读一起存在的情况,会出现幻读的场景.必须使用当前读,才能避免幻读.比如：select ...lock in share mode和select ...for update.
+</code></pre>
+
+<p>各个事物界别下可能出现的问题:</p>
+
+<table>
+<thead>
+<tr>
+<th>隔离级别</th>
+<th style="text-align:center;">脏读(Dirty Read)</th>
+<th style="text-align:center;">不可重复读(NonRepeatable Read)</th>
+<th style="text-align:center;">幻读(Phantom Read)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read Uncommited</td>
+<td style="text-align:center;">可能</td>
+<td style="text-align:center;">可能</td>
+<td style="text-align:center;">可能</td>
+</tr>
+<tr>
+<td>Read Committed</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">可能</td>
+<td style="text-align:center;">可能</td>
+</tr>
+<tr>
+<td>Repeatable Read</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">可能</td>
+</tr>
+<tr>
+<td>Serializable</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">不可能</td>
+<td style="text-align:center;">不可能</td>
+</tr>
+</tbody>
+</table>
+
+
+<p>幻读的一个示例,Session A在insert之前先select查看数据是否存在,结果告知可以插入,这时候Session B变更数据并提交.Session A再插入会因为主键冲突失败:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; SELECT @@session.tx_isolation;
+</span><span class='line'>+------------------------+
+</span><span class='line'>| @@session.tx_isolation |
+</span><span class='line'>+------------------------+
+</span><span class='line'>| READ-COMMITTED         |
+</span><span class='line'>+------------------------+
+</span><span class='line'>
+</span><span class='line'>mysql&gt; select * from parent where id = 1;
+</span><span class='line'>+----+
+</span><span class='line'>| id |
+</span><span class='line'>+----+
+</span><span class='line'>|  1 |
+</span><span class='line'>+----+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><img src="/images/mysql/phantom_read.png"></p>
+
+<p>那么，InnoDB指出的可以避免幻读是怎么回事呢?</p>
+
+<pre><code>http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html
+
+By default, InnoDB operates in REPEATABLE READ transaction isolation level and with the innodb_locks_unsafe_for_binlog system variable disabled. In this case, InnoDB uses next-key locks for searches and index scans, which prevents phantom rows (see Section 13.6.8.5, “Avoiding the Phantom Problem Using Next-Key Locking”).
+</code></pre>
+
+<p>简单翻译就是，当隔离级别是可重复读，且禁用innodb_locks_unsafe_for_binlog的情况下，在搜索和扫描index的时候使用的next-key locks可以避免幻读.</p>
+
+<p>关键点在于，是InnoDB默认对一个普通的查询也会加next-key locks，还是说需要应用自己来加锁呢？如果单看这一句，可能会以为InnoDB对普通的查询也加了锁，如果是，那和序列化（SERIALIZABLE）的区别又在哪里呢?</p>
+
+<p>MySQL manual里还有一段:</p>
+
+<pre><code>http://dev.mysql.com/doc/refman/5.6/en/innodb-next-key-locking.html
+Avoiding the Phantom Problem Using Next-Key Locking
+
+To prevent phantoms, InnoDB uses an algorithm called next-key locking that combines index-row locking with gap locking.
+
+You can use next-key locking to implement a uniqueness check in your application: If you read your data in share mode and do not see a duplicate for a row you are going to insert, then you can safely insert your row and know that the next-key lock set on the successor of your row during the read prevents anyone meanwhile inserting a duplicate for your row. Thus, the next-key locking enables you to “lock” the nonexistence of something in your table.
+</code></pre>
+
+<p>根据这一段,我们可以理解为,InnoDB提供了next-key locks，但需要应用程序自己去加锁,才能防止幻读.manual里提供一个例子:</p>
+
+<pre><code>SELECT * FROM child WHERE id &gt; 100 FOR UPDATE;
+</code></pre>
+
+<p>这样,InnoDB会给id大于100的行(假如child表里有一行id为102),以及100-102,102+的gap都加上锁.可以使用show innodb status来查看是否给表加上了锁.</p>
+
+<p>结论就是:MySQL InnoDB的REPEATABLE READ并不保证避免幻读,需要应用使用加锁读来保证.而这个加锁度使用到的机制就是next-key locks.</p>
+
+<h3>5.3 修改隔离级别</h3>
+
+<p>InnoDB默认是可重复读的(REPEATABLE READ).可以在命令行用&ndash;transaction-isolation选项,或在选项文件里,为所有连接设置默认隔离级别.</p>
+
+<p>在my.inf文件的[mysqld]节里类似如下设置该选项:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>transaction-isolation = {READ-UNCOMMITTED | READ-COMMITTED | REPEATABLE-READ | SERIALIZABLE}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>用户可以用SET TRANSACTION语句改变单个会话或者所有新进连接的隔离级别:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>SET [SESSION | GLOBAL] TRANSACTION ISOLATION LEVEL {READ UNCOMMITTED | READ COMMITTED | REPEATABLE READ | SERIALIZABLE}</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>6.死锁</h1>
+
+<pre><code>1.死锁发生的条件
+互斥条件：一个资源每次只能被一个进程使用；
+请求与保持条件：一个进程因请求资源而阻塞时，对已获得的资源保持不放；
+不剥夺条件:进程已获得的资源，在末使用完之前，不能强行剥夺；
+循环等待条件:若干进程之间形成一种头尾相接的循环等待资源关系。
+</code></pre>
+
+<p>系统检测到死锁后,会自动回滚其中事务较小的一个(记得好像根据undo日志的大小来决定).</p>
+
+<p>对于DB而言，导致死锁意味着发生了循环等待，在InnoDB中由于行锁的引入，比较容易发生死锁，下面总结一些发生死锁的情况（不全）：
+    1. 同一索引上,两个session相反的顺序加锁多行记录;
+    2. Primary key和Secondary index，通过primary key找到记录，更新Secondary index字段与通过Secondary index更新记录;
+    3. UPDATE/DELETE通过不同的二级索引更新多条记录,可能造成在Primary key上不同的加锁顺序,可以参考之前一篇博客:<a href="http://www.gpfeng.com/?p=406">http://www.gpfeng.com/?p=406</a></p>
+
+<h3>6.1死锁实例</h3>
+
+<h3>6.2查看死锁信息</h3>
+
+<h3>6.3解决死锁</h3>
+
+<p>参考:</p>
+
+<p><a href="http://hedengcheng.com/?p=771">http://hedengcheng.com/?p=771</a></p>
+
+<p><a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html</a></p>
+
+<p><a href="http://novoland.github.io/%E6%95%B0%E6%8D%AE%E5%BA%93/2014/07/26/MySQL%E6%80%BB%E7%BB%93.html">http://novoland.github.io/%E6%95%B0%E6%8D%AE%E5%BA%93/2014/07/26/MySQL%E6%80%BB%E7%BB%93.html</a></p>
+
+<p><a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=76820049">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=76820049</a>
+<a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=50520113">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=50520113</a></p>
+
+<p>Mysql锁基础知识 <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=64807317">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=64807317</a></p>
+</div>
+  
+  
+
+
+    </article>
+  
   <div class="pagination">
     
       <a class="prev" href="/posts/4">&larr; Older</a>
@@ -3360,10 +3831,6 @@ sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
   <ul id="recent_posts">
     
       <li class="post">
-        <a href="/blog/2016/08/10/cratejian-jie/">Crate - the Simply Scalable SQL Database</a>
-      </li>
-    
-      <li class="post">
         <a href="/blog/2016/07/22/%5B%3F%5D-ge-si-suo-wen-ti/">一个死锁问题</a>
       </li>
     
@@ -3377,6 +3844,10 @@ sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
     
       <li class="post">
         <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
       </li>
     
   </ul>
@@ -3402,7 +3873,7 @@ sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
 <li><a class='list-group-item' href='/blog/categories/protocol/'>protocol (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
-<li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
+<li><a class='list-group-item' href='/blog/categories/search/'>search (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/spring/'>spring (6)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
