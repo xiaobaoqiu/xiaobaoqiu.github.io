@@ -5,11 +5,15 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>Squid学习 - xiaobaoqiu Blog</title>
+  <title>Crate - the Simply Scalable SQL Database - xiaobaoqiu Blog</title>
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="之前在处理图片下载延时比较大问题的时候，OPS说使用Squid这个东东，抽时间看看这个东西。 简而言之，Squid就是一个Web缓存代理服务器。 1.什么是代理服务器 代理服务器是介于浏览器和Web服务器之间的另一台服务器。有了该服务器之后，浏览器发出的信息会先送到代理服务器， &hellip;">
+  <meta name="description" content="1.Crate是什么
+2.Crate使用场景
+3.Crate如何使用 3.1 Crate Client 4.Crate VS MySQL
+5.How Crate Works
+参考 1.Crate是什么 Crate - The Simply Scalable SQL Database 2. &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -18,9 +22,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   
-  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/02/10/squidxue-xi/">
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2016/08/10/cratejian-jie/">
   <link href="/favicon.png" rel="icon">
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  
+  <link href="/stylesheets/data-table.css" media="screen, projection" rel="stylesheet" type="text/css" />
   
 
   <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
@@ -76,7 +82,7 @@
   
   <header>
     
-      <h1 class="entry-title">Squid学习</h1>
+      <h1 class="entry-title">Crate - the Simply Scalable SQL Database</h1>
     
     
       <p class="meta">
@@ -85,55 +91,63 @@
 
 
 
-<time class='entry-date' datetime='2015-02-10T21:14:57+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>10</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>9:14 pm</span></time>
+<time class='entry-date' datetime='2016-08-10T11:41:42+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>10</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>11:41 am</span></time>
         
       </p>
     
   </header>
 
 
-<div class="entry-content"><p>之前在处理图片下载延时比较大问题的时候，OPS说使用Squid这个东东，抽时间看看这个东西。</p>
+<div class="entry-content"><ul>
+<li><a href="#1.Crate%E6%98%AF%E4%BB%80%E4%B9%88">1.Crate是什么</a></li>
+<li><a href="#2.Crate%E4%BD%BF%E7%94%A8%E5%9C%BA%E6%99%AF">2.Crate使用场景</a></li>
+<li><a href="#3.Crate%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8">3.Crate如何使用</a>
 
-<p>简而言之，Squid就是一个Web缓存代理服务器。</p>
+<ul>
+<li><a href="#3.1%20Crate%20Client">3.1 Crate Client</a></li>
+</ul>
+</li>
+<li><a href="#4.Crate%20VS%20MySQL">4.Crate VS MySQL</a></li>
+<li><a href="#5.How%20Crate%20Works">5.How Crate Works</a></li>
+<li><a href="#%E5%8F%82%E8%80%83">参考</a></li>
+</ul>
 
-<h1>1.什么是代理服务器</h1>
 
-<p>代理服务器是介于浏览器和Web服务器之间的另一台服务器。有了该服务器之后，浏览器发出的信息会先送到代理服务器，由代理服务器来取回网页内容并传送给客户的浏览器。对于企业网络而言，代理服务器可以起到控制网络访问并屏蔽不安全信息，以及网络加速的目的。</p>
+<h2 id="1.Crate是什么">1.Crate是什么</h2>
 
-<h1>2.Squid简介</h1>
 
-<p>Squid官方网站 ： <a href="http://www.squid-cache.org/">http://www.squid-cache.org/</a></p>
+<p>Crate - The Simply Scalable SQL Database</p>
 
-<p>Squid 是一个 Web 缓存代理，支持 HTTP, HTTPS, FTP, 以及更多。它通过缓存与重用经常请求的web页面，减少带宽使用同时提升了响应时间，并设置过滤。使用Squid可以通过访问控制特性来灵活的控制用户访问时间、站点等限制。</p>
+<h2 id="2.Crate使用场景">2.Crate使用场景</h2>
 
-<h3>2.1 原理简介</h3>
 
-<p>客户端请求访问 WEB 服务时，DNS 将访问的域名解析为 Squid 代理服务器的 IP 地址，这样客户端的 URL 请求将被发送到代理服务器。如果 Squid代理服务器中缓存了该请求的资源，则将该请求的资源直接返回给客户端，否则代理服务器将向后台的WEB服务器请求资源，然后将请求的应答返回给客户端，同时也将该应答缓存在本地，供下一个请求者使用。</p>
 
-<h3>2.2 缓存限制</h3>
 
-<p>Squid 代理一般只缓存可缓冲的数据（比如 html 网页和图片等），而一些ASP、JSP 之类的动态程序默认不缓存。它根据从 WEB 服务器返回的 HTTP 头标记来缓冲静态页面。有四个最重要 HTTP 头标记：</p>
+<h2 id="3.Crate如何使用">3.Crate如何使用</h2>
 
-<pre><code>Last-Modified: 告诉代理页面什么时间被修改
-Expires: 告诉代理页面什么时间应该从缓冲区中删除
-Cache-Control: 告诉代理页面是否应该被缓冲
-Pragma: 用来包含实现特定的指令，最常用的是 Pragma:no-cache
-</code></pre>
 
-<h1>3.Squid安装</h1>
 
-<pre><code>(1).下载 squid，这里下载的是3.4版本 : http://www.squid-cache.org/Versions/v3/3.4/
-(2).解压缩
-```
-xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
-```
-(3).配置
-(待续...)
-</code></pre>
 
-<h1>4.参考</h1>
+<h4 id="3.1 Crate Client">3.1 Crate Client</h4>
 
-<p><a href="http://www.ibm.com/developerworks/cn/linux/l-cn-squid/">http://www.ibm.com/developerworks/cn/linux/l-cn-squid/</a></p>
+
+
+
+<h2 id="4.Crate VS MySQL">4.Crate VS MySQL</h2>
+
+
+
+
+<h2 id="5.How Crate Works">5.How Crate Works</h2>
+
+
+
+
+<h2 id="参考">参考</h2>
+
+
+<p><a href="https://crate.io/">Crate官网</a>
+[Crate]</p>
 </div>
 
 
@@ -149,12 +163,12 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 
 
 
-<time class='entry-date' datetime='2015-02-10T21:14:57+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>10</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>9:14 pm</span></time>
+<time class='entry-date' datetime='2016-08-10T11:41:42+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>10</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>11:41 am</span></time>
       
 
 <span class="categories">
   
-    <a class='category' href='/blog/categories/squid/'>squid</a>
+    <a class='category' href='/blog/categories/search/'>search</a>
   
 </span>
 
@@ -163,7 +177,7 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
     
       <div class="sharing">
   
-  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/02/10/squidxue-xi/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/02/10/squidxue-xi/" >Tweet</a>
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2016/08/10/cratejian-jie/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2016/08/10/cratejian-jie/" >Tweet</a>
   
   
   
@@ -172,10 +186,8 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
     
     <p class="meta">
       
-        <a class="basic-alignment left" href="/blog/2015/02/09/ncming-ling/" title="Previous Post: nc命令">&laquo; nc命令</a>
+        <a class="basic-alignment left" href="/blog/2016/07/22/%5B%3F%5D-ge-si-suo-wen-ti/" title="Previous Post: 一个死锁问题">&laquo; 一个死锁问题</a>
       
-      
-        <a class="basic-alignment right" href="/blog/2015/02/25/lscpu/" title="Next Post: lscpu命令">lscpu命令 &raquo;</a>
       
     </p>
   </footer>
