@@ -9,9 +9,9 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.Memcached -l参数
-2.使用iptable
-3.不需要Root权限 1.Memcached -l参数 最近整理了组内使用的Memcached。发现很多问题，其中一个问题就是开发机器测试机器可以直连线上的Memcached。这也是memcached公认的问题：memcached &hellip;">
+  <meta name="description" content="1.LSH简介
+2.普通Hash
+3.LSH 1.LSH简介 之前在项目中做数据聚合去重的逻辑的时候简单看过局部敏感Hash(Locality Sensitive Hashing,简称LSH)这个东东。今天整理一下个人的理解。 LSH可以理解为一种衡量文本相似度的算法， &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -75,6 +75,98 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/11/21/ju-bu-min-gan-hash/">局部敏感Hash</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-11-21T12:05:25+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>21</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>12:05 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.LSH%E7%AE%80%E4%BB%8B">1.LSH简介</a></li>
+<li><a href="#2.%E6%99%AE%E9%80%9AHash">2.普通Hash</a></li>
+<li><a href="#3.LSH">3.LSH</a></li>
+</ul>
+
+
+<h2 id="1.LSH简介">1.LSH简介</h2>
+
+
+<p>之前在项目中做数据聚合去重的逻辑的时候简单看过局部敏感Hash(Locality Sensitive Hashing,简称LSH)这个东东。今天整理一下个人的理解。</p>
+
+<p>LSH可以理解为一种衡量文本相似度的算法，特点是散列前的相似点经过哈希之后，也能够在一定程度上相似，并且具有一定的概率保证。其有坚实的理论依据(98年左右理论就提出来了，99年有第一版实现)并且在高维数据空间中表现优异。简单的价格实验场景：</p>
+
+<ol>
+<li>近似检测(Near-duplicate detection): 通常运用在网页去重方面。在搜索中往往会遇到内容相似的重复页面，它们中大多是由于网站之间转载造成的。可以对页面计算LSH，通过查找相等或相近的LSH值找到Near-duplicate。</li>
+<li>图像、音频检索: 通常图像、音频文件都比较大，并且比较起来相对麻烦，我们可以事先对其计算LSH，用作信息指纹，这样可以给定一个文件的LSH值，快速找到与其相等或相近的图像和文件。</li>
+<li>聚类: 将LSH值作为样本特征，将相同或相近的LSH值的样本合并在一起作为一个类别。</li>
+<li>指纹匹配: 一个手指指纹通常由一些细节来表征，通过对比较两个手指指纹的细节的相似度就可以确定两个指纹是否相同或相似。</li>
+</ol>
+
+
+<p>LSH的发展历史可以参考： <a href="http://jacoxu.com/?p=496">http://jacoxu.com/?p=496</a></p>
+
+<h2 id="2.普通Hash">2.普通Hash</h2>
+
+
+<p>说到Hash，大家都很熟悉，是一种典型的Key-Value结构，最常见的算法莫过于MD5。其设计思想是使Key集合中的任意关键字能够尽可能均匀的变换到Value空间中，不同的Key对应不同的Value。通过建立Hash的方式我们能够得到O(1)的查找时间性能，其中关键在于选取一个hash function(md5就是一致hash function)。</p>
+
+<p>md5这种hash函数通常情况下，Key值只有轻微变化，Value值也会发生很大地变化。比如下面实验中用到的文本，仅仅是邮箱号少了个.，其md5完全不同：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp/md5$ cat 1.dat 
+</span><span class='line'>xiaobaoqiu@qunar.com
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp/md5$ cat 2.dat 
+</span><span class='line'>xiaobaoqiu@qunarcom
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp/md5$ md5sum 1.dat 
+</span><span class='line'>ca201d44a9bb6f8e0ca761cdeb678948  1.dat
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp/md5$ md5sum 2.dat 
+</span><span class='line'>f585aa440eb3b8bbc46f1184e2944fb9  2.dat</span></code></pre></td></tr></table></div></figure>
+
+
+<p>原始文本是极其相似的，但是hash之后这种相似性就丢失了。</p>
+
+<h2 id="3.LSH">3.LSH</h2>
+
+
+<p>局部敏感哈希的最大特点就在于保持数据的相似性。需要注意的是这里说的保持数据的相似度不是说保持100%的相似度，而是保持最大可能的相似度。换个角度来看，可以将LSH理解为数据降维的方法。</p>
+
+<p>数据对应的维度越高，信息量也就越大，相反，如果数据进行了降维，那么毫无疑问数据所反映的信息必然会有损失。哈希函数从本质上来看就是一直在扮演数据降维的角色。</p>
+
+<p>LSH的基本思想是：将原始数据空间中的两个相邻数据点通过相同的映射或投影变换后，这两个数据点在新的数据空间中仍然相邻的概率很大，而不相邻的数据点被映射到同一个桶的概率很小。</p>
+
+<p>参考：
+<a href="https://en.wikipedia.org/wiki/Locality-sensitive_hashing">https://en.wikipedia.org/wiki/Locality-sensitive_hashing</a>
+<a href="http://www.cnblogs.com/maybe2030/p/4953039.html">http://www.cnblogs.com/maybe2030/p/4953039.html</a>
+<a href="http://blog.csdn.net/weiyuweizhi/article/details/8921973">http://blog.csdn.net/weiyuweizhi/article/details/8921973</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2505,155 +2597,6 @@ agent方式启动的btrace的标准输出位于你的SqlMapTracer.class所在目
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/08/08/oomkiller/">Oomkiller</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-08-08T12:33:53+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>8</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>12:33 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer.</p>
-
-<p>其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用,每个Tomcat至少要求了0.5G的内存,很多要求的是默认的2G的内存.</p>
-
-<p>这里主要简单介绍一下oomkiller是什么东西,原理是什么,以及对我们的影响.</p>
-
-<h1>1.oomkiller简介</h1>
-
-<p>简单的说,Linux 内核有个机制叫OOM killer(Out-Of-Memory killer)，该机制会监控那些占用内存过大，尤其是瞬间很快消耗大量内存的进程(为什么后面会讲到)，为了防止内存耗尽而内核会把该进程杀掉,从而腾出内存留给系统用。</p>
-
-<p>现象就是相关的日志文件(/var/log/messages)里面会看到下面类似的 Out of memory: Kill process 信息(日志里面把机器host去掉了),还包括一些如pid，process name，cpu mask，trace等信息:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Aug  4 22:03:18  kernel: Out of memory: Kill process 21447 (java) score 81 or sacrifice child
-</span><span class='line'>Aug  4 22:03:18  kernel: Killed process 21447, UID 40001, (java) total-vm:4242176kB, anon-rss:711240kB, file-rss:1832kB
-</span><span class='line'>Aug  5 01:17:21  ntpd[1195]: synchronized to Xx.xx.xxx.xx, stratum 3
-</span><span class='line'>Aug  5 01:35:52  kernel: java invoked oom-killer: gfp_mask=0xd0, order=0, oom_adj=0, oom_score_adj=0
-</span><span class='line'>Aug  5 01:35:52  kernel: java cpuset=/ mems_allowed=0
-</span><span class='line'>Aug  5 01:35:52  kernel: Pid: 17391, comm: java Not tainted 2.6.32-358.23.2.el6.x86_64 #1</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.oomkiller原理</h1>
-
-<p>Linux 内核根据应用程序的要求分配内存，通常来说应用程序分配了内存但是并没有实际全部使用，为了提高性能，这部分没用的内存可以留作它用，这部分内存是属于每个进程的，内核直接回收利用的话比较麻烦，所以内核采用一种过度分配内存(over-commit memory)的办法来间接利用这部分 “空闲” 的内存，提高整体内存的使用效率。</p>
-
-<p>所谓的过度分配内存,可以理解为"打白条",进程A告诉系统我需要2G内存,系统只会答应不会拒绝,因为系统认为任何一个进程不可能每时每刻都全部占用其申请的内存.所以实际上系统并没有给进程A完整的2G内存,而是需要使用的时候才临时分配.这就好像银行现金肯定远远小于所以储户的总值,因为银行认为不可能所以储户同一时间把所以的钱都取出来.</p>
-
-<p>一般来说这样做没有问题，但当大多数应用程序都消耗完自己的内存的时候麻烦就来了，因为这些应用程序的内存需求加起来超出了物理内存(包括 swap)的容量，内核(OOM killer)必须杀掉一些进程才能腾出空间保障系统正常运行。</p>
-
-<p>用银行的例子来讲可能更容易懂一些，部分储户取钱的时候银行不怕，银行有足够的存款应付，当全国所以的储户(或者绝大多数储户)都取钱而且每个人都想把自己钱取完的时候银行的麻烦就来了，银行实际上是没有这么多钱给大家取的。</p>
-
-<h3>2.1 根据什么kill</h3>
-
-<p>内核检测到系统内存不足,然后挑选并杀掉某个进程的过程可以参考内核源代码 linux/mm/oom_kill.c，当系统内存不足的时候，oom_kill被触发，然后选择一个进程杀掉，如何判断和选择一个进程呢，总不能随机选吧?系统会根据进程使用内存的情况给进程打分,选择进程kill的时候主要根据这个分数,打分的机制很朴素:最占用内存的进程。</p>
-
-<p>每个进程的分数都由进程的oom_score记录:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$cat /proc/26893/oom_score
-</span><span class='line'>76
-</span><span class='line'>[baoqiu.xiao@Xxx ~]$ cat /proc/14969/oom_score
-</span><span class='line'>82</span></code></pre></td></tr></table></div></figure>
-
-
-<p>另外一个重要的参数就是进程的oom_adj,表示该pid进程被oom killer杀掉的权重，介于 [-17,15]之间，越高的权重，意味着更可能被oom killer选中，-17表示禁止被kill掉。默认为0.</p>
-
-<p>一些其他的细节:</p>
-
-<pre><code>1.子进程会继承父进程的oom_adj;
-2.OOM不适合于解决内存泄漏(Memory leak)的问题;
-3.有时free查看还有充足的内存，但还是会触发OOM，是因为该进程可能占用了特殊的内存地址空间;
-</code></pre>
-
-<h3>2.2 如何关闭oomkiller</h3>
-
-<p>有几种方法关闭oomkiller机制:</p>
-
-<ul>
-<li>1.调整oom_adj
-将进程的oom_adj设置为17即禁止了该进程被kill.</li>
-</ul>
-
-
-<p>比如系统的ssh一般是禁止oom的:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@ ~]$ ps aux | grep sshd
-</span><span class='line'>root      1208  0.0  0.0  64116   296 ?        Ss   May28   1:47 /usr/sbin/sshd
-</span><span class='line'>[baoqiu.xiao@ ~]$ cat /proc/1208/oom_adj 
-</span><span class='line'>-17</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其他需要禁用,可以如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>pgrep -f "sshd" | while read PID; do echo -17 &gt; /proc/$PID/oom_adj;done</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其实在oom-killer的日志中我们是可以看到未-17的一些应用:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Aug  5 01:35:52 l-crm4.des.dev.cn0 kernel: [ pid ]   uid  tgid total_vm      rss cpu oom_adj oom_score_adj name
-</span><span class='line'>...
-</span><span class='line'>Aug  5 01:35:52 l-crm4.des.dev.cn0 kernel: [ 1187]     0  1187    16029       73   2     -17         -1000 sshd
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<ul>
-<li><p>2.修改内核参数
-sysctl 下有2个可配置选项：</p>
-
-<p>  vm.panic_on_oom = 0                 #内存不够时内核是否直接panic,0表示开启
-  vm.oom_kill_allocating_task = 1         #oom-killer是否选择当前正在申请内存的进程进行kill</p></li>
-</ul>
-
-
-<p>只要设置/etc/sysctl.conf文件中vm.panic_on_oom=1就表示关闭oom-killer(线上环境一般不推荐):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># sysctl -w vm.panic_on_oom=1
-</span><span class='line'>vm.panic_on_oom = 1   //1表示关闭，默认为0表示开启OOM
-</span><span class='line'># sysctl -p</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参考: <a href="http://lwn.net/Articles/317814/">http://lwn.net/Articles/317814/</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/3">&larr; Older</a>
@@ -2673,6 +2616,10 @@ sysctl 下有2个可配置选项：</p>
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2016/08/20/cratewen-dang-fan-yi/">Crate文档翻译</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2016/07/22/%5B%3F%5D-ge-si-suo-wen-ti/">一个死锁问题</a>
       </li>
     
@@ -2686,10 +2633,6 @@ sysctl 下有2个可配置选项：</p>
     
       <li class="post">
         <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
       </li>
     
   </ul>
@@ -2715,7 +2658,7 @@ sysctl 下有2个可配置选项：</p>
 <li><a class='list-group-item' href='/blog/categories/protocol/'>protocol (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
-<li><a class='list-group-item' href='/blog/categories/search/'>search (8)</a></li>
+<li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
 <li><a class='list-group-item' href='/blog/categories/spring/'>spring (6)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
