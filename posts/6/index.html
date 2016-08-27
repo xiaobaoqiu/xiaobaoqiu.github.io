@@ -9,21 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近碰到一个Guava Lazy Load导致的异常未被try-catch捕获，且未被spring全局的ExceptionHanler捕获的问题。这里简单总结一下。 1.代码 service的代码大致如下： 1
-2
-3
-4
-5
-6
-7
-8
-9
-10
-11
-12
-13
-14
-//service代码 &hellip;">
+  <meta name="description" content="经常需要查看当前服务器哪些用户在登录,以及他们都在干什么. 下面总结一些命令,其中last应该是最常用的命令. 1.w w - Show who is logged on and what they are doing. 主要字段: LOGIN@: 什么时间登录的
+PCPU: 当前进程所用时间 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -58,7 +45,7 @@
   <header role="banner"><hgroup>
   <h1><a href="/">xiaobaoqiu Blog</a></h1>
   
-    <h2>Keep Runnnnnnnnnning...</h2>
+    <h2>Think More, Code Less</h2>
   
 </hgroup>
 
@@ -93,7 +80,7 @@
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2015/03/11/guava-lazy-load/">Guava Lazy Load引发的问题</a></h1>
+      <h1 class="entry-title"><a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a></h1>
     
     
       <p class="meta">
@@ -102,409 +89,27 @@
 
 
 
-<time class='entry-date' datetime='2015-03-11T22:00:10+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>11</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>10:00 pm</span></time>
+<time class='entry-date' datetime='2015-07-16T04:25:57+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:25 am</span></time>
         
       </p>
     
   </header>
 
 
-  <div class="entry-content"><p>最近碰到一个Guava Lazy Load导致的异常未被try-catch捕获，且未被spring全局的ExceptionHanler捕获的问题。这里简单总结一下。</p>
+  <div class="entry-content"><p>经常需要查看当前服务器哪些用户在登录,以及他们都在干什么.</p>
 
-<h1>1.代码</h1>
+<p>下面总结一些命令,其中last应该是最常用的命令.</p>
 
-<p>service的代码大致如下：</p>
+<h1>1.w</h1>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>//service代码
-</span><span class='line'>public XXXVo searchList(...) {
-</span><span class='line'>    //从数据库查询
-</span><span class='line'>    List&lt;XXXEntity&gt; entityList = queryFromDb();
-</span><span class='line'>
-</span><span class='line'>    //Guava Lists.transform转换
-</span><span class='line'>    return Lists.transform(entityList, new Function&lt;XXXEntity, XXXVo&gt;() {
-</span><span class='line'>                @Override
-</span><span class='line'>                public XXXVo apply(XXXEntity input) {
-</span><span class='line'>                    return convert(input);
-</span><span class='line'>                }
-</span><span class='line'>            });
-</span><span class='line'>        });
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<p>w - Show who is logged on and what they are doing.</p>
 
+<p>主要字段:</p>
 
-<p>controller接口层是一个json接口，代码大致如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>@RequestMapping("/search.json")
-</span><span class='line'>@ResponseBody
-</span><span class='line'>public ApiResult searchList_json(...) {
-</span><span class='line'>    return ApiResult.succ(xxxService.searchList(...));
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>代码存在的问题是没有try-catch一些业务异常。这里为了定位问题，try-catch了所有的异常：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>@RequestMapping("/search.json")
-</span><span class='line'>@ResponseBody
-</span><span class='line'>public ApiResult searchList(...) {
-</span><span class='line'>    try{
-</span><span class='line'>        return ApiResult.succ(xxxService.searchList(...));   
-</span><span class='line'>    }catch(Exception e) {
-</span><span class='line'>        logger.error("...");
-</span><span class='line'>        throw new BusinessExceptidon(...);
-</span><span class='line'>    }   
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.问题</h1>
-
-<pre><code>(1).access log显示search.json接口出现了500,但是try-catch没有抓到异常;
-(2).全局配置的ExceptionHandler也没要抓到异常
+<pre><code>LOGIN@: 什么时间登录的
+PCPU: 当前进程所用时间
+WHAT: 用户当前正在使用的命令
 </code></pre>
-
-<h1>3.Guava Lazy Load</h1>
-
-<p>这里使用的是Lists.transform()函数，这里涉及到一个Guava实现中常用的一个延迟加载的(Lazy Load)策略,包括在Splitter、Joinner等大量的类中广泛使用，其大致意思是，代码调用处不会真正执行实际的代码逻辑，在需要拿到处理后的数据的时候，才会去执行处理逻辑。</p>
-
-<h3>3.1 Guava Lazy Load示例</h3>
-
-<p>简单验证代码即其输出如下：
-<img src="/images/problem/lazyload_code.png"></p>
-
-<p><img src="/images/problem/lazyload_exp.png"></p>
-
-<p>日志异常中展示出引发异常的是第82行的代码，即：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>System.out.println(result.get(2));</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>3.2 Guava Lazy Load原理</h3>
-
-<p>这里简单分析一下Lists.transform()函数的Lazy Load的实现原理：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="o">&lt;</span><span class="n">F</span><span class="o">,</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="nf">transform</span><span class="o">(</span>
-</span><span class='line'>      <span class="n">List</span><span class="o">&lt;</span><span class="n">F</span><span class="o">&gt;</span> <span class="n">fromList</span><span class="o">,</span> <span class="n">Function</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">F</span><span class="o">,</span> <span class="o">?</span> <span class="kd">extends</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">function</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">return</span> <span class="o">(</span><span class="n">fromList</span> <span class="k">instanceof</span> <span class="n">RandomAccess</span><span class="o">)</span>
-</span><span class='line'>        <span class="o">?</span> <span class="k">new</span> <span class="n">TransformingRandomAccessList</span><span class="o">&lt;</span><span class="n">F</span><span class="o">,</span> <span class="n">T</span><span class="o">&gt;(</span><span class="n">fromList</span><span class="o">,</span> <span class="n">function</span><span class="o">)</span>
-</span><span class='line'>        <span class="o">:</span> <span class="k">new</span> <span class="n">TransformingSequentialList</span><span class="o">&lt;</span><span class="n">F</span><span class="o">,</span> <span class="n">T</span><span class="o">&gt;(</span><span class="n">fromList</span><span class="o">,</span> <span class="n">function</span><span class="o">);</span>
-</span><span class='line'>  <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="kd">private</span> <span class="kd">static</span> <span class="kd">class</span> <span class="nc">TransformingSequentialList</span><span class="o">&lt;</span><span class="n">F</span><span class="o">,</span> <span class="n">T</span><span class="o">&gt;</span>
-</span><span class='line'>      <span class="kd">extends</span> <span class="n">AbstractSequentialList</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="kd">implements</span> <span class="n">Serializable</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">F</span><span class="o">&gt;</span> <span class="n">fromList</span><span class="o">;</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">Function</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">F</span><span class="o">,</span> <span class="o">?</span> <span class="kd">extends</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">function</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">TransformingSequentialList</span><span class="o">(</span>
-</span><span class='line'>        <span class="n">List</span><span class="o">&lt;</span><span class="n">F</span><span class="o">&gt;</span> <span class="n">fromList</span><span class="o">,</span> <span class="n">Function</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">F</span><span class="o">,</span> <span class="o">?</span> <span class="kd">extends</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">function</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>      <span class="k">this</span><span class="o">.</span><span class="na">fromList</span> <span class="o">=</span> <span class="n">checkNotNull</span><span class="o">(</span><span class="n">fromList</span><span class="o">);</span>
-</span><span class='line'>      <span class="k">this</span><span class="o">.</span><span class="na">function</span> <span class="o">=</span> <span class="n">checkNotNull</span><span class="o">(</span><span class="n">function</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * The default implementation inherited is based on iteration and removal of</span>
-</span><span class='line'><span class="cm">     * each element which can be overkill. That&#39;s why we forward this call</span>
-</span><span class='line'><span class="cm">     * directly to the backing list.</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="nd">@Override</span> <span class="kd">public</span> <span class="kt">void</span> <span class="nf">clear</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>      <span class="n">fromList</span><span class="o">.</span><span class="na">clear</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>    <span class="nd">@Override</span> <span class="kd">public</span> <span class="kt">int</span> <span class="nf">size</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>      <span class="k">return</span> <span class="n">fromList</span><span class="o">.</span><span class="na">size</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>    <span class="nd">@Override</span> <span class="kd">public</span> <span class="n">ListIterator</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="nf">listIterator</span><span class="o">(</span><span class="kd">final</span> <span class="kt">int</span> <span class="n">index</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>      <span class="k">return</span> <span class="k">new</span> <span class="n">TransformedListIterator</span><span class="o">&lt;</span><span class="n">F</span><span class="o">,</span> <span class="n">T</span><span class="o">&gt;(</span><span class="n">fromList</span><span class="o">.</span><span class="na">listIterator</span><span class="o">(</span><span class="n">index</span><span class="o">))</span> <span class="o">{</span>
-</span><span class='line'>        <span class="nd">@Override</span>
-</span><span class='line'>        <span class="n">T</span> <span class="nf">transform</span><span class="o">(</span><span class="n">F</span> <span class="n">from</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>          <span class="k">return</span> <span class="n">function</span><span class="o">.</span><span class="na">apply</span><span class="o">(</span><span class="n">from</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>      <span class="o">};</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">serialVersionUID</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
-</span><span class='line'>  <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="c1">//AbstractSequentialList.java</span>
-</span><span class='line'><span class="kd">public</span> <span class="n">E</span> <span class="nf">get</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">return</span> <span class="nf">listIterator</span><span class="o">(</span><span class="n">index</span><span class="o">).</span><span class="na">next</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">NoSuchElementException</span> <span class="n">exc</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">IndexOutOfBoundsException</span><span class="o">(</span><span class="s">&quot;Index: &quot;</span><span class="o">+</span><span class="n">index</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>可以看出，Lists.transform()函数会生成内部类TransformingSequentialList的示例，TransformingSequentialList会保存原始的List引用和Function引用，只有在获取某一个元素的时候才会执行Function.apply()函数。</p>
-
-<h3>3.3 Lazy Load引发的问题</h3>
-
-<p>在我们的代码中，Service代码返回List<XXXVo>数据的时候，其实是没有执行Function.apply()的逻辑，即XXXEntity到XXXVo的转换逻辑。</p>
-
-<p>逻辑到达Controller的代码中，也没有机会执行Function.apply()的逻辑，直接用ApiResult.succ()包装并正常返回了。
-这解释了为什么异常没有被try-catch捕获。</p>
-
-<h1>4.MappingJacksonHttpMessageConverter</h1>
-
-<p>下面解释一下json接口中return之后的逻辑。面是debug得到的主要两个步骤：</p>
-
-<h3>4.1 ServletInvocableHandlerMethod类对返回值进行处理</h3>
-
-<p>这里包含一系列的HandlerMethodReturnValueHandler，根据返回值的类型选择何时的返回值处理器，这里我们看到了一个RequestResponseBodyMethodProcessor，在这个处理器中就包含了我们熟悉的MappingJacksonHttpMessageConverter，用于将返回值序列化成json：</p>
-
-<p><img src="/images/problem/returnvalueHandler.png"></p>
-
-<p>在MappingJacksonHttpMessageConverter中会调用writeInternal方法将对象序列化：
-<img src="/images/problem/lazyjsonWriteValue.png"></p>
-
-<p>MappingJacksonHttpMessageConverter用于将对象转换为JSON(序列化, @ResponseBody注解)或者将JSON数据转换为对象(反序列化， @RequestBody注解)，一般配置如下：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="o">&lt;</span><span class="n">bean</span> <span class="n">id</span><span class="o">=</span><span class="s">&quot;jsonConverter&quot;</span> <span class="n">class</span><span class="o">=</span><span class="s">&quot;org.springframework.http.converter.json.MappingJacksonHttpMessageConverter&quot;</span><span class="o">&gt;</span>
-</span><span class='line'>   <span class="o">&lt;</span><span class="n">property</span> <span class="n">name</span><span class="o">=</span><span class="s">&quot;supportedMediaTypes&quot;</span> <span class="n">value</span><span class="o">=</span><span class="s">&quot;application/json&quot;</span> <span class="o">/&gt;</span>
-</span><span class='line'><span class="o">&lt;/</span><span class="n">bean</span><span class="o">&gt;</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>MappingJacksonHttpMessageConverter序列化的时候执行其writeInternal方法</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="nd">@Override</span>
-</span><span class='line'>    <span class="kd">protected</span> <span class="kt">void</span> <span class="nf">writeInternal</span><span class="o">(</span><span class="n">Object</span> <span class="n">object</span><span class="o">,</span> <span class="n">HttpOutputMessage</span> <span class="n">outputMessage</span><span class="o">)</span>
-</span><span class='line'>            <span class="kd">throws</span> <span class="n">IOException</span><span class="o">,</span> <span class="n">HttpMessageNotWritableException</span> <span class="o">{</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="n">JsonEncoding</span> <span class="n">encoding</span> <span class="o">=</span> <span class="n">getJsonEncoding</span><span class="o">(</span><span class="n">outputMessage</span><span class="o">.</span><span class="na">getHeaders</span><span class="o">().</span><span class="na">getContentType</span><span class="o">());</span>
-</span><span class='line'>        <span class="n">JsonGenerator</span> <span class="n">jsonGenerator</span> <span class="o">=</span>
-</span><span class='line'>                <span class="k">this</span><span class="o">.</span><span class="na">objectMapper</span><span class="o">.</span><span class="na">getJsonFactory</span><span class="o">().</span><span class="na">createJsonGenerator</span><span class="o">(</span><span class="n">outputMessage</span><span class="o">.</span><span class="na">getBody</span><span class="o">(),</span> <span class="n">encoding</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="c1">// A workaround for JsonGenerators not applying serialization features</span>
-</span><span class='line'>        <span class="c1">// https://github.com/FasterXML/jackson-databind/issues/12</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="k">this</span><span class="o">.</span><span class="na">objectMapper</span><span class="o">.</span><span class="na">getSerializationConfig</span><span class="o">().</span><span class="na">isEnabled</span><span class="o">(</span><span class="n">SerializationConfig</span><span class="o">.</span><span class="na">Feature</span><span class="o">.</span><span class="na">INDENT_OUTPUT</span><span class="o">))</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">jsonGenerator</span><span class="o">.</span><span class="na">useDefaultPrettyPrinter</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="k">this</span><span class="o">.</span><span class="na">prefixJson</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>                <span class="n">jsonGenerator</span><span class="o">.</span><span class="na">writeRaw</span><span class="o">(</span><span class="s">&quot;{} &amp;&amp; &quot;</span><span class="o">);</span>
-</span><span class='line'>            <span class="o">}</span>
-</span><span class='line'>            <span class="k">this</span><span class="o">.</span><span class="na">objectMapper</span><span class="o">.</span><span class="na">writeValue</span><span class="o">(</span><span class="n">jsonGenerator</span><span class="o">,</span> <span class="n">object</span><span class="o">);</span>    <span class="c1">//序列化逻辑</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>        <span class="k">catch</span> <span class="o">(</span><span class="n">JsonProcessingException</span> <span class="n">ex</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">HttpMessageNotWritableException</span><span class="o">(</span><span class="s">&quot;Could not write JSON: &quot;</span> <span class="o">+</span> <span class="n">ex</span><span class="o">.</span><span class="na">getMessage</span><span class="o">(),</span> <span class="n">ex</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>更多的HttpMessageConverter见参考：
-<a href="http://www.ibm.com/developerworks/cn/web/wa-restful/">http://www.ibm.com/developerworks/cn/web/wa-restful/</a></p>
-
-<h1>5.ExceptionHandler</h1>
-
-<h3>5.1 DispatcherServlet异常处理</h3>
-
-<p>MappingJacksonHttpMessageConverter序列化出异常的时候，异常会进入著名的DispatcherServlet类的doDispatch()方法，最终进入processHandlerException()函数，这里会有一个List<HandlerExceptionResolver>处理异常，处理逻辑如下：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">ModelAndView</span> <span class="n">exMv</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
-</span><span class='line'><span class="k">for</span> <span class="o">(</span><span class="n">HandlerExceptionResolver</span> <span class="n">handlerExceptionResolver</span> <span class="o">:</span> <span class="k">this</span><span class="o">.</span><span class="na">handlerExceptionResolvers</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="n">exMv</span> <span class="o">=</span> <span class="n">handlerExceptionResolver</span><span class="o">.</span><span class="na">resolveException</span><span class="o">(</span><span class="n">request</span><span class="o">,</span> <span class="n">response</span><span class="o">,</span> <span class="n">handler</span><span class="o">,</span> <span class="n">ex</span><span class="o">);</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">exMv</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">break</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>即某一个HandlerExceptionResolver成功处理了异常之后，后续的HandlerExceptionResolver就不会继续执行(所谓的责任链模式)。
-这里我们发现我们自定义的CtExceptionHandler，它的顺序在最后：</p>
-
-<p><img src="/images/problem/exceptionHandlerList.png"></p>
-
-<p>我们自定义的HandlerExceptionResolver默认是DispatcherServlet中List<HandlerExceptionResolver>的最后一个，前面包括三个默认的HandlerExceptionResolver：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">ExceptionHandlerExceptionResolver</span>
-</span><span class='line'><span class="n">ResponseStatusExceptionResolver</span>
-</span><span class='line'><span class="n">DefaultHandlerExceptionResolver</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>5.2 HandlerExceptionResolver顺序</h3>
-
-<p>这些HandlerExceptionResolver的顺序是通过定义其顺序值(order)决定，值越小优先级越高(即在List中排名越靠前)，默认的order是最低的优先级:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kt">int</span> <span class="n">LOWEST_PRECEDENCE</span> <span class="o">=</span> <span class="n">Integer</span><span class="o">.</span><span class="na">MAX_VALUE</span><span class="o">;</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>通过重写这个getOrder()函数，可以改变我们自定义的HandlerExceptionResolver的顺序：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">MyExceptionResolver</span> <span class="kd">implements</span> <span class="n">HandlerExceptionResolver</span><span class="o">,</span><span class="n">Ordered</span> <span class="o">{</span>
-</span><span class='line'>    <span class="o">...</span>
-</span><span class='line'>    <span class="nd">@Override</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">getOrder</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">HIGHEST_PRECEDENCE</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>5.3 ExceptionHandler引发的问题</h3>
-
-<p>序列化的异常，首先会执行前三个默认的HandlerExceptionResolver，自带的HandlerExceptionResolver处理了这种异常，我们自定义的ExceptionHandler根本没有起到作用。</p>
-
-<h1>6.解决方案</h1>
-
-<p>修改自定义ExceptionHandler的Order</p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/02/25/lscpu/">Lscpu命令</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-02-25T18:52:34+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>25</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:52 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近看到lscpu命令，简单实在。CPU的型号和L1，L2，L3 Cache大小等信息一目了然了。</p>
-
-<p>类似的命令包括lsusb、lsblk命令。</p>
-
-<h1>1.lscpu</h1>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -524,37 +129,29 @@
 <span class='line-number'>16</span>
 <span class='line-number'>17</span>
 <span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ lscpu
-</span><span class='line'>Architecture:          x86_64
-</span><span class='line'>CPU op-mode(s):        32-bit, 64-bit
-</span><span class='line'>Byte Order:            Little Endian
-</span><span class='line'>CPU(s):                4                //逻辑cpu的个数
-</span><span class='line'>On-line CPU(s) list:   0-3
-</span><span class='line'>Thread(s) per core:    2
-</span><span class='line'>Core(s) per socket:    2
-</span><span class='line'>Socket(s):             1
-</span><span class='line'>NUMA 节点：         1
-</span><span class='line'>厂商 ID：           GenuineIntel
-</span><span class='line'>CPU 系列：          6
-</span><span class='line'>型号：              58
-</span><span class='line'>步进：              9
-</span><span class='line'>CPU MHz：             1200.000
-</span><span class='line'>BogoMIPS:              5183.37
-</span><span class='line'>虚拟化：           VT-x
-</span><span class='line'>L1d 缓存：          32K
-</span><span class='line'>L1i 缓存：          32K
-</span><span class='line'>L2 缓存：           256K
-</span><span class='line'>L3 缓存：           3072K
-</span><span class='line'>NUMA node0 CPU(s):     0-3</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ w
+</span><span class='line'> 20:32:42 up  9:59, 15 users,  load average: 1.80, 1.26, 1.17
+</span><span class='line'>USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+</span><span class='line'>xiaobaoq tty7     :0               10:34    9:58m 22:26   0.48s init --user
+</span><span class='line'>xiaobaoq pts/1    :0               10:35    2:22m  0.12s  0.12s /bin/bash
+</span><span class='line'>xiaobaoq pts/2    :0               11:12   44:10   0.26s  0.19s ssh cn6
+</span><span class='line'>xiaobaoq pts/7    :0               11:12    9:02m  0.15s  0.09s ssh cn6
+</span><span class='line'>xiaobaoq pts/8    :0               11:28    5:56m  0.09s  0.03s ssh cn5
+</span><span class='line'>xiaobaoq pts/12   :0               13:09    3:03m  0.30s  0.24s ssh cn0
+</span><span class='line'>xiaobaoq pts/13   :0               13:09    3:14m  0.13s  0.07s mysql -h...
+</span><span class='line'>xiaobaoq pts/14   :0               13:09    3:00m  1.23s  1.17s ssh cn0
+</span><span class='line'>xiaobaoq pts/18   :0               13:09    3:03m  3.42s  3.35s ssh cn0
+</span><span class='line'>xiaobaoq pts/20   :0               13:14    3:01m  0.45s  0.39s mysql -h...
+</span><span class='line'>xiaobaoq pts/22   :0               13:26    7:01m  0.13s  0.07s ssh cn0
+</span><span class='line'>xiaobaoq pts/23   :0               14:02   40:34   0.17s  0.17s /bin/bash
+</span><span class='line'>xiaobaoq pts/24   :0               14:03    2.00s  0.23s  0.00s w
+</span><span class='line'>xiaobaoq pts/25   :0               14:36    2:02   0.24s  0.18s ssh cn5
+</span><span class='line'>xiaobaoq pts/26   :0               17:41    2:47m  0.09s  0.09s /bin/bash</span></code></pre></td></tr></table></div></figure>
 
 
-<h1>2.lsusb</h1>
+<h1>2.who</h1>
 
-<p>lsusb命令显示usb设备的情况</p>
+<p>who - show who is logged on</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -565,20 +162,76 @@
 <span class='line-number'>7</span>
 <span class='line-number'>8</span>
 <span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ lsusb
-</span><span class='line'>Bus 002 Device 002: ID 8087:0024 Intel Corp. Integrated Rate Matching Hub
-</span><span class='line'>Bus 002 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
-</span><span class='line'>Bus 001 Device 002: ID 8087:0024 Intel Corp. Integrated Rate Matching Hub
-</span><span class='line'>Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
-</span><span class='line'>Bus 004 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
-</span><span class='line'>Bus 003 Device 003: ID 046d:c05a Logitech, Inc. M90/M100 Optical Mouse
-</span><span class='line'>Bus 003 Device 002: ID 04b3:3025 IBM Corp. NetVista Full Width Keyboard
-</span><span class='line'>Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub</span></code></pre></td></tr></table></div></figure>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who
+</span><span class='line'>xiaobaoqiu tty7         2015-07-15 10:34 (:0)
+</span><span class='line'>xiaobaoqiu pts/1        2015-07-15 10:35 (:0)
+</span><span class='line'>xiaobaoqiu pts/2        2015-07-15 11:12 (:0)
+</span><span class='line'>xiaobaoqiu pts/7        2015-07-15 11:12 (:0)
+</span><span class='line'>xiaobaoqiu pts/8        2015-07-15 11:28 (:0)
+</span><span class='line'>xiaobaoqiu pts/12       2015-07-15 13:09 (:0)
+</span><span class='line'>xiaobaoqiu pts/13       2015-07-15 13:09 (:0)
+</span><span class='line'>xiaobaoqiu pts/14       2015-07-15 13:09 (:0)
+</span><span class='line'>xiaobaoqiu pts/18       2015-07-15 13:09 (:0)
+</span><span class='line'>xiaobaoqiu pts/20       2015-07-15 13:14 (:0)
+</span><span class='line'>xiaobaoqiu pts/22       2015-07-15 13:26 (:0)
+</span><span class='line'>xiaobaoqiu pts/23       2015-07-15 14:02 (:0)
+</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)
+</span><span class='line'>xiaobaoqiu pts/25       2015-07-15 14:36 (:0)
+</span><span class='line'>xiaobaoqiu pts/26       2015-07-15 17:41 (:0)</span></code></pre></td></tr></table></div></figure>
 
 
-<h1>3.lsblk</h1>
+<h1>3.users</h1>
 
-<p>lsblk命令显示块设备的情况</p>
+<p>users - print the user names of users currently logged in to the current host</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ users
+</span><span class='line'>xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.whoami</h1>
+
+<p>whoami - print effective userid</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ whoami
+</span><span class='line'>xiaobaoqiu
+</span><span class='line'>
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who am i
+</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)
+</span><span class='line'>
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who mom likes
+</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>5.id</h1>
+
+<p>id - print real and effective user and group IDs</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ id
+</span><span class='line'>uid=1000(xiaobaoqiu) gid=1000(xiaobaoqiu) 组=1000(xiaobaoqiu),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),108(lpadmin),124(sambashare)</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>6.last</h1>
+
+<p>last, lastb - show listing of last logged in users</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -589,15 +242,29 @@
 <span class='line-number'>7</span>
 <span class='line-number'>8</span>
 <span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ lsblk
-</span><span class='line'>NAME   MAJ:MIN RM   SIZE RO TYPE MOUNTPOINT
-</span><span class='line'>sda      8:0    0 111.8G  0 disk 
-</span><span class='line'>├─sda1   8:1    0   350M  0 part 
-</span><span class='line'>└─sda2   8:2    0 111.5G  0 part 
-</span><span class='line'>sdb      8:16   0 465.8G  0 disk 
-</span><span class='line'>├─sdb1   8:17   0 299.8G  0 part 
-</span><span class='line'>├─sdb2   8:18   0  15.1G  0 part [SWAP]
-</span><span class='line'>└─sdb3   8:19   0 150.9G  0 part /</span></code></pre></td></tr></table></div></figure>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ last
+</span><span class='line'>xiaobaoq pts/26       :0               Wed Jul 15 17:41   still logged in   
+</span><span class='line'>xiaobaoq pts/25       :0               Wed Jul 15 14:36   still logged in   
+</span><span class='line'>xiaobaoq pts/24       :0               Wed Jul 15 14:03   still logged in   
+</span><span class='line'>xiaobaoq pts/23       :0               Wed Jul 15 14:02   still logged in   
+</span><span class='line'>xiaobaoq pts/22       :0               Wed Jul 15 13:26   still logged in   
+</span><span class='line'>xiaobaoq pts/20       :0               Wed Jul 15 13:14   still logged in   
+</span><span class='line'>xiaobaoq pts/20       :0               Wed Jul 15 13:14 - 13:14  (00:00)    
+</span><span class='line'>xiaobaoq pts/18       :0               Wed Jul 15 13:09   still logged in   
+</span><span class='line'>xiaobaoq pts/14       :0               Wed Jul 15 13:09   still logged in   
+</span><span class='line'>xiaobaoq pts/13       :0               Wed Jul 15 13:09   still logged in   
+</span><span class='line'>xiaobaoq pts/12       :0               Wed Jul 15 13:09   still logged in   
+</span><span class='line'>xiaobaoq pts/8        :0               Wed Jul 15 11:28   still logged in   
+</span><span class='line'>xiaobaoq pts/7        :0               Wed Jul 15 11:12   still logged in   
+</span><span class='line'>xiaobaoq pts/2        :0               Wed Jul 15 11:12   still logged in   
+</span><span class='line'>xiaobaoq pts/1        :0               Wed Jul 15 10:35   still logged in</span></code></pre></td></tr></table></div></figure>
 
 </div>
   
@@ -611,7 +278,7 @@
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2015/02/10/squidxue-xi/">Squid学习</a></h1>
+      <h1 class="entry-title"><a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a></h1>
     
     
       <p class="meta">
@@ -620,86 +287,108 @@
 
 
 
-<time class='entry-date' datetime='2015-02-10T21:14:57+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>10</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>9:14 pm</span></time>
+<time class='entry-date' datetime='2015-07-07T03:27:54+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>7</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>3:27 am</span></time>
         
       </p>
     
   </header>
 
 
-  <div class="entry-content"><p>之前在处理图片下载延时比较大问题的时候，OPS说使用Squid这个东东，抽时间看看这个东西。</p>
+  <div class="entry-content"><p>经常涉及到进制的转换,比如线上处理问题时候经常需要转换线程id到16进制.</p>
 
-<p>简而言之，Squid就是一个Web缓存代理服务器。</p>
+<h1>1.进制转换</h1>
 
-<h1>1.什么是代理服务器</h1>
+<h3>2.1.shell运算</h3>
 
-<p>代理服务器是介于浏览器和Web服务器之间的另一台服务器。有了该服务器之后，浏览器发出的信息会先送到代理服务器，由代理服务器来取回网页内容并传送给客户的浏览器。对于企业网络而言，代理服务器可以起到控制网络访问并屏蔽不安全信息，以及网络加速的目的。</p>
+<p> Shell 运算把一个数字从给定的进制转换位十进制.如果数字以运算展开式的形式提供,那么假定它带有十进制符号,除非 它前面带有 0（这种情况假定是八进制）或 0x（这种情况假定是十六进制）</p>
 
-<h1>2.Squid简介</h1>
-
-<p>Squid官方网站 ： <a href="http://www.squid-cache.org/">http://www.squid-cache.org/</a></p>
-
-<p>Squid 是一个 Web 缓存代理，支持 HTTP, HTTPS, FTP, 以及更多。它通过缓存与重用经常请求的web页面，减少带宽使用同时提升了响应时间，并设置过滤。使用Squid可以通过访问控制特性来灵活的控制用户访问时间、站点等限制。</p>
-
-<h3>2.1 原理简介</h3>
-
-<p>客户端请求访问 WEB 服务时，DNS 将访问的域名解析为 Squid 代理服务器的 IP 地址，这样客户端的 URL 请求将被发送到代理服务器。如果 Squid代理服务器中缓存了该请求的资源，则将该请求的资源直接返回给客户端，否则代理服务器将向后台的WEB服务器请求资源，然后将请求的应答返回给客户端，同时也将该应答缓存在本地，供下一个请求者使用。</p>
-
-<h3>2.2 缓存限制</h3>
-
-<p>Squid 代理一般只缓存可缓冲的数据（比如 html 网页和图片等），而一些ASP、JSP 之类的动态程序默认不缓存。它根据从 WEB 服务器返回的 HTTP 头标记来缓冲静态页面。有四个最重要 HTTP 头标记：</p>
-
-<pre><code>Last-Modified: 告诉代理页面什么时间被修改
-Expires: 告诉代理页面什么时间应该从缓冲区中删除
-Cache-Control: 告诉代理页面是否应该被缓冲
-Pragma: 用来包含实现特定的指令，最常用的是 Pragma:no-cache
-</code></pre>
-
-<h1>3.Squid安装</h1>
-
-<pre><code>(1).下载 squid，这里下载的是3.4版本 : http://www.squid-cache.org/Versions/v3/3.4/
-(2).解压缩
-```
-xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
-```
-(3).配置
-(待续...)
-</code></pre>
-
-<h1>4.参考</h1>
-
-<p><a href="http://www.ibm.com/developerworks/cn/linux/l-cn-squid/">http://www.ibm.com/developerworks/cn/linux/l-cn-squid/</a></p>
-</div>
-  
-  
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((010))
+</span><span class='line'>8
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((0x10))
+</span><span class='line'>16</span></code></pre></td></tr></table></div></figure>
 
 
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/02/09/ncming-ling/">Nc命令</a></h1>
-    
-    
-      <p class="meta">
-        
+<p>也可以指定 2 到 64 之间的任意进制,超过64进制则不支持.格式如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$((BASE#NUMBER))</span></code></pre></td></tr></table></div></figure>
 
 
+<p>使用举例如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((2#10))
+</span><span class='line'>2
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((5#10))
+</span><span class='line'>5
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((8#10))
+</span><span class='line'>8
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((10#10))
+</span><span class='line'>10
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((16#10))
+</span><span class='line'>16
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((64#10))
+</span><span class='line'>64
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((100#10))
+</span><span class='line'>bash: 100#10: 无效的算数进制 （错误符号是 "100#10"）</span></code></pre></td></tr></table></div></figure>
 
 
-<time class='entry-date' datetime='2015-02-09T19:36:17+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>9</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:36 pm</span></time>
-        
-      </p>
-    
-  </header>
+<h3>2.2.bc</h3>
+
+<p>bc是一种任意精度运算语言,大多数 UNIX/Linux 安装程序都提供.因为它允许您指定输出进制,所以当您需要以十进制以外的进制输出时,这是一种很好的技术.</p>
+
+<p>bc 的特殊变量 ibase 和 obase 分别包含用于输入和输出的进制的值.缺省情况下,都被设置为 10.要执行进制转换,需要改变其中的一个或两个值,然后提供一个数字.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo 'obase=16; 10' | bc
+</span><span class='line'>A
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo 'obase=16; ibase=10; 10' | bc
+</span><span class='line'>A
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo 'obase=10; ibase=16; 10' | bc
+</span><span class='line'>16</span></code></pre></td></tr></table></div></figure>
 
 
-  <div class="entry-content"><p>nc(netcat)是网络工具中的瑞士军刀。</p>
+<h3>2.3.printf</h3>
 
-<h1>1.参数</h1>
+<p>格式化参数和C语言的格式一致:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ printf "%X\n" 100
+</span><span class='line'>64
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ printf "%d\n" 0x10
+</span><span class='line'>16</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.自定义shell</h1>
+
+<p>自己写一个shell,处理多个输入,任意进制到任意进制的转换.通过这个脚本,学习了一下shell处理option的方式.</p>
+
+<p>原理很简单,就是利用上面说道的bc命令.shell脚本如下:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -742,115 +431,64 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 <span class='line-number'>39</span>
 <span class='line-number'>40</span>
 <span class='line-number'>41</span>
-<span class='line-number'>42</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ nc -h
-</span><span class='line'>OpenBSD netcat (Debian patchlevel 1.105-7ubuntu1)
-</span><span class='line'>This is nc from the netcat-openbsd package. An alternative nc is available
-</span><span class='line'>in the netcat-traditional package.
-</span><span class='line'>usage: nc [-46bCDdhjklnrStUuvZz] [-I length] [-i interval] [-O length]
-</span><span class='line'>      [-P proxy_username] [-p source_port] [-q seconds] [-s source]
-</span><span class='line'>      [-T toskeyword] [-V rtable] [-w timeout] [-X proxy_protocol]
-</span><span class='line'>      [-x proxy_address[:port]] [destination] [port]
-</span><span class='line'>    Command Summary:
-</span><span class='line'>        -4          使用IPv4
-</span><span class='line'>        -6          使用IPv6
-</span><span class='line'>        -b          允许广播(broadcast)
-</span><span class='line'>        -C          每行结尾加上CRLF(回车换行符)，即自动换行
-</span><span class='line'>        -D          启动debug sock选项
-</span><span class='line'>        -d          从stdin解绑(Detach from stdin)
-</span><span class='line'>        -h          帮助文档
-</span><span class='line'>        -I length   设置TCP接受的buffer长度
-</span><span class='line'>        -i secs     设置消息发送及端口扫描时间间隔，单位秒
-</span><span class='line'>        -j          Use jumbo frame
-</span><span class='line'>        -k          当一个连接结束时，强制nc监听另一个连接。必须和-l一起使用
-</span><span class='line'>        -l          监听模式，监听进入进入的连接(inbound connects)
-</span><span class='line'>        -n          直接使用IP地址，而不通过域名服务器
-</span><span class='line'>        -O length   设置TCP发送的buffer长度
-</span><span class='line'>        -P proxyuser    代理权限使用的用户名
-</span><span class='line'>        -p port     设置本地主机使用的通信端口
-</span><span class='line'>        -q secs     quit after EOF on stdin and delay of secs
-</span><span class='line'>        -r          随机指定本地主机使用的通信端口
-</span><span class='line'>        -S          Enable the TCP MD5 signature option
-</span><span class='line'>        -s addr     设置本地主机送出数据包的IP地址
-</span><span class='line'>        -T toskeyword   指定链接的IP服务类型
-</span><span class='line'>        -t          Answer TELNET negotiation
-</span><span class='line'>        -U          Use UNIX domain socket
-</span><span class='line'>        -u          使用UDP传输协议
-</span><span class='line'>        -V rtable   指定可选的路由表
-</span><span class='line'>        -v          显示指令执行过程
-</span><span class='line'>        -w secs     设置连接的超时时间，单位秒
-</span><span class='line'>        -X proto    指定代理协议: "4", "5" (SOCKS) or "connect"
-</span><span class='line'>        -x addr[:port]  指定代理地址和端口号
-</span><span class='line'>        -Z          DCCP mode
-</span><span class='line'>        -z          0输入输出模式(只在端口扫描的时候使用)
+</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
+</span><span class='line'>while getopts :i:o: opt 
+</span><span class='line'>do
+</span><span class='line'>        case "$opt" in
+</span><span class='line'>        i) #输入的参数的进制
+</span><span class='line'>           #echo "Found the -i option,with vale $OPTARG"
+</span><span class='line'>           ibase=$OPTARG
+</span><span class='line'>           ;;
+</span><span class='line'>        o) #输出参数进制
+</span><span class='line'>           #echo "Found the -o option,with vale $OPTARG"
+</span><span class='line'>           obase=$OPTARG
+</span><span class='line'>           ;;
+</span><span class='line'>        *) #当有不认识的选项的时候arg为?
+</span><span class='line'>           echo "unkonw argument, Usage : "
+</span><span class='line'>           echo "$1 -i 10 -o 16 1 2 3 4 5 6 ..."
+</span><span class='line'>           exit 1
+</span><span class='line'>        esac
+</span><span class='line'>done
 </span><span class='line'>
-</span><span class='line'>    注意：参数中端口号可以为单个端口，也可以是端口区间:low-high(闭区间)</span></code></pre></td></tr></table></div></figure>
+</span><span class='line'>#跳过opt参数
+</span><span class='line'>shift $[$OPTIND - 1]
+</span><span class='line'>
+</span><span class='line'>#参数检验
+</span><span class='line'>if [ ! $ibase ]; then
+</span><span class='line'>    echo "Usage : $0 -i 10 -o 16 1 2 3 4 5 6 ..."
+</span><span class='line'>    exit 1
+</span><span class='line'>fi
+</span><span class='line'>
+</span><span class='line'>if [ ! $obase ]; then
+</span><span class='line'>    echo "Usage : $0 -i 10 -o 16 1 2 3 4 5 6 ..."
+</span><span class='line'>    exit 1
+</span><span class='line'>fi
+</span><span class='line'>
+</span><span class='line'>echo "输入进制:$ibase"
+</span><span class='line'>echo "输出进制:$obase"
+</span><span class='line'>
+</span><span class='line'>#执行进制转换
+</span><span class='line'>for i in $@
+</span><span class='line'>do
+</span><span class='line'>    echo "obase=$obase; ibase=$ibase; $i" |bc
+</span><span class='line'>done</span></code></pre></td></tr></table></div></figure>
 
 
-<h1>2.典型使用case</h1>
+<h3>1.bc</h3>
 
-<p>下面列举了几个典型的使用，更多使用case参见：
-<a href="http://xmodulo.com/useful-netcat-examples-linux.html">http://xmodulo.com/useful-netcat-examples-linux.html</a></p>
+<h3>2.bc</h3>
 
-<h3>2.1.文件传输</h3>
-
-<p>在线上机器和本地机器之间传输文件，使用scp的话通常需要多次scp，并且通常需要密码，这是nc命令就显示其强大之处：</p>
-
-<p>文件源端：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>sudo cat abc.gz | nc -l 192.168.111.222 45678</span></code></pre></td></tr></table></div></figure>
-
-
-<p>文件目的端：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>nc 192.168.111.222 45678 &gt; abc.gz</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.2.端口扫描</h3>
-
-<p>测试远端机器的某一个端口是否打开，succeeded表示打开：</p>
+<p>简单使用如下:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
 <span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ nc -v -w 2 192.168.111.222 -z 21-24
-</span><span class='line'>Connection to 192.168.111.222 21 port [tcp/ftp] succeeded!
-</span><span class='line'>Connection to 192.168.111.222 22 port [tcp/ssh] succeeded!
-</span><span class='line'>nc: connect to 192.168.111.222 port 23 (tcp) failed: Connection refused
-</span><span class='line'>nc: connect to 192.168.111.222 port 24 (tcp) failed: Connection refused</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ ./trans -i 10 -o 16 100
+</span><span class='line'>输入进制:10
+</span><span class='line'>输出进制:16
+</span><span class='line'>64</span></code></pre></td></tr></table></div></figure>
 
-
-<h3>2.3.简单聊天工具</h3>
-
-<p>一端打开：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ nc -l 1234
-</span><span class='line'>hello
-</span><span class='line'>yes</span></code></pre></td></tr></table></div></figure>
-
-
-<p>另外一端连接，就可以聊天了：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ nc 192.168.111.222 1234
-</span><span class='line'>hello
-</span><span class='line'>yes</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.参考</h1>
-
-<p><a href="http://xmodulo.com/useful-netcat-examples-linux.html">http://xmodulo.com/useful-netcat-examples-linux.html</a></p>
-
-<p><a href="http://mylinuxbook.com/linux-netcat-command/">http://mylinuxbook.com/linux-netcat-command/</a></p>
 </div>
   
   
@@ -863,7 +501,7 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2015/02/05/java-md5/">Java中MessageDigest计算MD5</a></h1>
+      <h1 class="entry-title"><a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a></h1>
     
     
       <p class="meta">
@@ -872,22 +510,41 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 
 
 
-<time class='entry-date' datetime='2015-02-05T21:40:13+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>5</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>9:40 pm</span></time>
+<time class='entry-date' datetime='2015-07-02T17:24:16+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>2</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>5:24 pm</span></time>
         
       </p>
     
   </header>
 
 
-  <div class="entry-content"><p>最近项目的图片处理的系统出问题比较多，典型的一个问题就是因为计算md5出现的问题。</p>
+  <div class="entry-content"><p>昨天CodeReview的时候看到同时使用RateLimiter这个类用作QPS访问限制.学习一下这个类.</p>
 
-<h1>1.问题</h1>
+<p>RateLimiter是Guava的concurrent包下的一个用于限制访问频率的类.</p>
 
-<p>问题的现象很简单，使用这套代码批量切图，会出现一张灵异图片，灵异之处在于，很多人批量切图都会出现这张图片，且这张图片不在他们的原始图片中。</p>
+<h1>1.限流</h1>
 
-<h1>2.原因</h1>
+<p>每个API接口都是有访问上限的,当访问频率或者并发量超过其承受范围时候,我们就必须考虑限流来保证接口的可用性或者降级可用性.即接口也需要安装上保险丝,以防止非预期的请求对系统压力过大而引起的系统瘫痪.</p>
 
-<p>最后分析的原因是计算图片md5的代码，使用的是Java自带的MessageDigest，大致使用如下</p>
+<p>通常的策略就是拒绝多余的访问,或者让多余的访问排队等待服务,或者引流.</p>
+
+<p>如果要准确的控制QPS,简单的做法是维护一个单位时间内的Counter,如判断单位时间已经过去,则将Counter重置零.此做法被认为没有很好的处理单位时间的边界,比如在前一秒的最后一毫秒里和下一秒的第一毫秒都触发了最大的请求数,将目光移动一下,就看到在两毫秒内发生了两倍的QPS.</p>
+
+<p><img src="/images/guava/simple_RateLimiter.png"></p>
+
+<h1>2.限流算法</h1>
+
+<p>常用的更平滑的限流算法有两种:漏桶算法和令牌桶算法.</p>
+
+<p>很多传统的服务提供商如华为中兴都有类似的专利,参考:
+<a href="http://www.google.com/patents/CN1536815A?cl=zh">http://www.google.com/patents/CN1536815A?cl=zh</a></p>
+
+<h3>2.1 漏桶算法</h3>
+
+<p>漏桶(Leaky Bucket)算法思路很简单,水(请求)先进入到漏桶里,漏桶以一定的速度出水(接口有响应速率),当水流入速度过大会直接溢出(访问频率超过接口响应速率),然后就拒绝请求,可以看出漏桶算法能强行限制数据的传输速率.示意图如下:</p>
+
+<p><img src="/images/guava/rate-limit1.png"></p>
+
+<p>可见这里有两个变量,一个是桶的大小,支持流量突发增多时可以存多少的水(burst),另一个是水桶漏洞的大小(rate)，伪代码如下：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -902,41 +559,207 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 <span class='line-number'>11</span>
 <span class='line-number'>12</span>
 <span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>//声明
-</span><span class='line'>private static MessageDigest md = null;
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>double rate;               // leak rate in calls/s
+</span><span class='line'>double burst;              // bucket size in calls
 </span><span class='line'>
-</span><span class='line'>//初始化
-</span><span class='line'>static {
-</span><span class='line'>    md = MessageDigest.getInstance("MD5");
+</span><span class='line'>long refreshTime;          // time for last water refresh
+</span><span class='line'>double water;              // water count at refreshTime
+</span><span class='line'>
+</span><span class='line'>refreshWater() {
+</span><span class='line'>    long  now = getTimeOfDay();
+</span><span class='line'>    
+</span><span class='line'>    //水随着时间流逝,不断流走,最多就流干到0.
+</span><span class='line'>    water = max(0, water- (now - refreshTime)*rate); 
+</span><span class='line'>    refreshTime = now;
 </span><span class='line'>}
 </span><span class='line'>
-</span><span class='line'>//使用
-</span><span class='line'>public static byte[] getMD5(byte[] bytes) {
-</span><span class='line'>    md.update(bytes);   //-----------------------A
-</span><span class='line'>    return md.digest(); //-----------------------B
+</span><span class='line'>bool permissionGranted() {
+</span><span class='line'>    refreshWater();
+</span><span class='line'>    if (water &lt; burst) { // 水桶还没满,继续加1
+</span><span class='line'>        water ++;
+</span><span class='line'>        return true;
+</span><span class='line'>    } else {
+</span><span class='line'>        return false;
+</span><span class='line'>    }
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<p>问题的原因就是多线程计算md5的时候getMD5这个函数有问题。</p>
+<p>因为漏桶的漏出速率是固定的参数,所以,即使网络中不存在资源冲突(没有发生拥塞),漏桶算法也不能使流突发(burst)到端口速率.因此,漏桶算法对于存在突发特性的流量来说缺乏效率.</p>
 
-<h3>2.1 问题md5</h3>
+<h3>2.2 令牌桶算法</h3>
 
-<p>最后定位发现重复出现的md5是</p>
+<p>令牌桶算法(Token Bucket)和 Leaky Bucket 效果一样但方向相反的算法,更加容易理解.随着时间流逝,系统会按恒定1/QPS时间间隔(如果QPS=100,则间隔是10ms)往桶里加入Token(想象和漏洞漏水相反,有个水龙头在不断的加水),如果桶已经满了就不再加了.新请求来临时,会各自拿走一个Token,如果没有Token可拿了就阻塞或者拒绝服务.</p>
 
-<pre><code>d41d8cd98f00b204e9800998ecf8427e
+<p><img src="/images/guava/token_bucket.JPG"></p>
+
+<p>令牌桶的另外一个好处是可以方便的改变速度. 一旦需要提高速率,则按需提高放入桶中的令牌的速率.
+一般会定时(比如100毫秒)往桶中增加一定数量的令牌, 有些变种算法则实时的计算应该增加的令牌的数量.</p>
+
+<h1>3.RateLimiter简介</h1>
+
+<p>Google开源工具包Guava提供了限流工具类RateLimiter,该类基于令牌桶算法(Token Bucket)来完成限流,非常易于使用.RateLimiter经常用于限制对一些物理资源或者逻辑资源的访问速率.它支持两种获取permits接口,一种是如果拿不到立刻返回false,一种会阻塞等待一段时间看能不能拿到.</p>
+
+<p>RateLimiter和Java中的信号量(java.util.concurrent.Semaphore)类似,Semaphore通常用于限制并发量.</p>
+
+<p>源码注释中的一个例子,比如我们有很多任务需要执行,但是我们不希望每秒超过两个任务执行,那么我们就可以使用RateLimiter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>final RateLimiter rateLimiter = RateLimiter.create(2.0);
+</span><span class='line'>void submitTasks(List&lt;Runnable&gt; tasks, Executor executor) {
+</span><span class='line'>    for (Runnable task : tasks) {
+</span><span class='line'>        rateLimiter.acquire(); // may wait
+</span><span class='line'>        executor.execute(task);
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外一个例子,假如我们会产生一个数据流,然后我们想以每秒5kb的速度发送出去.我们可以每获取一个令牌(permit)就发送一个byte的数据,这样我们就可以通过一个每秒5000个令牌的RateLimiter来实现:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>final RateLimiter rateLimiter = RateLimiter.create(5000.0);
+</span><span class='line'>void submitPacket(byte[] packet) {
+</span><span class='line'>    rateLimiter.acquire(packet.length);
+</span><span class='line'>    networkService.send(packet);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外,我们也可以使用非阻塞的形式达到降级运行的目的,即使用非阻塞的tryAcquire()方法:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if(limiter.tryAcquire()) { //未请求到limiter则立即返回false
+</span><span class='line'>    doSomething();
+</span><span class='line'>}else{
+</span><span class='line'>    doSomethingElse();
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.RateLimiter主要接口</h1>
+
+<p>RateLimiter其实是一个abstract类,但是它提供了几个static方法用于创建RateLimiter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'>* 创建一个稳定输出令牌的RateLimiter，保证了平均每秒不超过permitsPerSecond个请求
+</span><span class='line'>* 当请求到来的速度超过了permitsPerSecond，保证每秒只处理permitsPerSecond个请求
+</span><span class='line'>* 当这个RateLimiter使用不足(即请求到来速度小于permitsPerSecond)，会囤积最多permitsPerSecond个请求
+</span><span class='line'>*/
+</span><span class='line'>public static RateLimiter create(double permitsPerSecond);
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'>* 创建一个稳定输出令牌的RateLimiter，保证了平均每秒不超过permitsPerSecond个请求
+</span><span class='line'>* 还包含一个热身期(warmup period),热身期内，RateLimiter会平滑的将其释放令牌的速率加大，直到起达到最大速率
+</span><span class='line'>* 同样，如果RateLimiter在热身期没有足够的请求(unused),则起速率会逐渐降低到冷却状态
+</span><span class='line'>* 
+</span><span class='line'>* 设计这个的意图是为了满足那种资源提供方需要热身时间，而不是每次访问都能提供稳定速率的服务的情况(比如带缓存服务，需要定期刷新缓存的)
+</span><span class='line'>* 参数warmupPeriod和unit决定了其从冷却状态到达最大速率的时间
+</span><span class='line'>*/
+</span><span class='line'>public static RateLimiter create(double permitsPerSecond, long warmupPeriod, TimeUnit unit);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>提供了两个获取令牌的方法,不带参数表示获取一个令牌.如果没有令牌则一直等待,返回等待的时间(单位为秒),没有被限流则直接返回0.0:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public double acquire();
+</span><span class='line'>
+</span><span class='line'>public double acquire(int permits);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>尝试获取令牌,分为待超时时间和不带超时时间两种:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public boolean tryAcquire();
+</span><span class='line'>//尝试获取一个令牌,立即返回
+</span><span class='line'>public boolean tryAcquire(int permits);
+</span><span class='line'>public boolean tryAcquire(long timeout, TimeUnit unit);
+</span><span class='line'>//尝试获取permits个令牌,带超时时间
+</span><span class='line'>public boolean tryAcquire(int permits, long timeout, TimeUnit unit);</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>5.RateLimiter设计</h1>
+
+<p>考虑一下RateLimiter是如何设计的,并且为什么要这样设计.</p>
+
+<p>RateLimiter的主要功能就是提供一个稳定的速率,实现方式就是通过限制请求流入的速度,比如计算请求等待合适的时间阈值.</p>
+
+<p>实现QPS速率的最简单的方式就是记住上一次请求的最后授权时间,然后保证1/QPS秒内不允许请求进入.比如QPS=5,如果我们保证最后一个被授权请求之后的200ms的时间内没有请求被授权,那么我们就达到了预期的速率.如果一个请求现在过来但是最后一个被授权请求是在100ms之前,那么我们就要求当前这个请求等待100ms.按照这个思路,请求15个新令牌(许可证)就需要3秒.</p>
+
+<p>有一点很重要:上面这个设计思路的RateLimiter记忆非常的浅,它的脑容量非常的小,只记得上一次被授权的请求的时间.如果RateLimiter的一个被授权请求q之前很长一段时间没有被使用会怎么样?这个RateLimiter会立马忘记过去这一段时间的利用不足,而只记得刚刚的请求q.</p>
+
+<p>过去一段时间的利用不足意味着有过剩的资源是可以利用的.这种情况下,RateLimiter应该加把劲(speed up for a while)将这些过剩的资源利用起来.比如在向网络中发生数据的场景(限流),过去一段时间的利用不足可能意味着网卡缓冲区是空的,这种场景下,我们是可以加速发送来将这些过程的资源利用起来.</p>
+
+<p>另一方面,过去一段时间的利用不足可能意味着处理请求的服务器对即将到来的请求是准备不足的(less ready for future requests),比如因为很长一段时间没有请求当前服务器的cache是陈旧的,进而导致即将到来的请求会触发一个昂贵的操作(比如重新刷新全量的缓存).</p>
+
+<p>为了处理这种情况,RateLimiter中增加了一个维度的信息,就是过去一段时间的利用不足(past underutilization),代码中使用storedPermits变量表示.当没有利用不足这个变量为0,最大能达到maxStoredPermits(maxStoredPermits表示完全没有利用).因此,请求的令牌可能从两个地方来:</p>
+
+<pre><code>1.过去剩余的令牌(stored permits, 可能没有)
+2.现有的令牌(fresh permits,当前这段时间还没用完的令牌)
 </code></pre>
 
-<p>这是一个特殊的md5，即其是空字符串的md5：</p>
+<p>我们将通过一个例子来解释它是如何工作的:</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>MD5("") = d41d8cd98f00b204e9800998ecf8427e</span></code></pre></td></tr></table></div></figure>
+<p>对一个每秒产生一个令牌的RateLimiter,每有一个没有使用令牌的一秒,我们就将storedPermits加1,如果RateLimiter在10秒都没有使用,则storedPermits变成10.0.这个时候,一个请求到来并请求三个令牌(acquire(3)),我们将从storedPermits中的令牌为其服务,storedPermits变为7.0.这个请求之后立马又有一个请求到来并请求10个令牌,我们将从storedPermits剩余的7个令牌给这个请求,剩下还需要三个令牌,我们将从RateLimiter新产生的令牌中获取.我们已经知道,RateLimiter每秒新产生1个令牌,就是说上面这个请求还需要的3个请求就要求其等待3秒.</p>
 
+<p>想象一个RateLimiter每秒产生一个令牌,现在完全没有使用(处于初始状态),限制一个昂贵的请求acquire(100)过来.如果我们选择让这个请求等待100秒再允许其执行,这显然很荒谬.我们为什么什么也不做而只是傻傻的等待100秒,一个更好的做法是允许这个请求立即执行(和acquire(1)没有区别),然后将随后到来的请求推迟到正确的时间点.这种策略,我们允许这个昂贵的任务立即执行,并将随后到来的请求推迟100秒.这种策略就是让任务的执行和等待同时进行.</p>
 
-<p>参考： <a href="http://zh.wikipedia.org/wiki/MD5">http://zh.wikipedia.org/wiki/MD5</a></p>
+<p>一个重要的结论:RateLimiter不会记最后一个请求,而是即下一个请求允许执行的时间.这也可以很直白的告诉我们到达下一个调度时间点的时间间隔.然后定一个一段时间未使用的Ratelimiter也很简单:下一个调度时间点已经过去,这个时间点和现在时间的差就是Ratelimiter多久没有被使用,我们会将这一段时间翻译成storedPermits.所有,如果每秒钟产生一个令牌(rate==1),并且正好每秒来一个请求,那么storedPermits就不会增长.</p>
 
-<h3>2.1 代码问题</h3>
+<h1>6.RateLimiter主要源码</h1>
 
-<p>在MessageDigest类的源代码注释有这样一段话：</p>
+<p>RateLimiter定义了两个create函数用于构建不同形式的RateLimiter:</p>
+
+<pre><code>1.public static RateLimiter create(double permitsPerSecond)
+用于创建SmoothBursty类型的RateLimiter
+2.public static RateLimiter create(double permitsPerSecond, long warmupPeriod, TimeUnit unit)
+用于创建
+</code></pre>
+
+<p>源码下面以acquire为例子,分析一下RateLimiter如何实现限流:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -948,162 +771,121 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 <span class='line-number'>8</span>
 <span class='line-number'>9</span>
 <span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> * &lt;p&gt;A MessageDigest object starts out initialized. The data is
-</span><span class='line'> * processed through it using the {@link #update(byte) update}
-</span><span class='line'> * methods. At any point {@link #reset() reset} can be called
-</span><span class='line'> * to reset the digest. Once all the data to be updated has been
-</span><span class='line'> * updated, one of the {@link #digest() digest} methods should
-</span><span class='line'> * be called to complete the hash computation.
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public double acquire() {
+</span><span class='line'>    return acquire(1);
+</span><span class='line'>}
+</span><span class='line'>public double acquire(int permits) {
+</span><span class='line'>    long microsToWait = reserve(permits);
+</span><span class='line'>    stopwatch.sleepMicrosUninterruptibly(microsToWait);
+</span><span class='line'>    return 1.0 * microsToWait / SECONDS.toMicros(1L);
+</span><span class='line'>}
+</span><span class='line'>final long reserve(int permits) {
+</span><span class='line'>    checkPermits(permits);
+</span><span class='line'>    synchronized (mutex()) {    //应对并发情况需要同步
+</span><span class='line'>      return reserveAndGetWaitLength(permits, stopwatch.readMicros());
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>final long reserveAndGetWaitLength(int permits, long nowMicros) {
+</span><span class='line'>    long momentAvailable = reserveEarliestAvailable(permits, nowMicros);
+</span><span class='line'>    return max(momentAvailable - nowMicros, 0);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面方法来自RateLimiter的具体实现类SmoothRateLimiter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>final long reserveEarliestAvailable(int requiredPermits, long nowMicros) {
+</span><span class='line'>    resync(nowMicros);  //补充令牌
+</span><span class='line'>    long returnValue = nextFreeTicketMicros;
+</span><span class='line'>    //这次请求消耗的令牌数目
+</span><span class='line'>    double storedPermitsToSpend = min(requiredPermits, this.storedPermits);
+</span><span class='line'>    double freshPermits = requiredPermits - storedPermitsToSpend;
+</span><span class='line'>
+</span><span class='line'>    long waitMicros = storedPermitsToWaitTime(this.storedPermits, storedPermitsToSpend)
+</span><span class='line'>        + (long) (freshPermits * stableIntervalMicros);
+</span><span class='line'>
+</span><span class='line'>    this.nextFreeTicketMicros = nextFreeTicketMicros + waitMicros;
+</span><span class='line'>    this.storedPermits -= storedPermitsToSpend;
+</span><span class='line'>    return returnValue;
+</span><span class='line'>}
+</span><span class='line'>private void resync(long nowMicros) {
+</span><span class='line'>    // if nextFreeTicket is in the past, resync to now
+</span><span class='line'>    if (nowMicros &gt; nextFreeTicketMicros) {
+</span><span class='line'>        storedPermits = min(maxPermits,
+</span><span class='line'>        storedPermits + (nowMicros - nextFreeTicketMicros) / stableIntervalMicros);
+</span><span class='line'>        nextFreeTicketMicros = nowMicros;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外，对于storedPermits的使用，RateLimiter存在两种策略，二者区别主要体现在使用storedPermits时候需要等待的时间。这个逻辑由storedPermitsToWaitTime函数实现：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Translates a specified portion of our currently stored permits which we want to
+</span><span class='line'> * spend/acquire, into a throttling time. Conceptually, this evaluates the integral
+</span><span class='line'> * of the underlying function we use, for the range of
+</span><span class='line'> * [(storedPermits - permitsToTake), storedPermits].
 </span><span class='line'> *
-</span><span class='line'> * &lt;p&gt;The &lt;code&gt;digest&lt;/code&gt; method can be called once for a given number
-</span><span class='line'> * of updates. After &lt;code&gt;digest&lt;/code&gt; has been called, the MessageDigest
-</span><span class='line'> * object is reset to its initialized state.</span></code></pre></td></tr></table></div></figure>
+</span><span class='line'> * &lt;p&gt;This always holds: {@code 0 &lt;= permitsToTake &lt;= storedPermits}
+</span><span class='line'> */
+</span><span class='line'>abstract long storedPermitsToWaitTime(double storedPermits, double permitsToTake);</span></code></pre></td></tr></table></div></figure>
 
 
-<p>上面这段话第二部分的意思是说，digest()这个方法只能被调用一次，一旦调用MessageDigest对象会被重置到初始状态。</p>
+<p>存在两种策略就是为了应对我们上面讲到的，存在资源使用不足大致分为两种情况：
+    (1).资源确实使用不足，这些剩余的资源我们私海可以使用的；
+    (2).提供资源的服务过去还没准备好，比如服务刚启动等；</p>
 
-<p>根据这个逻辑，getMD5这个函数的代码，多个线程进入这段代码的时候（这里假设两个线程），线程A执行完步骤1，在执行步骤2之前，线程B也执行完步骤1，之后线程B调用了步骤2得到正确的md5,之后线程A再调用步骤2的时候得到的md5就是d41d8cd98f00b204e9800998ecf8427e。</p>
+<p>为此，RateLimiter实际上由两种实现策略，其实现分别见SmoothBursty和SmoothWarmingUp。二者主要的区别就是storedPermitsToWaitTime实现以及maxPermits数量的计算。</p>
 
-<p>本地验证：</p>
+<h3>6.1 SmoothBursty</h3>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void main(String[] args) {
-</span><span class='line'>    String src = "HelloWorld";
-</span><span class='line'>
-</span><span class='line'>    messageDigest.update(src.getBytes());
-</span><span class='line'>
-</span><span class='line'>    String md5 = bytesToHex(messageDigest.digest());
-</span><span class='line'>    System.out.println("md5 = " + md5.toLowerCase());
-</span><span class='line'>
-</span><span class='line'>    String md5Again = bytesToHex(messageDigest.digest());
-</span><span class='line'>    System.out.println("md5Again = " + md5Again.toLowerCase());
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<p>SmoothBursty使用storedPermits不需要额外等待时间。并且默认maxBurstSeconds未1，因此maxPermits为permitsPerSecond，即最多可以存储1秒的剩余令牌，比如QPS=5，则maxPermits=5.</p>
 
-
-<p>得到的结果：</p>
+<p>下面这个RateLimiter的入口就是用来创建SmoothBursty类型的RateLimiter，</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>md5 = 68e109f0f40ca72a15e05cc22786f8e6
-</span><span class='line'>md5Again = d41d8cd98f00b204e9800998ecf8427e</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.解决</h1>
-
-<h3>3.1 MessageDigest正确用法</h3>
-
-<p>MessageDigest类的注释里面其实给出了正确的用法，注意其md.clone()的调用：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> MessageDigest md = MessageDigest.getInstance("MD5");
-</span><span class='line'>
-</span><span class='line'> try {
-</span><span class='line'>     md.update(toChapter1);
-</span><span class='line'>     MessageDigest tc1 = md.clone();
-</span><span class='line'>     byte[] toChapter1Digest = tc1.digest();
-</span><span class='line'>     md.update(toChapter2);
-</span><span class='line'>     ...etc.
-</span><span class='line'> } catch (CloneNotSupportedException cnse) {
-</span><span class='line'>     throw new DigestException("couldn't make digest of partial content");
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>3.1 Apache的DigestUtils</h3>
-
-<p>Apache的DigestUtils是一个线程安全的类，是对MessageDigest的封装，使用很简单，首先加入依赖：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;dependency&gt;
-</span><span class='line'>    &lt;groupId&gt;commons-codec&lt;/groupId&gt;
-</span><span class='line'>    &lt;artifactId&gt;commons-codec&lt;/artifactId&gt;
-</span><span class='line'>    &lt;version&gt;1.9&lt;/version&gt;
-</span><span class='line'>&lt;/dependency&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>然后就可以使用DigestUtils计算md5：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>DigestUtils.md5(bytes)</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/01/31/netstatming-ling/">Netstat与ss命令</a></h1>
-    
-    
-      <p class="meta">
-        
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static RateLimiter create(double permitsPerSecond)</span></code></pre></td></tr></table></div></figure>
 
 
 
-
-<time class='entry-date' datetime='2015-01-31T00:51:36+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>31</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>12:51 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>ss是Socket Statistics的缩写。顾名思义，ss命令可以用来获取socket统计信息，它可以显示和netstat类似的内容。但ss的优势在于它能够显示更多更详细的有关TCP和连接状态的信息，而且比netstat更快速更高效。</p>
-
-<p>当服务器的socket连接数量变得非常大时，无论是使用netstat命令还是直接cat /proc/net/tcp，执行速度都会很慢。这是很ss还是会很快。</p>
-
-<p>ss 和 netstat 效率对比：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ time ss
-</span><span class='line'>real    0m0.330s
-</span><span class='line'>user    0m0.004s
-</span><span class='line'>sys 0m0.013s
-</span><span class='line'>
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ time netstat -at
-</span><span class='line'>real    1m37.135s
-</span><span class='line'>user    0m0.143s
-</span><span class='line'>sys 0m0.020s</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>1.ss命令参数</h1>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -1137,767 +919,51 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 <span class='line-number'>30</span>
 <span class='line-number'>31</span>
 <span class='line-number'>32</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Usage: ss [ OPTIONS ]
-</span><span class='line'>       ss [ OPTIONS ] [ FILTER ]
-</span><span class='line'>   -h, --help       帮助
-</span><span class='line'>   -V, --version    版本信息
-</span><span class='line'>   -n, --numeric    不解析服务名称
-</span><span class='line'>   -r, --resolve    解析服务名称
-</span><span class='line'>   -a, --all        显示所有套接字(sockets)
-</span><span class='line'>   -l, --listening  显示listening状态的套接字(sockets)
-</span><span class='line'>   -o, --options    显示计时器(timer)信息
-</span><span class='line'>   -e, --extended   显示详细的套接字信息
-</span><span class='line'>   -m, --memory     显示套接字的内存使用情况
-</span><span class='line'>   -p, --processes  显示使用套接字的进程
-</span><span class='line'>   -i, --info       显示TCP内部信息
-</span><span class='line'>   -s, --summary    显示套接字使用概况
-</span><span class='line'>   -b, --bpf        show bpf filter socket information
-</span><span class='line'>   -4, --ipv4       仅显示IPv4的套接字
-</span><span class='line'>   -6, --ipv6       仅显示IPv6的套接字
-</span><span class='line'>   -0, --packet     显示 PACKET 套接字
-</span><span class='line'>   -t, --tcp        仅显示TCP的套接字
-</span><span class='line'>   -u, --udp        仅显示UDP的套接字
-</span><span class='line'>   -d, --dccp       仅显示DCCP的套接字
-</span><span class='line'>   -w, --raw        仅显示RAW的套接字
-</span><span class='line'>   -x, --unix       仅显示Unix的套接字(domain sockets)
-</span><span class='line'>   -f, --family=FAMILY 显示FAMILY类型的套接字(sockets)
-</span><span class='line'>                    FAMILY可选,支持unix,inet,inet6,link,netlink
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'>     * This implements a "bursty" RateLimiter, where storedPermits are translated to
+</span><span class='line'>     * zero throttling. The maximum number of permits that can be saved (when the RateLimiter is
+</span><span class='line'>     * unused) is defined in terms of time, in this sense: if a RateLimiter is 2qps, and this
+</span><span class='line'>     * time is specified as 10 seconds, we can save up to 2 * 10 = 20 permits.
+</span><span class='line'>     */
+</span><span class='line'>    static final class SmoothBursty extends SmoothRateLimiter {
+</span><span class='line'>        /** The work (permits) of how many seconds can be saved up if this RateLimiter is unused? */
+</span><span class='line'>        final double maxBurstSeconds;
 </span><span class='line'>
-</span><span class='line'>   -A, --query=QUERY, --socket=QUERY
-</span><span class='line'>       QUERY := {all|inet|tcp|udp|raw|unix|packet|netlink}[,QUERY]
-</span><span class='line'>
-</span><span class='line'>   -D, --diag=FILE     将原始TCP套接字(sockets)信息转储到文件
-</span><span class='line'>   -F, --filter=FILE   从文件中读取过滤器信息
-</span><span class='line'>       FILTER := [ state TCP-STATE ] [ EXPRESSION ]</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.简单使用</h1>
-
-<h3>2.1 显示TCP连接</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ ss -ta
-</span><span class='line'>State      Recv-Q Send-Q                 Local Address:Port                     Peer Address:Port   
-</span><span class='line'>LISTEN     0      50                                 *:50955                               *:*       
-</span><span class='line'>LISTEN     0      128                        127.0.0.1:11211                               *:*       
-</span><span class='line'>LISTEN     0      50                                 *:63342                               *:*       
-</span><span class='line'>LISTEN     0      50                                 *:2864                                *:*       
-</span><span class='line'>LISTEN     0      5                          127.0.1.1:domain                              *:*    </span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.2 显示 Sockets 摘要</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ ss -s
-</span><span class='line'>Total: 871 (kernel 0)
-</span><span class='line'>TCP:   44 (estab 8, closed 13, orphaned 0, synrecv 0, timewait 12/0), ports 0
-</span><span class='line'>
-</span><span class='line'>Transport Total     IP        IPv6
-</span><span class='line'>*     0         -         -        
-</span><span class='line'>RAW   0         0         0        
-</span><span class='line'>UDP   21        16        5        
-</span><span class='line'>TCP   31        23        8        
-</span><span class='line'>INET      52        39        13       
-</span><span class='line'>FRAG      0         0         0</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.3 列出所有打开的网络连接端口</h3>
-
-<p>即处于Listening的端口</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ ss -l</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.4 查看进程使用的socket</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ ss -pl</span></code></pre></td></tr></table></div></figure>
-
-
-<p>可以根据ss -pl结果进行grep</p>
-
-<h3>2.5 匹配远程地址和端口号</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ ss dst 192.168.138.115
-</span><span class='line'>
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ ss dst 192.168.138.115:17582</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.6 匹配本地地址和端口号</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/hotel/CRM/crm-main$ ss src 192.168.138.115</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.参考</h1>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/01/27/vmstatgong-ju/">Vmstat工具</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-01-27T06:16:56+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>27</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:16 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>vmstat命令是最常见的Linux/Unix监控工具，可以展现给定时间间隔的服务器的状态值,包括服务器的CPU使用率，内存使用，虚拟内存交换情况,IO读写情况。</p>
-
-<h1>1.常用参数</h1>
-
-<p>一般vmstat工具的使用是通过两个数字参数来完成的，第一个参数是采样的时间间隔数，单位是秒，第二个参数是采样的次数</p>
-
-<p>参数1表示每隔1秒打印一条信息</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/hotel/CRM/fs$ vmstat 1
-</span><span class='line'>procs -----------memory---------- ---swap-- -----io---- -system-- ----cpu----
-</span><span class='line'> r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa
-</span><span class='line'> 2  0 299304 236692   8592 1589160    1    4   109   168  193   38 34 23 42  1
-</span><span class='line'> 0  0 299304 236892   8592 1589028    0    0     4     0 8159 10012 17 15 69  0
-</span><span class='line'> 0  0 299304 236324   8600 1589076    0    0     0   100 7979 8996  8 14 77  1
-</span><span class='line'> 0  0 299304 236412   8600 1589124    0    0     0     0 8269 10878 17 14 69  0
-</span><span class='line'> 2  0 299304 236656   8600 1589124    0    0     0     0 7900 9927 16 14 70  0
-</span><span class='line'> 0  0 299304 236744   8600 1589084    0    0     0    36 8152 9840 15 16 69  0
-</span><span class='line'> 0  0 299304 236480   8600 1589120    0    0     4     0 7903 10060 15 16 69  0</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.结果意义</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Procs
-</span><span class='line'>r: 等待CPU的线程数目
-</span><span class='line'>b: 等待IO而被Blocked的线程数目
-</span><span class='line'>
-</span><span class='line'>Memory
-</span><span class='line'>swpd: 虚拟内存的使用(Swap空间的使用),如果大于0，表示你的机器物理内存不足了
-</span><span class='line'>free: 空闲内存
-</span><span class='line'>buff: 用作buffer的空间
-</span><span class='line'>cache: 用作cache的空间
-</span><span class='line'>
-</span><span class='line'>Swap
-</span><span class='line'>si: 每秒从磁盘读入虚拟内存的大小,如果这个值大于0,表示物理内存不够用或者内存泄露了,要查找耗内存进程解决掉
-</span><span class='line'>so: 每秒虚拟内存写入磁盘的大小，如果这个值大于0，同上
-</span><span class='line'>
-</span><span class='line'>IO
-</span><span class='line'>bi: 块设备每秒接收的块数量，这里的块设备是指系统上的磁盘等块设备
-</span><span class='line'>bo: 块设备每秒发送的块数量，例如我们读取文件，bo就要大于0
-</span><span class='line'>
-</span><span class='line'>System
-</span><span class='line'>in: 每秒CPU的中断次数，包括时钟中断
-</span><span class='line'>cs: 每秒上下文切换次数，这个值要越小越好，太大了，要考虑调低线程或者进程的数目
-</span><span class='line'>
-</span><span class='line'>CPU
-</span><span class='line'>These are percentages of total CPU time.
-</span><span class='line'>us: 用户CPU时间
-</span><span class='line'>sy: 系统CPU时间，如果太高，表示系统调用时间长，例如是IO操作频繁
-</span><span class='line'>id: 空闲CPU时间
-</span><span class='line'>wa: 等待IO的CPU时间</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.参考</h1>
-
-<p><a href="http://www.thomas-krenn.com/en/wiki/Linux_Performance_Measurements_using_vmstat">http://www.thomas-krenn.com/en/wiki/Linux_Performance_Measurements_using_vmstat</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/01/23/jvmnei-cun-dumpcan-shu-pei-zhi/">JVM内存DUMP参数配置</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-01-23T23:04:31+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>11:04 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>在JVM出现内存溢出或泄露时，为便于排查和定位，需要JVM的启动上增加相应的参数。主要是GC日志和内存DUMP参数.</p>
-
-<h1>1.GC日志</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>-Xloggc:$CATALINA_BASE/logs/gc.log</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.内存DUMP</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>-XX:+HeapDumpOnOutOfMemoryError
-</span><span class='line'>-XX:HeapDumpPath=$CATALINA_BASE/logs/heapDump.log</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/01/16/linuxwang-qia-su-du/">Linux网卡速度</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-01-16T18:58:54+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:58 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近项目的图片服务器从公司的服务器下载图片做裁剪等操作的时候，老是存在超时的问题</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>java.net.SocketTimeoutException: Read timed out
-</span><span class='line'>    at java.net.SocketInputStream.socketRead0(Native Method) ~[na:1.7.0_51]
-</span><span class='line'>    at java.net.SocketInputStream.read(SocketInputStream.java:152) ~[na:1.7.0_51]
-</span><span class='line'>    at java.net.SocketInputStream.read(SocketInputStream.java:122) ~[na:1.7.0_51]
-</span><span class='line'>    at java.io.BufferedInputStream.read1(BufferedInputStream.java:273) ~[na:1.7.0_51]
-</span><span class='line'>    at java.io.BufferedInputStream.read(BufferedInputStream.java:334) ~[na:1.7.0_51]
-</span><span class='line'>    at sun.net.www.MeteredStream.read(MeteredStream.java:134) ~[na:1.7.0_51]
-</span><span class='line'>    at java.io.FilterInputStream.read(FilterInputStream.java:133) ~[na:1.7.0_51]</span></code></pre></td></tr></table></div></figure>
-
-
-<p>手动wget图片一切正常，但是速度还不如本地机器，于是想看一下服务器的网卡信息。下面用本机作为示例：</p>
-
-<h1>1.使用ifconfig找到网卡：</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>eth0      Link encap:以太网  硬件地址 f0:1f:af:27:58:8d  
-</span><span class='line'>          inet 地址:192.168.138.99  广播:192.168.139.255  掩码:255.255.254.0
-</span><span class='line'>          inet6 地址: fe80::f21f:afff:fe27:588d/64 Scope:Link
-</span><span class='line'>          UP BROADCAST RUNNING MULTICAST  MTU:1500  跃点数:1
-</span><span class='line'>          接收数据包:696848 错误:0 丢弃:0 过载:0 帧数:0
-</span><span class='line'>          发送数据包:334077 错误:0 丢弃:0 过载:0 载波:0
-</span><span class='line'>          碰撞:0 发送队列长度:1000 
-</span><span class='line'>          接收字节:486532283 (486.5 MB)  发送字节:49164276 (49.1 MB)
-</span><span class='line'>          中断:18 
-</span><span class='line'>
-</span><span class='line'>lo        Link encap:本地环回  
-</span><span class='line'>          inet 地址:127.0.0.1  掩码:255.0.0.0
-</span><span class='line'>          inet6 地址: ::1/128 Scope:Host
-</span><span class='line'>          UP LOOPBACK RUNNING  MTU:65536  跃点数:1
-</span><span class='line'>          接收数据包:14772 错误:0 丢弃:0 过载:0 帧数:0
-</span><span class='line'>          发送数据包:14772 错误:0 丢弃:0 过载:0 载波:0
-</span><span class='line'>          碰撞:0 发送队列长度:0 
-</span><span class='line'>          接收字节:1329005 (1.3 MB)  发送字节:1329005 (1.3 MB)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.查看网卡是否被识别及型号</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ lspci | grep Ethernet
-</span><span class='line'>0c:00.0 Ethernet controller: Broadcom Corporation NetXtreme BCM5761 Gigabit Ethernet PCIe (rev 10)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.使用ethtool工具查看网卡的详细信息：</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo ethtool eth0
-</span><span class='line'>[sudo] password for xiaobaoqiu: 
-</span><span class='line'>Settings for eth0:
-</span><span class='line'>    Supported ports: [ TP ]
-</span><span class='line'>    Supported link modes:   10baseT/Half 10baseT/Full 
-</span><span class='line'>                            100baseT/Half 100baseT/Full 
-</span><span class='line'>                            1000baseT/Half 1000baseT/Full 
-</span><span class='line'>    Supported pause frame use: No
-</span><span class='line'>    Supports auto-negotiation: Yes
-</span><span class='line'>    Advertised link modes:  10baseT/Half 10baseT/Full 
-</span><span class='line'>                            100baseT/Half 100baseT/Full 
-</span><span class='line'>                            1000baseT/Half 1000baseT/Full 
-</span><span class='line'>    Advertised pause frame use: Symmetric
-</span><span class='line'>    Advertised auto-negotiation: Yes
-</span><span class='line'>    Link partner advertised link modes:  10baseT/Half 10baseT/Full 
-</span><span class='line'>                                         100baseT/Half 100baseT/Full 
-</span><span class='line'>    Link partner advertised pause frame use: No
-</span><span class='line'>    Link partner advertised auto-negotiation: Yes
-</span><span class='line'>    Speed: 100Mb/s      #网卡速度
-</span><span class='line'>    Duplex: Full        #全双工
-</span><span class='line'>    Port: Twisted Pair  #网络类型-双绞线
-</span><span class='line'>    PHYAD: 1
-</span><span class='line'>    Transceiver: internal
-</span><span class='line'>    Auto-negotiation: on
-</span><span class='line'>    MDI-X: on
-</span><span class='line'>    Supports Wake-on: g
-</span><span class='line'>    Wake-on: g          #唤醒起用（远程关机开机需设置）
-</span><span class='line'>    Current message level: 0x000000ff (255)
-</span><span class='line'>                   drv probe link timer ifdown ifup rx_err tx_err
-</span><span class='line'>    Link detected: yes  #链路检测</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.查看网卡的连接状态</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo mii-tool eth0
-</span><span class='line'>eth0: negotiated 100baseTx-FD, link ok</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>5.网卡数据包收发统计</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo ethtool -S eth0
-</span><span class='line'>NIC statistics:
-</span><span class='line'>     rx_octets: 494545915
-</span><span class='line'>     rx_fragments: 0
-</span><span class='line'>     rx_ucast_packets: 437748
-</span><span class='line'>     rx_mcast_packets: 147474
-</span><span class='line'>     rx_bcast_packets: 128799
-</span><span class='line'>     rx_fcs_errors: 0
-</span><span class='line'>     rx_align_errors: 0
-</span><span class='line'>     rx_xon_pause_rcvd: 0
-</span><span class='line'>     rx_xoff_pause_rcvd: 0
-</span><span class='line'>     ...</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/01/16/how-to-read-files-quickly/">How to Read Files Quickly</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-01-16T01:00:42+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>1:00 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>Java中有很多读写文件或者网络流的方法，特别是Java7中加入了AIO之后，可选择的方法更多，本文的目的是想比较一下各种方式的优劣。</p>
-
-<p>本文基本是参考这篇英文：<a href="http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quikcly">http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quikcly</a></p>
-
-<h1>1.方法List</h1>
-
-<p>这里涉及的读文件的方法包括：</p>
-
-<h3>1.1 FileInputStreamOneByte</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
-</span><span class='line'>public long doRead() throws IOException {
-</span><span class='line'>    long checkSum = 0L;
-</span><span class='line'>    FileInputStream fis = new FileInputStream(filePath);
-</span><span class='line'>    int b;
-</span><span class='line'>    while ((b = fis.read()) != -1)
-</span><span class='line'>        checkSum += b;
-</span><span class='line'>    Closeables.close(fis, false);
-</span><span class='line'>    return checkSum;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.2 FileInputStreamBytes</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
-</span><span class='line'>    public long doRead() throws IOException {
-</span><span class='line'>        long checkSum = 0L;
-</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
-</span><span class='line'>        byte[] array = new byte[BUF_SIZE];
-</span><span class='line'>        int nRead;
-</span><span class='line'>        while ((nRead = fis.read(array, 0, BUF_SIZE)) != -1) {
-</span><span class='line'>            for (int i = 0; i &lt; nRead; i++)
-</span><span class='line'>                checkSum += array[i];
+</span><span class='line'>        SmoothBursty(SleepingStopwatch stopwatch, double maxBurstSeconds) {
+</span><span class='line'>            super(stopwatch);
+</span><span class='line'>            this.maxBurstSeconds = maxBurstSeconds;
 </span><span class='line'>        }
-</span><span class='line'>        Closeables.close(fis, false);
-</span><span class='line'>        return checkSum;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.3 BufferedInputStreamOneByte</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
-</span><span class='line'>    public long doRead() throws IOException {
-</span><span class='line'>        long checkSum = 0L;
-</span><span class='line'>        BufferedInputStream bis = new BufferedInputStream(new FileInputStream(filePath), BUF_SIZE);
-</span><span class='line'>        int b;
-</span><span class='line'>        while ((b = bis.read()) != -1)
-</span><span class='line'>            checkSum += b;
-</span><span class='line'>        Closeables.close(bis, false);
-</span><span class='line'>        return checkSum;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.4 BufferedInputStreamBytes</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
-</span><span class='line'>    public long doRead() throws IOException {
-</span><span class='line'>        long checkSum = 0L;
-</span><span class='line'>        BufferedInputStream bis = new BufferedInputStream(new FileInputStream(filePath), BUF_SIZE);
-</span><span class='line'>        byte[] array = new byte[BUF_SIZE];
-</span><span class='line'>        int nRead;
-</span><span class='line'>        while ((nRead = bis.read(array, 0, BUF_SIZE)) != -1) {
-</span><span class='line'>            for (int i = 0; i &lt; nRead; i++)
-</span><span class='line'>                checkSum += array[i];
-</span><span class='line'>        }
-</span><span class='line'>        Closeables.close(bis, false);
-</span><span class='line'>        return checkSum;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.5 RandomAccessOneByte</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
-</span><span class='line'>        long checkSum = 0L;
-</span><span class='line'>        RandomAccessFile raf = new RandomAccessFile(filePath, READ_MODE);
-</span><span class='line'>        int b;
-</span><span class='line'>        while ((b = raf.read()) != -1) {
-</span><span class='line'>            checkSum += b;
-</span><span class='line'>        }
-</span><span class='line'>        Closeables.close(raf, false);
-</span><span class='line'>        return checkSum;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.6 RandomAccessBytes</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
-</span><span class='line'>        long checkSum = 0L;
-</span><span class='line'>        RandomAccessFile raf = new RandomAccessFile(filePath, READ_MODE);
-</span><span class='line'>        byte[] array = new byte[BUF_SIZE];
-</span><span class='line'>        int nRead;
-</span><span class='line'>        while ((nRead = raf.read(array, 0, BUF_SIZE)) != -1) {
-</span><span class='line'>            for (int i = 0; i &lt; nRead; i++)
-</span><span class='line'>                checkSum += array[i];
-</span><span class='line'>        }
-</span><span class='line'>        Closeables.close(raf, false);
-</span><span class='line'>        return checkSum;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.7 FileChannelByteBufferOneByte</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
-</span><span class='line'>        long checkSum = 0L;
-</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
-</span><span class='line'>        FileChannel ch = fis.getChannel();
-</span><span class='line'>        ByteBuffer bb = ByteBuffer.allocate(BUF_SIZE);
-</span><span class='line'>        int nRead;
-</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
-</span><span class='line'>            if (nRead == 0)
-</span><span class='line'>                continue;
-</span><span class='line'>            bb.position(0);
-</span><span class='line'>            bb.limit(nRead);
-</span><span class='line'>            while (bb.hasRemaining())
-</span><span class='line'>                checkSum += bb.get(); // 从ByteBuffer读一个字节
-</span><span class='line'>            bb.clear();
-</span><span class='line'>        }
-</span><span class='line'>        Closeables.close(fis, false);
-</span><span class='line'>        return checkSum;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.8 FileChannelByteBufferBytes</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
-</span><span class='line'>        long checkSum = 0L;
-</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
-</span><span class='line'>        FileChannel ch = fis.getChannel();
-</span><span class='line'>        ByteBuffer bb = ByteBuffer.allocate(BIG_BUF_SIZE);
-</span><span class='line'>        byte[] array = new byte[BUF_SIZE];
-</span><span class='line'>        int nRead, nGet;
-</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
-</span><span class='line'>            if (nRead == 0)
-</span><span class='line'>                continue;
-</span><span class='line'>            bb.position(0);
-</span><span class='line'>            bb.limit(nRead);
-</span><span class='line'>            while (bb.hasRemaining()) {
-</span><span class='line'>                nGet = Math.min(bb.remaining(), BUF_SIZE);
-</span><span class='line'>                bb.get(array, 0, nGet);
-</span><span class='line'>                for (int i = 0; i &lt; nGet; i++)
-</span><span class='line'>                    checkSum += array[i];
+</span><span class='line'>
+</span><span class='line'>        void doSetRate(double permitsPerSecond, double stableIntervalMicros) {
+</span><span class='line'>            double oldMaxPermits = this.maxPermits;
+</span><span class='line'>            maxPermits = maxBurstSeconds * permitsPerSecond;
+</span><span class='line'>            System.out.println("maxPermits=" + maxPermits);
+</span><span class='line'>            if (oldMaxPermits == Double.POSITIVE_INFINITY) {
+</span><span class='line'>                // if we don't special-case this, we would get storedPermits == NaN, below
+</span><span class='line'>                storedPermits = maxPermits;
+</span><span class='line'>            } else {
+</span><span class='line'>                storedPermits = (oldMaxPermits == 0.0)
+</span><span class='line'>                        ? 0.0 // initial state
+</span><span class='line'>                        : storedPermits * maxPermits / oldMaxPermits;
 </span><span class='line'>            }
-</span><span class='line'>            bb.clear();
 </span><span class='line'>        }
-</span><span class='line'>        Closeables.close(fis, false);
-</span><span class='line'>        return checkSum;
+</span><span class='line'>
+</span><span class='line'>        long storedPermitsToWaitTime(double storedPermits, double permitsToTake) {
+</span><span class='line'>            return 0L;
+</span><span class='line'>        }
 </span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
 
 
-<h3>1.9 FileChannelByteBufferWrap</h3>
+<p>一个简单的使用示意图及解释，下面私海一个QPS=4的SmoothBursty:</p>
+
+<pre><code>(1).t=0,这时候storedPermits=0，请求1个令牌，等待时间=0；
+(2).t=1,这时候storedPermits=3，请求3个令牌，等待时间=0；
+(3).t=2,这时候storedPermits=4，请求10个令牌，等待时间=0，超前使用了2个令牌；
+(4).t=3,这时候storedPermits=0，请求1个令牌，等待时间=0.5；
+</code></pre>
+
+<p>代码的输出：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -1910,186 +976,22 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 <span class='line-number'>9</span>
 <span class='line-number'>10</span>
 <span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
-</span><span class='line'>        long checkSum = 0L;
-</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
-</span><span class='line'>        FileChannel ch = fis.getChannel();
-</span><span class='line'>        byte[] barray = new byte[BUF_SIZE];
-</span><span class='line'>        ByteBuffer bb = ByteBuffer.wrap(barray); // ByteBuffer包装本地array
-</span><span class='line'>        int nRead;
-</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
-</span><span class='line'>            for (int i = 0; i &lt; nRead; i++)
-</span><span class='line'>                checkSum += barray[i];
-</span><span class='line'>            bb.clear();
-</span><span class='line'>        }
-</span><span class='line'>        Closeables.close(fis, false);
-</span><span class='line'>        return checkSum;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>maxPermits=4.0, storedPermits=7.2E-4, stableIntervalMicros=250000.0, nextFreeTicketMicros=1472
+</span><span class='line'>acquire(1), sleepSecond=0.0
+</span><span class='line'>
+</span><span class='line'>maxPermits=4.0, storedPermits=3.012212, stableIntervalMicros=250000.0, nextFreeTicketMicros=1004345
+</span><span class='line'>acquire(3), sleepSecond=0.0
+</span><span class='line'>
+</span><span class='line'>maxPermits=4.0, storedPermits=4.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=2004668
+</span><span class='line'>acquire(10), sleepSecond=0.0
+</span><span class='line'>
+</span><span class='line'>maxPermits=4.0, storedPermits=0.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=3504668
+</span><span class='line'>acquire(1), sleepSecond=0.499591</span></code></pre></td></tr></table></div></figure>
 
 
-<h3>1.10 FileChannelMappedByteBufferOneByte</h3>
+<p><img src="/images/guava/BurstyRateLimiter.png"></p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
-</span><span class='line'>        long checkSum = 0L;
-</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
-</span><span class='line'>        FileChannel ch = fis.getChannel();
-</span><span class='line'>        MappedByteBuffer mb = ch.map(FileChannel.MapMode.READ_ONLY, 0L, ch.size());
-</span><span class='line'>        while (mb.hasRemaining())
-</span><span class='line'>            checkSum += mb.get();
-</span><span class='line'>        Closeables.close(fis, false);
-</span><span class='line'>        return checkSum;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.11 FileChannelMappedByteBufferBytes</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
-</span><span class='line'>        long checkSum = 0L;
-</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
-</span><span class='line'>        FileChannel ch = fis.getChannel();
-</span><span class='line'>        MappedByteBuffer mb = ch.map(FileChannel.MapMode.READ_ONLY, 0L, ch.size());
-</span><span class='line'>        byte[] barray = new byte[BUF_SIZE];
-</span><span class='line'>        int nGet;
-</span><span class='line'>        while (mb.hasRemaining()) {
-</span><span class='line'>            nGet = Math.min(mb.remaining(), BUF_SIZE);
-</span><span class='line'>            mb.get(barray, 0, nGet);
-</span><span class='line'>            for (int i = 0; i &lt; nGet; i++)
-</span><span class='line'>                checkSum += barray[i];
-</span><span class='line'>        }
-</span><span class='line'>        Closeables.close(fis, false);
-</span><span class='line'>        return checkSum;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.12 FileChannelDirectByteBufferOneByte</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
-</span><span class='line'>        long checkSum = 0L;
-</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
-</span><span class='line'>        FileChannel ch = fis.getChannel();
-</span><span class='line'>        ByteBuffer bb = ByteBuffer.allocateDirect(BUF_SIZE);
-</span><span class='line'>        int nRead;
-</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
-</span><span class='line'>            bb.position(0);
-</span><span class='line'>            bb.limit(nRead);
-</span><span class='line'>            while (bb.hasRemaining())
-</span><span class='line'>                checkSum += bb.get();
-</span><span class='line'>            bb.clear();
-</span><span class='line'>        }
-</span><span class='line'>        Closeables.close(fis, false);
-</span><span class='line'>        return checkSum;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.13 FileChannelDirectByteBufferBytes</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public long doRead() throws IOException {
-</span><span class='line'>        long checkSum = 0L;
-</span><span class='line'>        FileInputStream fis = new FileInputStream(filePath);
-</span><span class='line'>        FileChannel ch = fis.getChannel();
-</span><span class='line'>        ByteBuffer bb = ByteBuffer.allocateDirect(BIG_BUF_SIZE);
-</span><span class='line'>        byte[] barray = new byte[BUF_SIZE];
-</span><span class='line'>        int nRead, nGet;
-</span><span class='line'>        while ((nRead = ch.read(bb)) != -1) {
-</span><span class='line'>            if (nRead == 0)
-</span><span class='line'>                continue;
-</span><span class='line'>            bb.position(0);
-</span><span class='line'>            bb.limit(nRead);
-</span><span class='line'>            while (bb.hasRemaining()) {
-</span><span class='line'>                nGet = Math.min(bb.remaining(), BUF_SIZE);
-</span><span class='line'>                bb.get(barray, 0, nGet);
-</span><span class='line'>                for (int i = 0; i &lt; nGet; i++)
-</span><span class='line'>                    checkSum += barray[i];
-</span><span class='line'>            }
-</span><span class='line'>            bb.clear();
-</span><span class='line'>        }
-</span><span class='line'>        Closeables.close(fis, false);
-</span><span class='line'>        return checkSum;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.测试</h1>
-
-<p>测试文件的大小为83M：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Documents/TestData$ ll -h BXBooks.sql
-</span><span class='line'>-rw------- 1 xiaobaoqiu xiaobaoqiu 83M 10月  8  2004 BXBooks.sql</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.结论</h1>
-
-<p>得到测试数据之后，为了直观展示代码的速度，用ECharts展示，对应的js代码如下(可以在<a href="http://echarts.baidu.com/doc/example/line1.html#helianthus%E4%B8%AD%E4%BD%BF%E7%94%A8">http://echarts.baidu.com/doc/example/line1.html#helianthus%E4%B8%AD%E4%BD%BF%E7%94%A8</a>)：</p>
+<h3>6.2 SmoothWarmingUp</h3>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -2143,176 +1045,63 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 <span class='line-number'>50</span>
 <span class='line-number'>51</span>
 <span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>option = {
-</span><span class='line'>    title : {
-</span><span class='line'>        text: 'how_to_read_file_quickly',
-</span><span class='line'>        subtext: 'baoqiu.xiao'
-</span><span class='line'>    },
-</span><span class='line'>    tooltip : {
-</span><span class='line'>        trigger: 'axis'
-</span><span class='line'>    },
-</span><span class='line'>    legend: {
-</span><span class='line'>        data:['FileInputStreamOneByte','FileInputStreamBytes','BufferedInputStreamOneByte','BufferedInputStreamBytes','RandomAccessOneByte','RandomAccessBytes','FileChannelByteBufferOneByte','FileChannelByteBufferBytes','FileChannelByteBufferWrap','FileChannelMappedByteBufferOneByte','FileChannelMappedByteBufferBytes','FileChannelDirectByteBufferOneByte','FileChannelDirectByteBufferBytes']
-</span><span class='line'>    },
-</span><span class='line'>    dataZoom : {
-</span><span class='line'>        show : true,
-</span><span class='line'>        realtime: true,
-</span><span class='line'>        start : 0,
-</span><span class='line'>        end : 30
-</span><span class='line'>    },
-</span><span class='line'>    toolbox: {
-</span><span class='line'>        show : true,
-</span><span class='line'>        feature : {
-</span><span class='line'>            saveAsImage : {show: true}
+</pre></td><td class='code'><pre><code class=''><span class='line'>static final class SmoothWarmingUp extends SmoothRateLimiter {
+</span><span class='line'>        private final long warmupPeriodMicros;
+</span><span class='line'>        /**
+</span><span class='line'>         * The slope of the line from the stable interval (when permits == 0), to the cold interval
+</span><span class='line'>         * (when permits == maxPermits)
+</span><span class='line'>         */
+</span><span class='line'>        private double slope;
+</span><span class='line'>        private double halfPermits;
+</span><span class='line'>
+</span><span class='line'>        SmoothWarmingUp(SleepingStopwatch stopwatch, long warmupPeriod, TimeUnit timeUnit) {
+</span><span class='line'>            super(stopwatch);
+</span><span class='line'>            this.warmupPeriodMicros = timeUnit.toMicros(warmupPeriod);
 </span><span class='line'>        }
-</span><span class='line'>    },
-</span><span class='line'>    calculable : true,
-</span><span class='line'>    xAxis : [
-</span><span class='line'>        {
-</span><span class='line'>            type : 'category',
-</span><span class='line'>            boundaryGap : false,
-</span><span class='line'>            data : ['1','2','4','8','16','32','64','128','256','512','1K','2K','4K','8K','16K','32K','64K','128K']
-</span><span class='line'>        }
-</span><span class='line'>    ],
-</span><span class='line'>    yAxis : [
-</span><span class='line'>        {
-</span><span class='line'>            type : 'value',
-</span><span class='line'>            axisLabel : {
-</span><span class='line'>                formatter: '{value} 毫秒'
+</span><span class='line'>
+</span><span class='line'>        @Override
+</span><span class='line'>        void doSetRate(double permitsPerSecond, double stableIntervalMicros) {
+</span><span class='line'>            double oldMaxPermits = maxPermits;
+</span><span class='line'>            maxPermits = warmupPeriodMicros / stableIntervalMicros;
+</span><span class='line'>            halfPermits = maxPermits / 2.0;
+</span><span class='line'>            // Stable interval is x, cold is 3x, so on average it's 2x. Double the time -&gt; halve the rate
+</span><span class='line'>            double coldIntervalMicros = stableIntervalMicros * 3.0;
+</span><span class='line'>            slope = (coldIntervalMicros - stableIntervalMicros) / halfPermits;
+</span><span class='line'>            if (oldMaxPermits == Double.POSITIVE_INFINITY) {
+</span><span class='line'>                // if we don't special-case this, we would get storedPermits == NaN, below
+</span><span class='line'>                storedPermits = 0.0;
+</span><span class='line'>            } else {
+</span><span class='line'>                storedPermits = (oldMaxPermits == 0.0)
+</span><span class='line'>                        ? maxPermits // initial state is cold
+</span><span class='line'>                        : storedPermits * maxPermits / oldMaxPermits;
 </span><span class='line'>            }
 </span><span class='line'>        }
-</span><span class='line'>    ],
-</span><span class='line'>    series : [
-</span><span class='line'>        {
-</span><span class='line'>            name:'FileInputStreamOneByte',
-</span><span class='line'>            type:'line',
-</span><span class='line'>            data:[29119,28353,27872,27950,32035,40377,34904,36804,36835,33177,32252,37362,32359,31892,32621,32312,32943,33369]
-</span><span class='line'>        },
-</span><span class='line'>        {
-</span><span class='line'>            name:'FileInputStreamBytes',
-</span><span class='line'>            type:'line',
-</span><span class='line'>            data:[38182,20208,10194,4768,2616,1551,645,471,262,183,150,100,118,125,96,83,124,110]
-</span><span class='line'>        },
-</span><span class='line'>        {
-</span><span class='line'>            name:'BufferedInputStreamOneByte',
-</span><span class='line'>            type:'line',
-</span><span class='line'>            data:[33404,16966,8613,4718,2525,1491,980,728,677,681,558,608,557,615,505,606,656,693]
-</span><span class='line'>        },
-</span><span class='line'>        {
-</span><span class='line'>            name:'BufferedInputStreamBytes',
-</span><span class='line'>            type:'line',
-</span><span class='line'>            data:[33880,17333,8487,4851,2293,1632,627,358,242,147,129,113,89,92,107,88,100,95]
-</span><span class='line'>        },
-</span><span class='line'>        {
-</span><span class='line'>            name:'RandomAccessOneByte',
-</span><span class='line'>            type:'line',
-</span><span class='line'>            data:[28430,27445,26794,27053,28929,28633,29509,28870,28195,27376,28236,27444,28061,28889,27423,28064,28481,28084]
-</span><span class='line'>        },
-</span><span class='line'>        {
-</span><span class='line'>            name:'RandomAccessBytes',
-</span><span class='line'>            type:'line',
-</span><span class='line'>            data:[31497,16162,8135,4365,2131,1117,561,321,193,146,110,101,109,87,89,91,102,96]
-</span><span class='line'>        },
-</span><span class='line'>        {
-</span><span class='line'>            name:'FileChannelByteBufferOneByte',
-</span><span class='line'>            type:'line',
-</span><span class='line'>            data:[38778,18325,9447,5344,2430,1413,779,507,380,310,298,259,267,263,249,264,260,258]
-</span><span class='line'>        },
-</span><span class='line'>        {
-</span><span class='line'>            name:'FileChannelByteBufferBytes',
-</span><span class='line'>            type:'line',
-</span><span class='line'>            data:[19279,9823,5090,2605,1407,854,577,380,333,272,272,239,237,241,237,234,249,270]
-</span><span class='line'>        },
-</span><span class='line'>        {
-</span><span class='line'>            name:'FileChannelByteBufferWrap',
-</span><span class='line'>            type:'line',
-</span><span class='line'>            data:[38382,17636,9094,4608,2327,1198,646,355,249,151,108,100,92,90,88,103,85,92]
-</span><span class='line'>        },
-</span><span class='line'>        {
-</span><span class='line'>            name:'FileChannelMappedByteBufferOneByte',
-</span><span class='line'>            type:'line',
-</span><span class='line'>            data:[913,240,92,83,82,87,85,88,83,94,87,90,81,124,81,84,83,120]
-</span><span class='line'>        },
-</span><span class='line'>        {
-</span><span class='line'>            name:'FileChannelMappedByteBufferBytes',
-</span><span class='line'>            type:'line',
-</span><span class='line'>            data:[731,447,305,332,225,164,139,110,98,88,87,140,97,86,93,92,92,92]
-</span><span class='line'>        },
-</span><span class='line'>        {
-</span><span class='line'>            name:'FileChannelDirectByteBufferOneByte',
-</span><span class='line'>            type:'line',
-</span><span class='line'>            data:[31287,14473,7296,3815,1919,1001,547,319,200,135,109,98,84,77,80,82,77,86]
-</span><span class='line'>        },
-</span><span class='line'>        {
-</span><span class='line'>            name:'FileChannelDirectByteBufferBytes',
-</span><span class='line'>            type:'line',
-</span><span class='line'>            data:[14945,8060,4107,2174,1120,580,334,206,149,110,96,95,79,89,81,81,86,84]
-</span><span class='line'>        }       
-</span><span class='line'>    ]
-</span><span class='line'>};</span></code></pre></td></tr></table></div></figure>
+</span><span class='line'>
+</span><span class='line'>        @Override
+</span><span class='line'>        long storedPermitsToWaitTime(double storedPermits, double permitsToTake) {
+</span><span class='line'>            double availablePermitsAboveHalf = storedPermits - halfPermits;
+</span><span class='line'>            long micros = 0;
+</span><span class='line'>            // measuring the integral on the right part of the function (the climbing line)
+</span><span class='line'>            if (availablePermitsAboveHalf &gt; 0.0) {
+</span><span class='line'>                double permitsAboveHalfToTake = min(availablePermitsAboveHalf, permitsToTake);
+</span><span class='line'>                micros = (long) (permitsAboveHalfToTake * (permitsToTime(availablePermitsAboveHalf)
+</span><span class='line'>                        + permitsToTime(availablePermitsAboveHalf - permitsAboveHalfToTake)) / 2.0);
+</span><span class='line'>                permitsToTake -= permitsAboveHalfToTake;
+</span><span class='line'>            }
+</span><span class='line'>            // measuring the integral on the left part of the function (the horizontal line)
+</span><span class='line'>            micros += (stableIntervalMicros * permitsToTake);
+</span><span class='line'>            return micros;
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        private double permitsToTime(double permits) {
+</span><span class='line'>            return stableIntervalMicros + permits * slope;
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
 
 
-<p>整体展示图如下：
-<img src="/images/iospeed/read_file_speed.png"></p>
+<p>maxPermits等于热身(warmup)期间能产生的令牌数，比如QPS=4，warmup为2秒，则maxPermits=8.halfPermits为maxPermits的一半.</p>
 
-<h3>3.1 最快的三种方法</h3>
-
-<p>为了展示更细节的地方，设置了y区间范围，在yAxis上设置min和max属性：</p>
+<p>参考注释中的神图：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -2324,82 +1113,367 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 <span class='line-number'>8</span>
 <span class='line-number'>9</span>
 <span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>yAxis : [
-</span><span class='line'>        {
-</span><span class='line'>            type : 'value',
-</span><span class='line'>            min:0,
-</span><span class='line'>            max:200,
-</span><span class='line'>            axisLabel : {
-</span><span class='line'>                formatter: '{value} 毫秒'
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>    ],</span></code></pre></td></tr></table></div></figure>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> *          ^ throttling
+</span><span class='line'> *          |
+</span><span class='line'> * 3*stable +                  /
+</span><span class='line'> * interval |                 /.
+</span><span class='line'> *  (cold)  |                / .
+</span><span class='line'> *          |               /  .   &lt;-- "warmup period" is the area of the trapezoid between
+</span><span class='line'> * 2*stable +              /   .       halfPermits and maxPermits
+</span><span class='line'> * interval |             /    .
+</span><span class='line'> *          |            /     .
+</span><span class='line'> *          |           /      .
+</span><span class='line'> *   stable +----------/  WARM . }
+</span><span class='line'> * interval |          .   UP  . } &lt;-- this rectangle (from 0 to maxPermits, and
+</span><span class='line'> *          |          . PERIOD. }     height == stableInterval) defines the cooldown period,
+</span><span class='line'> *          |          .       . }     and we want cooldownPeriod == warmupPeriod
+</span><span class='line'> *          |---------------------------------&gt; storedPermits
+</span><span class='line'> *              (halfPermits) (maxPermits)
+</span><span class='line'> *</span></code></pre></td></tr></table></div></figure>
 
 
-<p>得到如下展示图：
-<img src="/images/iospeed/read_file_speed_small.png"></p>
+<p>下面是我们QPS=4，warmup为2秒时候对应的图。
+<img src="/images/guava/SmoothWarmingUp.png"></p>
 
-<p>从上面这个图可以大致看出，最快的三种方法（PS，这里只做了一次实验，不是多次实验的平均值，所有数据可能不一定准确）：</p>
+<p>maxPermits=8，halfPermits=4，和SmoothBursty相同的请求序列：</p>
 
-<pre><code>1.FileChannelMappedByteBufferBytes
-2.FileChannelMappedByteBufferOneByte
-3.FileChannelDirectByteBufferBytes
+<pre><code>(1).t=0,这时候storedPermits=8，请求1个令牌，使用1个storedPermits消耗时间=1×(0.75+0.625)/2=0.6875秒；
+(2).t=1,这时候storedPermits=8，请求3个令牌，使用3个storedPermits消耗时间=3×(0.75+0.375)/2=1.6875秒(注意已经超过1秒了，意味着下次产生新Permit时间为2.6875)；
+(3).t=2,这时候storedPermits=5，请求10个令牌，使用5个storedPermits消耗时间=1×(0.375+0.25)/2+4*0.25=1.3125秒，再加上额外请求的5个新产生的Permit需要消耗=5*0.25=1.25秒，即总共需要耗时2.5625秒，则下一次产生新的Permit时间为2.6875+2.5625=5.25，注意当前请求私海2.6875才返回的，之前一直阻塞；
+(4).t=3,因为前一个请求阻塞到2.6875，实际这个请求3.6875才到达RateLimiter，请求1个令牌，storedPermits=0，下一次产生新Permit时间为5.25，因此总共需要等待5.25-3.6875=1.5625秒；
 </code></pre>
 
-<h1>4.解析</h1>
-
-<p>下面解析一下代码中之前接触较少的东东。</p>
-
-<h3>4.1 RandomAccessFile</h3>
-
-<p>支持对文件的随机读取和写入。随机存取文件的行为类似存储在文件系统中的一个大型字节数组。存在指向该隐含数组的光标或索引，称为文件指针。</p>
-
-<p>读取操作从文件指针开始读取字节，并随着对字节的读取而前移此文件指针。如果随机存取文件以读取/写入模式创建，则写入操作也可用；写入操作从文件指针开始写入字节，并随着对字节的写入而前移此文件指针。该文件指针可以通过 getFilePointer 方法读取，并通过 seek 方法设置。</p>
-
-<p>提供了boolean，byte，char, short, int, long, float, double这些基本类型的read和write方法。</p>
-
-<h3>4.2 FileChannel</h3>
-
-<p>FileChannel是一个连接到文件的通道。可以通过文件通道读写文件。FileChannel无法设置为非阻塞模式，它总是运行在阻塞模式下。</p>
-
-<p>在使用FileChannel之前，必须先打开它。但是，我们无法直接打开一个FileChannel，需要通过使用一个InputStream、OutputStream或RandomAccessFile来获取一个FileChannel实例。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>FileInputStream fis = new FileInputStream(filePath);
-</span><span class='line'>FileChannel ch = fis.getChannel();</span></code></pre></td></tr></table></div></figure>
-
-
-<p>有时可能需要在FileChannel的某个特定位置进行数据的读/写操作。可以通过调用position()方法获取FileChannel的当前位置。也可以通过调用position(long pos)方法设置FileChannel的当前位置。</p>
-
-<p>FileChannel实例的size()方法将返回该实例所关联文件的大小。</p>
-
-<p>FileChannel.force()方法将通道里尚未写入磁盘的数据强制写到磁盘上。出于性能方面的考虑，操作系统会将数据缓存在内存中，所以无法保证写入到FileChannel里的数据一定会即时写到磁盘上。要保证这一点，需要调用force()方法。</p>
-
-<h3>4.3 ByteBuffer</h3>
-
-<p>ByteBuffer知识下一次单独讲。</p>
-
-<h1>5.BufferedInputStream的defaultBufferSize</h1>
-
-<p>BufferedInputStream默认buffer大小为8K：</p>
+<p>实际执行结果：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class BufferedInputStream extends FilterInputStream {
-</span><span class='line'>    private static int defaultBufferSize = 8192;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>warmupPeriodMicros=2000000
+</span><span class='line'>stableIntervalMicros=250000.0, maxPermits=8.0, halfPermits=4.0, coldIntervalMicros=750000.0, slope=125000.0, storedPermits=8.0
+</span><span class='line'>
+</span><span class='line'>maxPermits=8.0, storedPermits=8.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=1524
+</span><span class='line'>acquire(1), sleepSecond=0.0
+</span><span class='line'>
+</span><span class='line'>maxPermits=8.0, storedPermits=8.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=1001946
+</span><span class='line'>acquire(3), sleepSecond=0.0
+</span><span class='line'>
+</span><span class='line'>maxPermits=8.0, storedPermits=5.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=2689446
+</span><span class='line'>acquire(10), sleepSecond=0.687186
+</span><span class='line'>
+</span><span class='line'>maxPermits=8.0, storedPermits=0.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=5251946
+</span><span class='line'>acquire(1), sleepSecond=1.559174</span></code></pre></td></tr></table></div></figure>
 
 
-<p>这个从图上也可以比较直观的看到，在缓存为8K左右的时候，性能最好：
-<img src="/images/iospeed/BufferedInputStream_buffer.png"></p>
+<h1>7.其他限流器</h1>
 
-<h1>5.参考：</h1>
+<p>ASP.NET版本的一个比较成熟限流器:WebApiThrottle
+参考：<a href="http://www.cnblogs.com/mushroom/archive/2015/07/21/4659200.html">http://www.cnblogs.com/mushroom/archive/2015/07/21/4659200.html</a></p>
 
-<p><a href="http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quickly">http://nadeausoftware.com/articles/2008/02/java_tip_how_read_files_quickly</a></p>
+<p>参考:
+<a href="https://github.com/springside/springside4/wiki/Rate-Limiter">https://github.com/springside/springside4/wiki/Rate-Limiter</a></p>
 
-<p><a href="http://colobu.com/2014/10/20/java-buffer-basic/">http://colobu.com/2014/10/20/java-buffer-basic/</a></p>
+<p><a href="https://en.wikipedia.org/wiki/Token_bucket">https://en.wikipedia.org/wiki/Token_bucket</a></p>
+
+<p><a href="https://en.wikipedia.org/wiki/Leaky_bucket">https://en.wikipedia.org/wiki/Leaky_bucket</a></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/06/30/linuxwen-jian-ge-shi/">Linux文件编码</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-06-30T03:07:46+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>30</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>3:07 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>在多系统直接传输文件经常碰到文件编码的问题.</p>
+
+<h1>1.查看编码</h1>
+
+<p>查看文件的编码有很多种方式</p>
+
+<h3>1.1 file</h3>
+
+<p>file命令输出了文件的格式和编码.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ file _config.yml
+</span><span class='line'>_config.yml: UTF-8 Unicode text</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>1.2 vi</h3>
+
+<p>vi打开文件之后,输入:set fileencoding就可以获得文件编码:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>fileencoding=utf-8</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.转换编码</h1>
+
+<h3>2.1 vi</h3>
+
+<p>使用vi也可以变更文件编码</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>:set fileencoding=utf8</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2.2 iconv</h3>
+
+<p>使用iconv命令,iconv几个主要参数(man):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>输入/输出格式规范：
+</span><span class='line'>-f, --from-code=名称 原始文本编码
+</span><span class='line'>-t, --to-code=名称 输出编码
+</span><span class='line'>
+</span><span class='line'>信息：
+</span><span class='line'>-l, --list 列举所有已知的字符集
+</span><span class='line'>
+</span><span class='line'>输出控制：
+</span><span class='line'>-c 从输出中忽略无效的字符
+</span><span class='line'>-o, --output=FILE 输出到文件
+</span><span class='line'>-s, --silent 关闭警告
+</span><span class='line'>--verbose 打印进度信息</span></code></pre></td></tr></table></div></figure>
+
+
+<p>使用例子,文件infile从GB18030编码转换至UTF-8编码并写入到文件outfile中:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ cat infile 
+</span><span class='line'>���
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ iconv -f GB18030 -t utf-8 infile -o outfile
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ cat outfile 
+</span><span class='line'>测试</span></code></pre></td></tr></table></div></figure>
+
+
+<p>也可以从管道输入,比如直接访问www.google.com.hk,不出意外会是乱码(使用的big5中文编码),可以转换成utf8</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ curl -l 'www.google.com.hk' | iconv -f big5 -t gbk</span></code></pre></td></tr></table></div></figure>
+
+
+<p>iconv基于GPL公开源代码,是GNU项目的一部分.目前，libiconv已经包含在C运行时刻库libc.so中。因此，Linux平台上使用iconv库函数的程序，需要包含&lt;iconv.h>文件.</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/06/23/linux-swap/">Linux Swap</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-06-23T19:35:55+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>7:35 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近一台机器出现swap报警,从监控图上也看到swap的使用一直存在.</p>
+
+<p>服务器上只有一个Tomcat应用和一些定时任务.</p>
+
+<h1>1.什么是swap</h1>
+
+<p>inux操作系统将物理内存分为多个小的内存块，称之为页(pages). 当应用请求的物理内存不够分配时，操作系统会将一段时间之内不用的内存页交换至swap分区，从而为应用释放内存空间。</p>
+
+<p>Swap对于系统过来说非常重要：</p>
+
+<pre><code>1.首先，当主内存不够用时，操作系统可以swap out一部分内存页，迅速为当前急需内存的应用或者进程分配内存；
+2.其次，某些内存页只在应用初始化阶段用到，之后可能就不再使用了，操作系统可以将这些内存页swap out，从而为应用或者磁盘cache腾出更多的内存空间;
+</code></pre>
+
+<h1>2.swap会带来哪些问题</h1>
+
+<p>我们知道，计算机磁盘I/O通常是系统的瓶颈所在。主内存的读写速度是纳秒级别，而磁盘读写速度是毫秒级别，两者相差3、4个数量级。然而，即使是当前广泛使用的SSD，读写速度相比主内存或者CPU cache也相差2、3个数量级。系统发生swap交换越多，那么系统自然也越慢。</p>
+
+<p>特别对于web服务器来说，都是面对用户的交互式应用，因此响应速度尤其重要。如果系统经常因为swap交换而变得响应迟钝，那么用户体验效果可想而知。</p>
+
+<p>总结成一句话：swap分区要有，在关键时刻不至于让你的应用因为内存不够用而被操作系统OOM KILLER干掉；但是不到关键时刻不要进行swap交换，因为这些操作会影响系统的响应速度。</p>
+
+<p>关于swap的swap in和swap out可以从vmstat命令查看(si表示swap in, so表示swap out).参考:
+<a href="http://xiaobaoqiu.github.io/blog/2015/01/26/vmstatgong-ju/">http://xiaobaoqiu.github.io/blog/2015/01/26/vmstatgong-ju/</a></p>
+
+<h1>3.查看swap占用</h1>
+
+<p>free命令, 参考:
+<a href="http://xiaobaoqiu.github.io/blog/2014/09/04/linux-memory-usage/">http://xiaobaoqiu.github.io/blog/2014/09/04/linux-memory-usage/</a></p>
+
+<h1>4.找到swap占用元凶</h1>
+
+<p>Linux系统中有一个文件smaps文件，记录了当前进程所对应的内存映像信息，路径为/proc/$pid/smaps.以本机的一个线程为例子:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo cat /proc/3555/smaps | head -16
+</span><span class='line'>00400000-00401000 r-xp 00000000 08:13 3444936                            /usr/local/jdk1.7.0_72/bin/java
+</span><span class='line'>Size:                  4 kB
+</span><span class='line'>Rss:                   4 kB
+</span><span class='line'>Pss:                   4 kB
+</span><span class='line'>Shared_Clean:          0 kB
+</span><span class='line'>Shared_Dirty:          0 kB
+</span><span class='line'>Private_Clean:         4 kB
+</span><span class='line'>Private_Dirty:         0 kB
+</span><span class='line'>Referenced:            4 kB
+</span><span class='line'>Anonymous:             0 kB
+</span><span class='line'>AnonHugePages:         0 kB
+</span><span class='line'>Swap:                  0 kB
+</span><span class='line'>KernelPageSize:        4 kB
+</span><span class='line'>MMUPageSize:           4 kB
+</span><span class='line'>Locked:                0 kB
+</span><span class='line'>VmFlags: rd ex mr mw me dw</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中Swap表示这个线程占有Swap的情况.</p>
+
+<p>查看swap的占有情况的脚本,按照占用swap的占用多少从高到底排序:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
+</span><span class='line'>
+</span><span class='line'>function getswap {
+</span><span class='line'>SUM=0
+</span><span class='line'>OVERALL=0
+</span><span class='line'>for DIR in `find /proc/ -maxdepth 1 -type d | egrep "^/proc/[0-9]"` ; do
+</span><span class='line'>PID=`echo $DIR | cut -d / -f 3`
+</span><span class='line'>PROGNAME=`ps -p $PID -o comm --no-headers`
+</span><span class='line'>for SWAP in `grep Swap $DIR/smaps 2&gt;/dev/null| awk '{ print $2 }'`
+</span><span class='line'>do
+</span><span class='line'>let SUM=$SUM+$SWAP
+</span><span class='line'>done
+</span><span class='line'>echo "PID=$PID    Swap used(KB): $SUM    ($PROGNAME )"
+</span><span class='line'>let OVERALL=$OVERALL+$SUM
+</span><span class='line'>SUM=0
+</span><span class='line'>
+</span><span class='line'>done
+</span><span class='line'>echo "Overall swap used: $OVERALL"
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>getswap|sort -k4nr</span></code></pre></td></tr></table></div></figure>
+
+
+<p>然后运行:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sudo ~/check_swap.sh</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>5.清除被占用的swap</h1>
+
+<p>在我们明确知道哪些进程吃swap以后，接下来的问题就是我们如何释放这些swap，释放swap的意思就是把交换到swap中的数据swap in到物理内存页中。</p>
+
+<pre><code>1.重启吃swap的服务，比如重启一下我们的java进程;
+2.swapoff + swapon
+这个方法的好处是，不用重启服务，但是需要确保现在有足够的物理内存可以容下从swap中释放出来的数据。下面给出了swapoff和swapon的具体做法，注意看swapoff后和swapon后，free的输出有什么异同;
+
+sudo /sbin/swapoff -a
+sudo /sbin/swapon -a
+
+swapoff后，free的输出里，swap分区的大小变为0，占用变为0,也就是说swap分区中的数据已经释放到物理内存中，同时swap分区被禁用。swapon后，free的输出里，swap分区的容量又恢复了
+，也就是说swap分区重新被启用了。当然我们可以把这两个命令写到一起：
+
+sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
+</code></pre>
 </div>
   
   
@@ -2443,6 +1517,26 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
     
       <li class="post">
         <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/02/03/strace/">Strace</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/01/28/who-eat-jvms-memory/">Who Eats JVM's Memory</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a>
       </li>
     
   </ul>

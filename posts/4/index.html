@@ -9,7 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="在使用Mysql的业务中,经常会碰到各种Mysql的死锁.一直以来,都对Mysql的死锁不甚了解,这次我们的发布中也出现了一次死锁,趁这次机会,好好学习一下Mysql的死锁.我们的死锁的讨论是在InnoDB引擎基础上的. 1.MySQL索引 1.1 聚簇索引(Clustered Indexes) &hellip;">
+  <meta name="description" content="join 用于多表中字段之间的关联,语法如下: 1
+... FROM table1 INNER|LEFT|RIGHT JOIN table2 ON conditiona JOIN实际上是两个表的的乘积(即笛卡尔积).假设集合A={a,b}，集合B={0,1,2}，则两个集合的笛卡尔积为{(a,0 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -44,7 +45,7 @@
   <header role="banner"><hgroup>
   <h1><a href="/">xiaobaoqiu Blog</a></h1>
   
-    <h2>Keep Runnnnnnnnnning...</h2>
+    <h2>Think More, Code Less</h2>
   
 </hgroup>
 
@@ -79,7 +80,7 @@
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2015/06/03/mysql-innodbsi-suo/">Mysql InnoDB锁和死锁</a></h1>
+      <h1 class="entry-title"><a href="/blog/2015/09/03/mysql-join/">Mysql Join</a></h1>
     
     
       <p class="meta">
@@ -88,88 +89,59 @@
 
 
 
-<time class='entry-date' datetime='2015-06-03T01:09:23+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>1:09 am</span></time>
+<time class='entry-date' datetime='2015-09-03T11:42:33+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>11:42 am</span></time>
         
       </p>
     
   </header>
 
 
-  <div class="entry-content"><p>在使用Mysql的业务中,经常会碰到各种Mysql的死锁.一直以来,都对Mysql的死锁不甚了解,这次我们的发布中也出现了一次死锁,趁这次机会,好好学习一下Mysql的死锁.我们的死锁的讨论是在InnoDB引擎基础上的.</p>
-
-<h1>1.MySQL索引</h1>
-
-<h3>1.1 聚簇索引(Clustered Indexes)</h3>
-
-<p>InnoDB存储引擎的数据组织方式,是聚簇索引表：完整的记录,存储在主键索引中,通过主键索引,就可以获取记录所有的列.</p>
-
-<p>每个InnoDB的表有一个特殊的索引称之为聚簇索引,每行的数据就是存储在聚簇索引中.通常,聚簇索引和主键同义.</p>
-
-<p>当你在你的表上面定义一个主键时,InnoDB将其作为聚簇索引.建议为你的表都创建一个主键.如果没有唯一并且非空的一列或者多列(用来做你的主键),那么可以创建一个自动填充的自增列(比如ID)</p>
-
-<p>如果你的表没有定义主键,MySQL会将第一个所有列都非空的UNIQUE索引作为聚簇索引.</p>
-
-<p>如果你的表不存在这样的UNIQUE索引(见上),InnoDB内部会自动隐式生成一个包含行ID的列并在其上面建立聚簇索引.这一列按行ID排序.行ID是一个6-byte的严格单调自增的字段.因此,按照行在物理上是按照插入顺序排序的.</p>
-
-<p>聚簇所有是如何加速查询的呢?通过聚簇所有访问一行非常快,这是因为在聚簇索引上搜索会直接定位到包含你需要的行的数据所在的页上(page).</p>
-
-<p>参考: <a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-index-types.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-index-types.html</a></p>
-
-<h3>1.2 二级索引(Secondary Indexes)</h3>
-
-<p>除了聚簇索引其他索引都是二级索引.在InnoDB中每个二级索引记录都包含了这一行的主键列和当前这个二级索引包含的列.InnoDB使用二级索引中包含的主键取索引这一行对应的聚簇索引,进而找到这一行完整的数据.</p>
-
-<p>如果主键很长,则二级索引会占有更多的空间,因此建议使用短的列做主键.</p>
-
-<h1>2.MySQL锁</h1>
-
-<p>Innodb具备表锁和行锁,其中表锁是MySQL提供的,跟存储引擎无关;行锁是Innodb存储引擎实现.</p>
-
-<h3>2.1 共享锁和排他锁</h3>
-
-<pre><code>1.共享锁(S)
-允许一个事务去读一行,阻止其他事务获得相同数据集的排他锁.
-2.排他锁(X)
-允许获得排他锁的事务更新数据,阻止其他事务取得相同数据集的共享读锁和排他写锁.
-</code></pre>
-
-<p>另外,为了允许行锁和表锁共存,实现多粒度锁机制,InnoDB还有两种内部使用的意向锁(Intention Locks),这两种意向锁都是表锁.</p>
-
-<pre><code>1.意向共享锁(IS)
-事务打算给数据行加行共享锁,事务在给一个数据行加共享锁前必须先取得该表的IS锁.
-2.意向排他锁(IX)
-事务打算给数据行加行排他锁,事务在给一个数据行加排他锁前必须先取得该表的IX锁.
-</code></pre>
-
-<p>上面这四种锁的兼容性Conflict表示冲突不能共存,Compatible表示可以共存:</p>
-
-<pre><code>   |     X     |      IX     |      S     |  IS
-X  | Conflict  |  Conflict   | Conflict   | Conflict
-IX | Conflict  |  Compatible | Conflict   | Compatible
-S  | Conflict  |  Conflict   | Compatible | Compatible
-IS | Conflict  |  Compatible | Compatible | Compatible
-</code></pre>
-
-<h3>2.2 什么时候会加锁</h3>
-
-<pre><code>1.共享锁(S)
-    SELECT * FROM table_name WHERE ... LOCK IN SHARE MODE
-2.排他锁(X)
-    SELECT * FROM table_name WHERE ... FOR UPDATE
-</code></pre>
-
-<p>参考: <a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-lock-modes.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-lock-modes.html</a></p>
-
-<h3>2.3 当前请求锁</h3>
-
-<p>使用show engine innodb status命令查看当前请求锁的信息.</p>
+  <div class="entry-content"><p>join 用于多表中字段之间的关联,语法如下:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show engine innodb status \G;</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>... FROM table1 INNER|LEFT|RIGHT JOIN table2 ON conditiona</span></code></pre></td></tr></table></div></figure>
 
 
-<p>可以从information_schema.INNODB_LOCKS表中查看锁的信息.
-比如事物A:</p>
+<p>JOIN实际上是两个表的的乘积(即笛卡尔积).假设集合A={a,b}，集合B={0,1,2}，则两个集合的笛卡尔积为{(a,0),(a,1),(a,2),(b,0),(b,1), (b,2)}.</p>
+
+<p>JOIN按照功能大致分为如下三类:</p>
+
+<pre><code>INNER JOIN: 取得两个表中存在连接匹配关系的记录;
+LEFT JOIN: 取得左表完全记录，即使右表并无对应匹配记录,如果没有匹配,右侧将包含null;
+RIGHT JOIN: 与 LEFT JOIN 相反，取得右表完全记录，即使左表并无匹配对应记录;
+</code></pre>
+
+<h2>. 1.显示join和隐式join</h2>
+
+<p>另外,写join语句有所谓的显示join和隐式join的写法:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-- 显示join
+</span><span class='line'>select * from
+</span><span class='line'>table1 inner join table2
+</span><span class='line'>on table1.name = table2.name;
+</span><span class='line'>
+</span><span class='line'>-- 隐式join
+</span><span class='line'>select table1.*, table2.*
+</span><span class='line'>from table1, table2
+</span><span class='line'>where table1.name = table2.name;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这两种写法性能上基本没有差异,参考stackoverflow: <a href="http://stackoverflow.com/questions/44917/explicit-vs-implicit-sql-joins">http://stackoverflow.com/questions/44917/explicit-vs-implicit-sql-joins</a></p>
+
+<h2>. 2.ON条件和WHERE条件</h2>
+
+<p>在执行顺序上需要注意的是on条件和where条件执行顺序: 首先使用on条件产生初始笛卡尔积集合,再在这个集合上使用where条件筛选.所以join的时候应该首先好的on条件保证笛卡尔积集合尽可能小,从而减少Where的执行.</p>
+
+<p>比如下面两种写法,方案2写法保证产生的笛卡尔积集合很小,因而从执行性能来看第二个显然更加省时。</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -183,46 +155,264 @@ IS | Conflict  |  Compatible | Compatible | Compatible
 <span class='line-number'>10</span>
 <span class='line-number'>11</span>
 <span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from t;
-</span><span class='line'>+----+------+
-</span><span class='line'>| id | num  |
-</span><span class='line'>+----+------+
-</span><span class='line'>| 10 |    0 |
-</span><span class='line'>|  1 |    1 |
-</span><span class='line'>|  3 |    4 |
-</span><span class='line'>|  2 |    7 |
-</span><span class='line'>| 11 |    8 |
-</span><span class='line'>|  4 |    9 |
-</span><span class='line'>+----+------+
-</span><span class='line'>6 rows in set (0.00 sec)
+</pre></td><td class='code'><pre><code class=''><span class='line'>-- 方案1
+</span><span class='line'>select * from A
+</span><span class='line'>inner join B on B.name = A.name
+</span><span class='line'>left join C on C.name = B.name
+</span><span class='line'>left join D on D.id = C.id
+</span><span class='line'>where C.status&gt;1 and D.status=1;
 </span><span class='line'>
-</span><span class='line'>mysql&gt; select * from t where num &lt; 4 lock in share mode;
-</span><span class='line'>+----+------+
-</span><span class='line'>| id | num  |
-</span><span class='line'>+----+------+
-</span><span class='line'>| 10 |    0 |
-</span><span class='line'>|  1 |    1 |
-</span><span class='line'>+----+------+
-</span><span class='line'>2 rows in set (0.00 sec)
-</span></code></pre></td></tr></table></div></figure>
+</span><span class='line'>-- 方案2
+</span><span class='line'>select * from A
+</span><span class='line'>inner join B on B.name = A.name
+</span><span class='line'>left join C on C.name = B.name and C.status&gt;1
+</span><span class='line'>left join D on D.id = C.id and D.status=1</span></code></pre></td></tr></table></div></figure>
 
 
-<p>然后事物B去做插入就可能被阻塞:</p>
+<h2>. 3.STRAIGHT_JOIN和NATURAL JOIN</h2>
+
+<h4>. 3.1 STRAIGHT_JOIN</h4>
+
+<p>再Join的时候,MySQL优化器要确定以谁为驱动表，也就是说以哪个表为基准，在处理此类问题时，MySQL优化器采用了简单粗暴的解决方法：哪个表的结果集小，就以哪个表为驱动表，当然MySQL优化器实际的处理方式会复杂许多，具体可以参考：<a href="http://www.orczhou.com/index.php/2013/04/how-mysql-choose-index-in-a-join/">http://www.orczhou.com/index.php/2013/04/how-mysql-choose-index-in-a-join/</a></p>
+
+<p>说明：在EXPLAIN结果中，第一行出现的表就是驱动表。</p>
+
+<p>但是这个由的时候比较愚蠢,比如我们order by的字段在大结果集的表上,也就是说排序字段不在驱动表里，于是乎不可避免的出现了Using filesort和Using temporary.</p>
+
+<p>上面这种场景,我们就可以通过使用STRAIGHT_JOIN显示的指定驱动表</p>
+
+<p>参考: <a href="http://huoding.com/2013/06/04/261">http://huoding.com/2013/06/04/261</a></p>
+
+<h4>. 3.2 NATURAL</h4>
+
+<p>MySQL将表中具有相同名称的字段自动进行记录匹配，而这些同名字段类型可以不同。因此，NATURAL JOIN 不用指定匹配条件。</p>
+
+<p>同样包含NATURAL LEFT JOIN和NATURAL RIGHT JOIN.</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; insert into t(num) values(4);</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>SELECT article.aid,article.title,user.username FROM article NATURAL JOIN user</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
 
 
-<p>这是很可以查询锁信息:</p>
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/08/27/zai-xian-zhen-duan-gong-ju/">在线诊断工具</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-08-27T19:54:38+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>27</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:54 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>Java诊断我相信再日常开发中都十分需要.相信大家都使用过以下几种诊断方式:</p>
+
+<pre><code>1.肉眼诊断
+就是出现问题时候企图通过肉眼来发现代码问题.通常很明显的问题有效;
+2.日志诊断
+通过给出问题的代码入参或者上下游加上日志,或者出问题的时候加上日志来诊断;这种方式的问题就是出现问题你需要重新拉分支,加日志,本地测试再上限这一系列流程.另外一个问题是过多的日志会影响应用性能;
+3.监控诊断
+通过完善的监控,通常包括完善且精确的异常划分.对不同的异常情况有独立的监控.加上完善的报警机制.这是最理想的情况.其优势是能快速定位问题点,问题是建立这一套完善的机制需要很长时间.并且监控只能发现问题类型,比如监控发现是数据错误,但是到底那条数据错误还是需要日志等手段来定位.
+4.在线诊断工具
+在不需要重新发布的情况下,在线诊断应用的问题所在.通常还可以用于定位接口瓶颈等问题;
+</code></pre>
+
+<p>这里简单介绍一下最近找到的几个在线诊断工具.它们都是非侵入式的,即不需要修改原始应用的代码再重新发布上线这个过程.</p>
+
+<p>常用包括几个诊断工具包括,这里做一个简单的介绍:</p>
+
+<pre><code>1.BTrace
+2.HouseMD
+3.Greys-Anatomy
+</code></pre>
+
+<p>参考: <a href="http://www.infoq.com/cn/articles/java-profiling-with-open-source/">http://www.infoq.com/cn/articles/java-profiling-with-open-source/</a></p>
+
+<h2>. 1.BTrace</h2>
+
+<p>Btrace(bytecode trace)是Kenai在2009年开发的一个开源项目(<a href="https://kenai.com/projects/btrace/">https://kenai.com/projects/btrace/</a>)，是一个动态跟踪分析JAVA源代码的工具。
+它可以用来帮我们做运行时的JAVA程序分析，追踪，监控等.</p>
+
+<p>官网: <a href="https://kenai.com/projects/btrace/">https://kenai.com/projects/btrace/</a></p>
+
+<p>用户手册: <a href="https://kenai.com/projects/btrace/pages/UserGuide">https://kenai.com/projects/btrace/pages/UserGuide</a></p>
+
+<p>samples下有很多使用例子.参考网上的一个例子:
+<a href="http://mgoann.iteye.com/blog/1409685">http://mgoann.iteye.com/blog/1409685</a></p>
+
+<p>参考: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=56198121">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=56198121</a></p>
+
+<h4>1.1使用场景:</h4>
+
+<p>1.数据采样
+比如我们要优化某块代码，就可以先写一个btrace脚本，丢到线上服务器上跑一段时间；
+这样可以收集到最真实的数据，而且不用发布之类的；
+然后根据收集到的数据，做有目的的优化，优化之后，还可以对比出优化的效果。
+2.排查问题
+3.性能监控</p>
+
+<h4>1.2优点</h4>
+
+<p>1.跟踪任何java代码的调用（包括第三方类库中的，甚至jdk中的），比如统计某方法的调用次数，耗时。
+2.可以监控的维度有很多，比如异常，同步块，内存申请，数组声明，甚至可以精确到行
+3.完全不侵入业务代码，不需要重启服务
+4.安全，对于应用内的数据来说是只读的。</p>
+
+<h4>1.3缺点</h4>
+
+<ol>
+<li>有较多的使用限制，如只能调用用BtraceUtils中的方法、不能写实例变量；
+（见docs/usersguide.html中的BTrace Restrictions条目）
+所以刚编写脚本的时候，可能会有各种不习惯，但其实大多会用到的方法，BtraceUtils里都有封装
+（其实个人感觉这个不算缺点，只是这个工具定位在追踪和监控，所以出于安全考虑，做了这个限制）</li>
+<li>监控基本上只能单点，集群环境没法玩</li>
+<li>被监控的服务重启，btrace也需要跟着重启
+4.有影响原始应用的风险,严重可能导致JVM Crash.</li>
+</ol>
+
+
+<h4>1.4使用方式</h4>
+
+<ul>
+<li><p>Boot方式启动
+追踪已启动的jvm进程
+命令：btrace/bin/btrace 12345 SomeScript.java
+注意，下载下来后bin下的文件都不可执行，需要chmod u+x，并且需要和目标进程是同一个用户来启动</p></li>
+<li><p>Agent方式启动
+与目标jvm同时启动
+配置jvm参数：-javaagent:btrace-agent.jar=script=SqlMapTracer.class
+注意：agent方式启动只能使用编译过的脚本
+使用btrace/bin/btracec SqlMapTracer.java 编译
+agent方式启动的btrace的标准输出位于你的SqlMapTracer.class所在目录下的SqlMapTracer.class.btrace文件</p></li>
+</ul>
+
+
+<p>boot方式灵活，但是当要求追踪结果精确时，就不太好用了。因为不知道btrace启动之前，目标进程已经执行了多少代码。agent方式是和目标进程同时启动的，可以保证结果精确。</p>
+
+<h4>1.5原理</h4>
+
+<p>主要就是使用ASM来实现对类的修改,再使用Instumentation实现类的内存替换.</p>
+
+<p>btrace原理: <a href="http://victorzhzh.iteye.com/blog/965789">http://victorzhzh.iteye.com/blog/965789</a></p>
+
+<p>btrace源码分析: <a href="http://agapple.iteye.com/blog/1005918">http://agapple.iteye.com/blog/1005918</a></p>
+
+<h2>. 2.HouseMD</h2>
+
+<p>高负载服务器端Java程序 诊断工具的特性要求有:</p>
+
+<pre><code>1.命令行接口, 能够方便在服务器环境中运行;
+2.支持常用诊断调式手段, 能够在其中快速来回切换;
+3.容易定位跟踪目标, 且不易出错;
+4.弱侵入, 目标Java程序无需任何修改, 不用重新部署或重启;
+5.有效控制给目标进程带来的资源消耗;
+6.不遗留任何"代码垃圾"等后遗症.
+</code></pre>
+
+<p>使用手册: <a href="https://github.com/CSUG/HouseMD/wiki/UserGuideCN">https://github.com/CSUG/HouseMD/wiki/UserGuideCN</a></p>
+
+<h4>. 2.1安装</h4>
+
+<p>首先安装jenv:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Tools/HouseMD$ curl -L -s get.jenv.io | bash
+</span><span class='line'>...
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Tools/HouseMD$ source /home/xiaobaoqiu/.jenv/bin/jenv-init.sh
+</span><span class='line'>...
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Tools/HouseMD$ jenv help
+</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>再安装HouseMD就很简单:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Tools/HouseMD$ jenv install housemd
+</span><span class='line'>Installing: housemd 0.2.7
+</span><span class='line'>Parsing http://jenv.mvnsearch.org/candidate/housemd/download/0.2.7/Linux/x86_64
+</span><span class='line'>
+</span><span class='line'>Downloading: housemd 0.2.7
+</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>. 3.Greys-Anatomy</h2>
+
+<p>Greys是一个java进程执行过程中的异常诊断工具。 在不中断程序执行的情况下轻松完成问题排查工作.</p>
+
+<p>源码: <a href="https://github.com/oldmanpushcart/greys-anatomy">https://github.com/oldmanpushcart/greys-anatomy</a></p>
+
+<p>使用范例: <a href="https://github.com/oldmanpushcart/greys-anatomy/wiki/Getting-Start">https://github.com/oldmanpushcart/greys-anatomy/wiki/Getting-Start</a></p>
+
+<p>交互方式: 命令行交互</p>
+
+<p>功能:</p>
+
+<pre><code>1.查看加载类，方法信息
+2.方法执行监控（调用量，成功失败率，响应时间）
+3.方法执行数据观测（参数，返回结果，异常信息等）
+4.方法执行数据记录
+5.性能开销渲染
+6.方法执行数据自定义观测（js脚本）
+7.查看方法调用堆栈
+</code></pre>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/08/22/chu-li-sqlchao-shi/">处理sql超时</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-08-22T14:18:23+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>22</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>2:18 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近组内又出现一次因为SQL慢查询导致业务整体雪崩的情况.很惭愧的是,那个慢查询SQL是我大概一年之前写的(一个统计的SQL,数据量又比较大),那时还很稚嫩.</p>
+
+<p>之前组内出现这种情况一般是让DBA上一个慢查询脚本,直接暴力kill那些慢查询.</p>
+
+<p>其实各个JDBC driver实现java.sql.Statement的时候都需要实现setQueryTimeout这个函数,其作用就是设置SQL的执行超时时间,当SQL超时会直接被取消掉并且抛出QLTimeoutException异常.</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -247,511 +437,42 @@ IS | Conflict  |  Compatible | Compatible | Compatible
 <span class='line-number'>21</span>
 <span class='line-number'>22</span>
 <span class='line-number'>23</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from information_schema.INNODB_LOCKS \G;
-</span><span class='line'>*************************** 1. row ***************************
-</span><span class='line'>    lock_id: 5E05:0:138228:3
-</span><span class='line'>lock_trx_id: 5E05
-</span><span class='line'>  lock_mode: X,GAP
-</span><span class='line'>  lock_type: RECORD
-</span><span class='line'> lock_table: `test`.`t`
-</span><span class='line'> lock_index: `n`
-</span><span class='line'> lock_space: 0
-</span><span class='line'>  lock_page: 138228
-</span><span class='line'>   lock_rec: 3
-</span><span class='line'>  lock_data: 7, 2
-</span><span class='line'>*************************** 2. row ***************************
-</span><span class='line'>    lock_id: 5E02:0:138228:3
-</span><span class='line'>lock_trx_id: 5E02
-</span><span class='line'>  lock_mode: S
-</span><span class='line'>  lock_type: RECORD
-</span><span class='line'> lock_table: `test`.`t`
-</span><span class='line'> lock_index: `n`
-</span><span class='line'> lock_space: 0
-</span><span class='line'>  lock_page: 138228
-</span><span class='line'>   lock_rec: 3
-</span><span class='line'>  lock_data: 7, 2</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.2 锁的算法(Record Lock,Gap Lock,Next-Key Lock)</h3>
-
-<p>InnoDB有三种类型的行锁:record locks,gap locks和next-key locks:索引锁是在单个索引记录上的锁;区间锁是两个索引记录之间的锁,或者第一个索引之前的锁,或者最后一个索引之后的锁;Next-Key锁是索引锁和该索引之前的gap锁的结合.</p>
-
-<pre><code>1.索引锁(Record Lock)
-索引锁总是锁定索引(可能多条),即使表上面没有索引(这种情况,InnoDB会隐式的用自增id创建一个聚簇索引).一级索引只对一级索引加锁,二级索引对二级索引和对应的一级索引加锁.注意记录锁锁的是索引记录,不是具体的数据记录.
-
-2.区间锁(Gap Lock)
-锁定索引记录间隙的锁,确保索引记录的间隙不变,间隙锁是针对事务隔离等级是可重复读(Repeatable Read)或以上级别而言的.
-
-间隙锁一般是针对非唯一索引而言的
-
-3.Next-Key Lock
-默认情况,InnoDB使用REPEATABLE READ事物隔离级别,并且innodb_locks_unsafe_for_binlog这个系统设置无效.这时InnoDB使用next-key锁来做搜索(searches)和索引扫描(index scans),以此来防止幻读(参考:http://dev.mysql.com/doc/refman/5.6/en/innodb-next-key-locking.html).
-</code></pre>
-
-<h3>2.3 区间锁</h3>
-
-<p>区间锁的一个简单例子:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>CREATE TABLE `t` (
-</span><span class='line'>  `id` int(11) unsigned NOT NULL AUTO_INCREMENT COMMENT '自增主键',
-</span><span class='line'>  `num` int(11) DEFAULT NULL,
-</span><span class='line'>  PRIMARY KEY (`id`),
-</span><span class='line'>  KEY `n` (`num`)
-</span><span class='line'>) ENGINE=InnoDB DEFAULT CHARSET=utf8
-</span><span class='line'>
-</span><span class='line'>insert into t(`num`) values(1, 7, 4, 9);
-</span><span class='line'>
-</span><span class='line'>mysql&gt; select * from t;
-</span><span class='line'>+----+------+
-</span><span class='line'>| id | num  |
-</span><span class='line'>+----+------+
-</span><span class='line'>|  1 |    1 |
-</span><span class='line'>|  3 |    4 |
-</span><span class='line'>|  2 |    7 |
-</span><span class='line'>|  4 |    9 |
-</span><span class='line'>+----+------+
-</span><span class='line'>4 rows in set (0.01 sec)</span></code></pre></td></tr></table></div></figure>
-
-
-<p>表中现在有4条记录,其中普通索引(二级索引n)生成了5个Gap:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(负无穷, 1), (1, 4), (4, 7), (7, 9), (9, 正无穷)</span></code></pre></td></tr></table></div></figure>
-
-
-<p>现在Session A以共享锁获取num=4的数据,Session B想要插入数据,就有可能造成锁等待导致超时从而重启事务,因为Session A以共享锁获取num=4的数据,会产生gap锁将区间(1, 4)和区间(4, 7)锁住,因此这两个区间的插入会失败:</p>
-
-<p><img src="/images/mysql/gap_lock.png"></p>
-
-<p>间隙锁在InnoDB的作用就是防止其它事务的插入操作，以此来达到防止幻读的发生。另外，在上面的例子中，我们选择的是一个普通（非唯一）索引字段来测试的，这不是随便选的，因为如果InnoDB扫描的是一个主键、或是一个唯一索引的话，那InnoDB只会采用行锁方式来加锁，而不会使用Next-Key Lock的方式，也就是说不会对索引之间的间隙加锁.</p>
-
-<p>要禁止间隙锁的话，可以把隔离级别降为读已提交，或者开启参数innodb_locks_unsafe_for_binlog.</p>
-
-<p>参考:
-<a href="http://www.cnblogs.com/sliverdang/p/3163455.html">http://www.cnblogs.com/sliverdang/p/3163455.html</a></p>
-
-<p><a href="http://ouyanggod.iteye.com/blog/2166215">http://ouyanggod.iteye.com/blog/2166215</a></p>
-
-<p><a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html</a></p>
-
-<h1>3.snapshot read和current read</h1>
-
-<p>MySQL的两种read方式:</p>
-
-<pre><code>1.快照读(snapshot read或者consistent read)
-快照读,读取的是记录的可见版本(有可能是历史版本),不用加锁;
-
-通常,简单的select操作,属于快照读,不加锁,比如:
-```
-select * from table where ?
-```
-2.当前读(current read或者lock read)
-当前读,读取的是记录的最新版本,并且,当前读返回的记录,都会加上锁,保证其他事务不会再并发修改这条记录.
-
-特殊的读操作,插入/更新/删除操作,属于当前读,需要加锁.比如:
-```
-select * from table where ? lock in share mode
-select * from table where ? for update
-insert into table values (…)
-update table set ? where ?
-delete from table where ?
-```
-所有以上的语句,都属于当前读,读取记录的最新版本.并且,读取之后,还需要保证其他并发事务不能修改当前记录,对读取记录加锁.其中,除了第一条语句,对读取记录加S锁 (共享锁)外,其他的操作,都加的是X锁(排它锁).
-</code></pre>
-
-<p>总之一句话:有加锁的查询都认为是当前读.</p>
-
-<p>快照读大大的提高了数据读取的并发.快照读的一个简单示意图,快照数据就是当前数据之前的版本数据,可能有多个版本的快照数据,每个快照数据中包含了版本信息(如时间戳等):</p>
-
-<p><img src="/images/mysql/snapshot_read.png"></p>
-
-<p>为什么将插入/更新/删除操作,都归为当前读?可以看看下面这个更新操作,在数据库中的执行流程：</p>
-
-<p><img src="/images/mysql/update-lock.jpg"></p>
-
-<p>从图中,可以看到,一个Update操作的具体流程.当Update SQL被发给MySQL后,MySQL Server会根据where条件,读取第一条满足条件的记录,然后InnoDB引擎会将第一条记录返回,并加锁(current read).待MySQL Server收到这条加锁的记录之后,会再发起一个Update请求,更新这条记录.一条记录操作完成,再读取下一条记录,直至没有满足条件的记录为止.因此,Update操作内部,就包含了一个当前读.同理,Delete操作也一样.Insert操作会稍微有些不同,简单来说,就是Insert操作可能会触发Unique Key的冲突检查,也会进行一个当前读.</p>
-
-<p>注：根据上图的交互,针对一条当前读的SQL语句,InnoDB与MySQL Server的交互,是一条一条进行的,因此,加锁也是一条一条进行的.先对一条满足条件的记录加锁,返回给MySQL Server,做一些DML操作；然后在读取下一条加锁,直至读取完毕.</p>
-
-<h3>3.1不同隔离界别下的snapshot read</h3>
-
-<p>在Read Committed级别下,快照读总是读取被锁定行的最新的快照数据.而在Repeatable Read和Serializable级别,快照读读取的是事物开始时候的行数据版本.</p>
-
-<p>下面是一个简单的例子,一个很简单的表,插入一条数据:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>CREATE TABLE `parent` (   `id` int(10) NOT NULL,   PRIMARY KEY (`id`) ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
-</span><span class='line'>
-</span><span class='line'>insert into parent (id) values(1);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>我们起两个事务,一个读取(Session A),一个更新(Session B),用来验证不同事务隔离级别下快照读的差异:</p>
-
-<pre><code>1.Session A中首先开始事物,查询id=1的数据,这时候,无论在Read Committed还是Repeatable Read级别,结果都是1;
-2.Session B然后开始事物,并执行update操作,没有commit;
-3.这时候Session A再查询id=1的数据,显然Read Committed还是Repeatable Read级别,结果都是1;(在Read Uncommited灰度到未提交的脏数据).
-4.Session B提交事物;
-5.这时候Session A再查询id=1的数据,就发现差异:Read Committed级别下读取到被修改的数据,而Repeatable Read读取的还是老数据.因为Read Committed只读取最新的快照数据,而Repeatable Read是参考当前事物开始时间来读取快照数据.
-</code></pre>
-
-<p>首先是Repeatable Read的结果:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; SELECT @@session.tx_isolation;
-</span><span class='line'>+------------------------+
-</span><span class='line'>| @@session.tx_isolation |
-</span><span class='line'>+------------------------+
-</span><span class='line'>| REPEATABLE-READ        |
-</span><span class='line'>+------------------------+
-</span><span class='line'>
-</span><span class='line'>mysql&gt; select * from parent where id = 1;
-</span><span class='line'>+----+
-</span><span class='line'>| id |
-</span><span class='line'>+----+
-</span><span class='line'>|  1 |
-</span><span class='line'>+----+</span></code></pre></td></tr></table></div></figure>
-
-
-<p><img src="/images/mysql/snapshot_read_RR.png"></p>
-
-<p>下面是Read Committed的结果(Session B一旦提交,Session A未commit的情况下就能读到Session B提交的数据.):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; SELECT @@session.tx_isolation;
-</span><span class='line'>+------------------------+
-</span><span class='line'>| @@session.tx_isolation |
-</span><span class='line'>+------------------------+
-</span><span class='line'>| READ-COMMITTED         |
-</span><span class='line'>+------------------------+
-</span><span class='line'>
-</span><span class='line'>mysql&gt; select * from parent where id = 1;
-</span><span class='line'>+----+
-</span><span class='line'>| id |
-</span><span class='line'>+----+
-</span><span class='line'>|  1 |
-</span><span class='line'>+----+</span></code></pre></td></tr></table></div></figure>
-
-
-<p><img src="/images/mysql/snapshot_read_RC.png"></p>
-
-<h1>4.InnoDB MVCC</h1>
-
-<p>InnoDB是一种多版本存储引擎,它必须保存各行老版本信息,这个信息存在一个称之为回滚段(rollback segment)的数据结构中.</p>
-
-<p>在Mysql内部,InnoDB为每行数据额外增加三个字段:</p>
-
-<pre><code>1.一个6-byte的名为DB_TRX_ID字段,用来表示最后一个插入(insert)或者更新(update)这行记录的事物的标记.注意,删除(delete)也被当成一种更新,只是标记这一行的一个额外的bit位来表征这个数据被删除.
-2.一个7-byte的名为DB_ROLL_PTR字段,称之为回滚指针(roll pointer).这个指针指向写在rollback segment中的undo log记录.如果这一行被更新了,undo log就包含了能够将这一行完全恢复到修改之前的信息.
-3.一个6-byte的DB_ROW_ID字段,用来存行id(row ID),行id是插入数据的时候自动严格递增生成的.如果InnoDB自动产生了一个聚簇索引(clustered index),这个索引就包含行id.否在行id就不会在任何索引中出现.
-</code></pre>
-
-<p>InnoDB使用存储在rollback segment中的信息(undo log)去实现事物回滚时候的undo操作.另外,InnoDB也是使用这个信息构建快照读(consistent read或者snapshot read)时候的行数据.</p>
-
-<p>rollback segment中的Undo logs分为插入(insert)和更新(update)的undo logs.</p>
-
-<p>经常提交你的事物,包括那些只是consistent reads的事物.否则(长时间不提事物)会导致InnoDB不能及时废弃update undo logs中的数据,进而导致rollback segment中数据太大挤占你的表空间(tablespace).</p>
-
-<p>rollback segment中undo log记录的物理大小(physical size)通常小于对应的插入或者更新的行数.你可以使用这个信息取计算你的rollback segment需要的空间.</p>
-
-<p>在InnoDB多版本方案中,当你删除一行记录,实际上行不会立即被物理删除.只有当这个删除对应的update undo log被废弃的时候这行记录才会真正被物理删除.此删除操作被称为清除(purge)是通过Purge后台进程实现的,这个过程非常的快,通常其顺序和SQL语句执行删除的顺序一致.Purge进程定期扫描InnoDB的undo,按照先读老undo,再读新undo的顺序,读取每条undo record.</p>
-
-<p>参考:
-<a href="http://hedengcheng.com/?p=148">http://hedengcheng.com/?p=148</a>
-<a href="https://dev.mysql.com/doc/refman/5.0/en/innodb-multi-versioning.html">https://dev.mysql.com/doc/refman/5.0/en/innodb-multi-versioning.html</a></p>
-
-<h1>5.隔离级别(Isolation Level)</h1>
-
-<h3>5.1 InnoDB的4种隔离级别</h3>
-
-<p>MySQL InnoDB定义的4种隔离级别：</p>
-
-<pre><code>1.Read Uncommited
-2.Read Committed (RC)
-3.Repeatable Read (RR)
-4.Serializable
-</code></pre>
-
-<p>Read Uncommited安全级别比较低,因此很少使用.Serializable隔离级别读写冲突,因此并发度急剧下降,在MySQL/InnoDB下不建议使用.
-Repeatable Read是InnoDB默认的事物级别.Oracle和MS SQL的默认级别是Read Committed.</p>
-
-<h3>5.2脏读,不可重复读,幻读</h3>
-
-<p>在事务并行下出现的几个问题:</p>
-
-<pre><code>1.脏读
-可能读取到其他会话中未提交事务修改的数据,在Read Uncommited级别下可能出现.
-2.不可重复读
-同一个事物中前后两次读取的内容不一致,在Read Uncommited和Read Committed会出现.
-3.幻读
-如果另一个事务同时提交了新数据(本事务查询时候感知不到这个变更),本事务再更新时,就会惊奇的发现了这些新数据(比如触发违反了uniq key等),就好像之前读到的数据是鬼影一样的幻觉.这种情况就是上述说的,快照读和当前读一起存在的情况,会出现幻读的场景.必须使用当前读,才能避免幻读.比如：select ...lock in share mode和select ...for update.
-</code></pre>
-
-<p>各个事物界别下可能出现的问题:</p>
-
-<table>
-<thead>
-<tr>
-<th>隔离级别</th>
-<th style="text-align:center;">脏读(Dirty Read)</th>
-<th style="text-align:center;">不可重复读(NonRepeatable Read)</th>
-<th style="text-align:center;">幻读(Phantom Read)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Read Uncommited</td>
-<td style="text-align:center;">可能</td>
-<td style="text-align:center;">可能</td>
-<td style="text-align:center;">可能</td>
-</tr>
-<tr>
-<td>Read Committed</td>
-<td style="text-align:center;">不可能</td>
-<td style="text-align:center;">可能</td>
-<td style="text-align:center;">可能</td>
-</tr>
-<tr>
-<td>Repeatable Read</td>
-<td style="text-align:center;">不可能</td>
-<td style="text-align:center;">不可能</td>
-<td style="text-align:center;">可能</td>
-</tr>
-<tr>
-<td>Serializable</td>
-<td style="text-align:center;">不可能</td>
-<td style="text-align:center;">不可能</td>
-<td style="text-align:center;">不可能</td>
-</tr>
-</tbody>
-</table>
-
-
-<p>幻读的一个示例,Session A在insert之前先select查看数据是否存在,结果告知可以插入,这时候Session B变更数据并提交.Session A再插入会因为主键冲突失败:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; SELECT @@session.tx_isolation;
-</span><span class='line'>+------------------------+
-</span><span class='line'>| @@session.tx_isolation |
-</span><span class='line'>+------------------------+
-</span><span class='line'>| READ-COMMITTED         |
-</span><span class='line'>+------------------------+
-</span><span class='line'>
-</span><span class='line'>mysql&gt; select * from parent where id = 1;
-</span><span class='line'>+----+
-</span><span class='line'>| id |
-</span><span class='line'>+----+
-</span><span class='line'>|  1 |
-</span><span class='line'>+----+</span></code></pre></td></tr></table></div></figure>
-
-
-<p><img src="/images/mysql/phantom_read.png"></p>
-
-<p>那么，InnoDB指出的可以避免幻读是怎么回事呢?</p>
-
-<pre><code>http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html
-
-By default, InnoDB operates in REPEATABLE READ transaction isolation level and with the innodb_locks_unsafe_for_binlog system variable disabled. In this case, InnoDB uses next-key locks for searches and index scans, which prevents phantom rows (see Section 13.6.8.5, “Avoiding the Phantom Problem Using Next-Key Locking”).
-</code></pre>
-
-<p>简单翻译就是，当隔离级别是可重复读，且禁用innodb_locks_unsafe_for_binlog的情况下，在搜索和扫描index的时候使用的next-key locks可以避免幻读.</p>
-
-<p>关键点在于，是InnoDB默认对一个普通的查询也会加next-key locks，还是说需要应用自己来加锁呢？如果单看这一句，可能会以为InnoDB对普通的查询也加了锁，如果是，那和序列化（SERIALIZABLE）的区别又在哪里呢?</p>
-
-<p>MySQL manual里还有一段:</p>
-
-<pre><code>http://dev.mysql.com/doc/refman/5.6/en/innodb-next-key-locking.html
-Avoiding the Phantom Problem Using Next-Key Locking
-
-To prevent phantoms, InnoDB uses an algorithm called next-key locking that combines index-row locking with gap locking.
-
-You can use next-key locking to implement a uniqueness check in your application: If you read your data in share mode and do not see a duplicate for a row you are going to insert, then you can safely insert your row and know that the next-key lock set on the successor of your row during the read prevents anyone meanwhile inserting a duplicate for your row. Thus, the next-key locking enables you to “lock” the nonexistence of something in your table.
-</code></pre>
-
-<p>根据这一段,我们可以理解为,InnoDB提供了next-key locks，但需要应用程序自己去加锁,才能防止幻读.manual里提供一个例子:</p>
-
-<pre><code>SELECT * FROM child WHERE id &gt; 100 FOR UPDATE;
-</code></pre>
-
-<p>这样,InnoDB会给id大于100的行(假如child表里有一行id为102),以及100-102,102+的gap都加上锁.可以使用show innodb status来查看是否给表加上了锁.</p>
-
-<p>结论就是:MySQL InnoDB的REPEATABLE READ并不保证避免幻读,需要应用使用加锁读来保证.而这个加锁度使用到的机制就是next-key locks.</p>
-
-<h3>5.3 修改隔离级别</h3>
-
-<p>InnoDB默认是可重复读的(REPEATABLE READ).可以在命令行用&ndash;transaction-isolation选项,或在选项文件里,为所有连接设置默认隔离级别.</p>
-
-<p>在my.inf文件的[mysqld]节里类似如下设置该选项:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>transaction-isolation = {READ-UNCOMMITTED | READ-COMMITTED | REPEATABLE-READ | SERIALIZABLE}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>用户可以用SET TRANSACTION语句改变单个会话或者所有新进连接的隔离级别:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>SET [SESSION | GLOBAL] TRANSACTION ISOLATION LEVEL {READ UNCOMMITTED | READ COMMITTED | REPEATABLE READ | SERIALIZABLE}</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>6.死锁</h1>
-
-<pre><code>1.死锁发生的条件
-互斥条件：一个资源每次只能被一个进程使用；
-请求与保持条件：一个进程因请求资源而阻塞时，对已获得的资源保持不放；
-不剥夺条件:进程已获得的资源，在末使用完之前，不能强行剥夺；
-循环等待条件:若干进程之间形成一种头尾相接的循环等待资源关系。
-</code></pre>
-
-<p>系统检测到死锁后,会自动回滚其中事务较小的一个(记得好像根据undo日志的大小来决定).</p>
-
-<p>对于DB而言，导致死锁意味着发生了循环等待，在InnoDB中由于行锁的引入，比较容易发生死锁，下面总结一些发生死锁的情况（不全）：
-    1. 同一索引上,两个session相反的顺序加锁多行记录;
-    2. Primary key和Secondary index，通过primary key找到记录，更新Secondary index字段与通过Secondary index更新记录;
-    3. UPDATE/DELETE通过不同的二级索引更新多条记录,可能造成在Primary key上不同的加锁顺序,可以参考之前一篇博客:<a href="http://www.gpfeng.com/?p=406">http://www.gpfeng.com/?p=406</a></p>
-
-<h3>6.1死锁实例</h3>
-
-<h3>6.2查看死锁信息</h3>
-
-<h3>6.3解决死锁</h3>
-
-<p>参考:</p>
-
-<p><a href="http://hedengcheng.com/?p=771">http://hedengcheng.com/?p=771</a></p>
-
-<p><a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html">http://dev.mysql.com/doc/refman/5.6/en/innodb-record-level-locks.html</a></p>
-
-<p><a href="http://novoland.github.io/%E6%95%B0%E6%8D%AE%E5%BA%93/2014/07/26/MySQL%E6%80%BB%E7%BB%93.html">http://novoland.github.io/%E6%95%B0%E6%8D%AE%E5%BA%93/2014/07/26/MySQL%E6%80%BB%E7%BB%93.html</a></p>
-
-<p><a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=76820049">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=76820049</a>
-<a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=50520113">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=50520113</a></p>
-
-<p>Mysql锁基础知识 <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=64807317">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=64807317</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/06/02/dong-tai-shu-ju-yuan/">动态数据源</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-06-02T02:42:35+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>2</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>2:42 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h1>1.数据库层面的动态数据源</h1>
-
-<p>比如多个读库(Read),可以配置一个虚拟IP,每次读数据库的请求被均衡的分配到各个读库(使用Keepalived等).</p>
-
-<p>这中方式对应用程序是透明的.</p>
-
-<h1>2.数据库Proxy</h1>
-
-<p>很多现成的数据库Proxy,在Proxy中可以做负载均衡(一般使用LVS,Keepalived等现成应用),权限验证,过滤,业务缓存等控制逻辑.比如:</p>
-
-<pre><code>1.360基于mysql-proxy的Atlas
-Atlas是由 Qihoo 360,Web平台部基础架构团队开发维护的一个基于MySQL协议的数据中间层项目。它是在mysql-proxy 0.8.2版本的基础上，对其进行了优化，增加了一些新的功能特性。360内部使用Atlas运行的mysql业务，每天承载的读写请求数达几十亿条。
-github:https://github.com/Qihoo360/Atlas
-参考:https://github.com/Qihoo360/Atlas/wiki/Atlas%E7%9A%84%E6%9E%B6%E6%9E%84
-
-2.阿里的DRDS
-分布式关系型数据库服务（Distribute Relational Database Service，简称DRDS）是一种水平拆分、可平滑扩缩容、读写分离的在线分布式数据库服务。前身为淘宝开源的TDDL，是近千个应用首选组件，已稳定服务了七年以上。已经商业化.
-参考:http://docs.aliyun.com/?spm=5176.7622920.9.2.qGx2nq#/pub/drds/brief-manual/summary&amp;summary
-
-3.网易的分布式数据库中间件DDB
-DDB（Distributed database）是网易杭研院立项最早，应用最为广泛的后台产品之一，也是国内最早出现的基于现有database之上开发的分布式数据库中间件，目前依然在为网易易信，云音乐，云阅读等大型互联网产品提供稳定的数据库服务。
-参考:http://www.majin163.com/2014/09/24/ddb-introduce/
-
-4.百度DDBS
-</code></pre>
-
-<h1>3.代码层面</h1>
-
-<p>使用Spring实现数据源动态配置,可以在代码层面达到Master-Slave数据库分离的效果.</p>
-
-<p>其实原理很简单,需要做两个工作:</p>
-
-<pre><code>1.实现一个根据不同key使用不同实际DataSource的自定义DataSource;
-2.在请求的ThreadLocal中保存当前请求需要使用的数据库的key;
-</code></pre>
-
-<p>其中第一个工作Spring已经帮我们做了,见类org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource.</p>
-
-<h3>3.1 AbstractRoutingDataSource简介</h3>
-
-<p>下面简单介绍这个类:</p>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'>     * Sets the number of seconds the driver will wait for a
+</span><span class='line'>     * &lt;code&gt;Statement&lt;/code&gt; object to execute to the given number of seconds.
+</span><span class='line'>     *By default there is no limit on the amount of time allowed for a running
+</span><span class='line'>     * statement to complete. If the limit is exceeded, an
+</span><span class='line'>     * &lt;code&gt;SQLTimeoutException&lt;/code&gt; is thrown.
+</span><span class='line'>     * A JDBC driver must apply this limit to the &lt;code&gt;execute&lt;/code&gt;,
+</span><span class='line'>     * &lt;code&gt;executeQuery&lt;/code&gt; and &lt;code&gt;executeUpdate&lt;/code&gt; methods.
+</span><span class='line'>     * &lt;p&gt;
+</span><span class='line'>     * &lt;strong&gt;Note:&lt;/strong&gt; JDBC driver implementations may also apply this
+</span><span class='line'>     * limit to {@code ResultSet} methods
+</span><span class='line'>     * (consult your driver vendor documentation for details).
+</span><span class='line'>     * &lt;p&gt;
+</span><span class='line'>     * &lt;strong&gt;Note:&lt;/strong&gt; In the case of {@code Statement} batching, it is
+</span><span class='line'>     * implementation defined as to whether the time-out is applied to
+</span><span class='line'>     * individual SQL commands added via the {@code addBatch} method or to
+</span><span class='line'>     * the entire batch of SQL commands invoked by the {@code executeBatch}
+</span><span class='line'>     * method (consult your driver vendor documentation for details).
+</span><span class='line'>     *
+</span><span class='line'>     * @param seconds the new query timeout limit in seconds; zero means
+</span><span class='line'>     *        there is no limit
+</span><span class='line'>     * @exception SQLException if a database access error occurs,
+</span><span class='line'>     * this method is called on a closed &lt;code&gt;Statement&lt;/code&gt;
+</span><span class='line'>     *            or the condition seconds &gt;= 0 is not satisfied
+</span><span class='line'>     * @see #getQueryTimeout
+</span><span class='line'>     */
+</span><span class='line'>    void setQueryTimeout(int seconds) throws SQLException;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>默认情况下都不设置超时时间(即默认值0).即永远不超时.Druid的Filter机制很容易的让我们设置这个查询超时时间.</p>
+
+<h2>1.SQL超时时间Filter实现</h2>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -821,183 +542,176 @@ DDB（Distributed database）是网易杭研院立项最早，应用最为广泛
 <span class='line-number'>66</span>
 <span class='line-number'>67</span>
 <span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-<span class='line-number'>108</span>
-<span class='line-number'>109</span>
-<span class='line-number'>110</span>
-<span class='line-number'>111</span>
-<span class='line-number'>112</span>
-<span class='line-number'>113</span>
-<span class='line-number'>114</span>
-<span class='line-number'>115</span>
-<span class='line-number'>116</span>
-<span class='line-number'>117</span>
-<span class='line-number'>118</span>
-<span class='line-number'>119</span>
-<span class='line-number'>120</span>
-<span class='line-number'>121</span>
 </pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * 抽象的javax.sql.DataSource实现，可以完成基于一个查找key来路由 #getConnection()到某些特性目标DataSourcesd的一个。一般通过绑定线程上下文来决定。
+</span><span class='line'> * 设置SQL执行时间
+</span><span class='line'> * 如果超时,查询被cancel,并抛出SQLTimeoutException异常
+</span><span class='line'> *
+</span><span class='line'> * @author: xiaobaoqiu  Date: 15-8-22 Time: 下午1:55
 </span><span class='line'> */
-</span><span class='line'>public abstract class AbstractRoutingDataSource extends AbstractDataSource implements InitializingBean {
-</span><span class='line'>private Map&lt;Object, Object&gt; targetDataSources;
-</span><span class='line'>
-</span><span class='line'>    private Object defaultTargetDataSource;
-</span><span class='line'>
-</span><span class='line'>    private boolean lenientFallback = true;
-</span><span class='line'>
-</span><span class='line'>    private DataSourceLookup dataSourceLookup = new JndiDataSourceLookup();
-</span><span class='line'>
-</span><span class='line'>    private Map&lt;Object, DataSource&gt; resolvedDataSources;
-</span><span class='line'>
-</span><span class='line'>    private DataSource resolvedDefaultDataSource;
+</span><span class='line'>public class SqlTimeOutFilter extends FilterEventAdapter {
 </span><span class='line'>
 </span><span class='line'>    /**
-</span><span class='line'>     * 设置目标DataSources的map映射，其中查找key作为 map的key。
-</span><span class='line'>     * 这个映射的value可以是对象的DataSource实例，或者是一个数据源name的字符串（可以被DataSourceLookup解析）。
+</span><span class='line'>     * 默认超时时间,单位秒
+</span><span class='line'>     * 注意不要设置太小
+</span><span class='line'>     */
+</span><span class='line'>    private static final int QUERY_TIMEOUT_THRESHOLD_SECOND = 100;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 超时时间,默认为QUERY_TIMEOUT_THRESHOLD_SECOND
+</span><span class='line'>     */
+</span><span class='line'>    private int timeoutThreshold = QUERY_TIMEOUT_THRESHOLD_SECOND;
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    protected void statementExecuteBefore(StatementProxy statement, String sql) {
+</span><span class='line'>        setQueryTimeout(statement);
+</span><span class='line'>        super.statementExecuteBefore(statement, sql);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    protected void statementExecuteBatchBefore(StatementProxy statement) {
+</span><span class='line'>        setQueryTimeout(statement);
+</span><span class='line'>        super.statementExecuteBatchBefore(statement);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    protected void statementExecuteUpdateBefore(StatementProxy statement, String sql) {
+</span><span class='line'>        setQueryTimeout(statement);
+</span><span class='line'>        super.statementExecuteUpdateBefore(statement, sql);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    protected void statementExecuteQueryBefore(StatementProxy statement, String sql) {
+</span><span class='line'>        setQueryTimeout(statement);
+</span><span class='line'>        super.statementExecuteQueryBefore(statement, sql);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 设置Statement超时时间,
+</span><span class='line'>     * statement.setQueryTimeout单位是秒,0表示没有限制.这个函数可能会抛出SQLException异常,场景:
+</span><span class='line'>     *      1.数据库访问错误
+</span><span class='line'>     *      2.在一个已经关闭的Statement上调用这个方法
+</span><span class='line'>     *      3.超时时间不满足seconds &gt;= 0的条件
 </span><span class='line'>     *
-</span><span class='line'>     * key可以是任意的类型，只要实现了普通的查找处理。
-</span><span class='line'>     * 具体的key表示形式，将会被resolveSpecifiedLookupKey和determineCurrentLookupKey处理
-</span><span class='line'>     *
+</span><span class='line'>     * @param statement
 </span><span class='line'>     */
-</span><span class='line'>    public void setTargetDataSources(Map&lt;Object, Object&gt; targetDataSources) {
-</span><span class='line'>        this.targetDataSources = targetDataSources;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 设置默认目标数据源。如果我们在map中找不到对应的key时，则会使用这里设置的默认数据源
-</span><span class='line'>     */
-</span><span class='line'>    public void setDefaultTargetDataSource(Object defaultTargetDataSource) {
-</span><span class='line'>        this.defaultTargetDataSource = defaultTargetDataSource;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 指定默认的DataSource，当通过指定的查找key不能找到对应的DataSource。
-</span><span class='line'>     * 如果为false，则直接返回失败，如果为true，则使用默认的数据源。默认为true
-</span><span class='line'>     */
-</span><span class='line'>    public void setLenientFallback(boolean lenientFallback) {
-</span><span class='line'>        this.lenientFallback = lenientFallback;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 设置DataSourceLookup的实现类，该实现类可以把字符串配置的数据源，解析成我们需要的DataSource类.默认使用JndiDataSourceLookup。
-</span><span class='line'>     *
-</span><span class='line'>     * JndiDataSourceLookup方法使用ref bean方式获取配置文件中配置的dataSource数据源，也就是我们一般使用xml中配置datasource的方式就是jndi。
-</span><span class='line'>     */
-</span><span class='line'>    public void setDataSourceLookup(DataSourceLookup dataSourceLookup) {
-</span><span class='line'>        this.dataSourceLookup = (dataSourceLookup != null ? dataSourceLookup : new JndiDataSourceLookup());
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>    * 初始化,将targetDataSources转换成resolvedDataSources
-</span><span class='line'>    */
-</span><span class='line'>    public void afterPropertiesSet() {
-</span><span class='line'>        if (this.targetDataSources == null) {
-</span><span class='line'>            throw new IllegalArgumentException("Property 'targetDataSources' is required");
-</span><span class='line'>        }
-</span><span class='line'>        this.resolvedDataSources = new HashMap&lt;Object, DataSource&gt;(this.targetDataSources.size());
-</span><span class='line'>        for (Map.Entry entry : this.targetDataSources.entrySet()) {
-</span><span class='line'>            Object lookupKey = resolveSpecifiedLookupKey(entry.getKey());
-</span><span class='line'>            DataSource dataSource = resolveSpecifiedDataSource(entry.getValue());
-</span><span class='line'>            this.resolvedDataSources.put(lookupKey, dataSource);
-</span><span class='line'>        }
-</span><span class='line'>        if (this.defaultTargetDataSource != null) {
-</span><span class='line'>            this.resolvedDefaultDataSource = resolveSpecifiedDataSource(this.defaultTargetDataSource);
+</span><span class='line'>    private void setQueryTimeout(StatementProxy statement) {
+</span><span class='line'>        try {
+</span><span class='line'>            statement.setQueryTimeout(timeoutThreshold);
+</span><span class='line'>        }catch (SQLException se) {
+</span><span class='line'>            //TODO: do something
 </span><span class='line'>        }
 </span><span class='line'>    }
 </span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 根据lookupKey获取map中存放的key值，默认两者是一样的
-</span><span class='line'>     */
-</span><span class='line'>    protected Object resolveSpecifiedLookupKey(Object lookupKey) {
-</span><span class='line'>        return lookupKey;
-</span><span class='line'>    }
-</span><span class='line'>    /**
-</span><span class='line'>     * 转换从获取map中存放的dataSource
-</span><span class='line'>     */
-</span><span class='line'>    protected DataSource resolveSpecifiedDataSource(Object dataSource) throws IllegalArgumentException {
-</span><span class='line'>        if (dataSource instanceof DataSource) {
-</span><span class='line'>            return (DataSource) dataSource;
-</span><span class='line'>        }
-</span><span class='line'>        else if (dataSource instanceof String) {
-</span><span class='line'>            return this.dataSourceLookup.getDataSource((String) dataSource);
-</span><span class='line'>        }
-</span><span class='line'>        else {
-</span><span class='line'>            throw new IllegalArgumentException(
-</span><span class='line'>                    "Illegal data source value - only [javax.sql.DataSource] and String supported: " + dataSource);
-</span><span class='line'>        }
+</span><span class='line'>    public int getTimeoutThreshold() {
+</span><span class='line'>        return timeoutThreshold;
 </span><span class='line'>    }
 </span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>    * 这里就是抽象类给我们实现的接口方法，根据我们的配置上下文，抽象类决定实现哪个连接
-</span><span class='line'>    */
-</span><span class='line'>    public Connection getConnection() throws SQLException {
-</span><span class='line'>        return determineTargetDataSource().getConnection();
+</span><span class='line'>    public void setTimeoutThreshold(int timeoutThreshold) {
+</span><span class='line'>        this.timeoutThreshold = timeoutThreshold;
 </span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public Connection getConnection(String username, String password) throws SQLException {
-</span><span class='line'>        return determineTargetDataSource().getConnection(username, password);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    protected DataSource determineTargetDataSource() {
-</span><span class='line'>        Assert.notNull(this.resolvedDataSources, "DataSource router not initialized");
-</span><span class='line'>        Object lookupKey = determineCurrentLookupKey();
-</span><span class='line'>        DataSource dataSource = this.resolvedDataSources.get(lookupKey);
-</span><span class='line'>        if (dataSource == null && (this.lenientFallback || lookupKey == null)) {
-</span><span class='line'>            dataSource = this.resolvedDefaultDataSource;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>2.SQL超时时间Filter使用</h2>
+
+<p>默认的DruidDataSource就支持设置设置Filter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public void setProxyFilters(List&lt;Filter&gt; filters) {
+</span><span class='line'>        if (filters != null) {
+</span><span class='line'>            this.filters.addAll(filters);
 </span><span class='line'>        }
-</span><span class='line'>        if (dataSource == null) {
-</span><span class='line'>            throw new IllegalStateException("Cannot determine target DataSource for lookup key [" + lookupKey + "]");
-</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们可以实现DataSourceFactory(参考默认实现DefaultDataSourceFactory),在创建DataSource的时候调用setProxyFilters加上我们自己写的Filter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class DruidDataSourceFactory implements DataSourceFactory {
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public DataSource create(String host, int port, String username, String password, String dbName, int corePoolSize,
+</span><span class='line'>                             int maxPoolSize, String jdbcUrlOption, boolean autoCommit) throws ResourceException {
+</span><span class='line'>        DruidDataSource dataSource = new DruidDataSource();//使用默认实现DruidDataSource
+</span><span class='line'>        //设置dataSource参数, username等
+</span><span class='line'>
+</span><span class='line'>        //设置dataSource的Filter
+</span><span class='line'>        List&lt;Filter&gt; filters = Lists.newArrayList();
+</span><span class='line'>        SqlTimeOutFilter timeOutFilter = new SqlTimeOutFilter();
+</span><span class='line'>        filters.add(timeOutFilter);
+</span><span class='line'>        dataSource.setProxyFilters(filters);
+</span><span class='line'>        
+</span><span class='line'>        //dataSource初始化等操作
+</span><span class='line'>        ...
+</span><span class='line'>
 </span><span class='line'>        return dataSource;
 </span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>    * 这里是我们使用这个抽象类需要实现的方法，主要就是告诉该抽象类，当前需要使用的数据源的key是什么，这样抽象类就可以知道使用哪个数据库连接
-</span><span class='line'>    */
-</span><span class='line'>    protected abstract Object determineCurrentLookupKey();
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<p>我们可以继承这个类实现自己的RoutingDataSource,只需要实现determineCurrentLookupKey()方法.下面是一个实现示例,其中DataSourceKeyHolder用来在ThreadLocal中保存key,而我们的RoutingDataSource就可以从ThreadLocal中获取key来决定使用那个具体的数据源:</p>
+<p>关于超时时间设置的一篇博文,很全面:</p>
+
+<p><a href="http://www.importnew.com/2466.html">http://www.importnew.com/2466.html</a></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/08/22/mybatiskong-wherelan-jie-qi/">MyBatis空where拦截器</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-08-22T12:37:48+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>22</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>12:37 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近项目中出现了至少两次因为Mybatis的动态where条件不满足导致实际sql语句的where条件为空,进而查询全表,当数据量比较大的时候,导致OOM的情况.</p>
+
+<p>如何禁止这种情况,个人觉得三种措施:</p>
+
+<ul>
+<li>1.在逻辑层面加充分的参数有效性检查;</li>
+<li>2.在where条件中如果索引条件都不满足,加上1=2这种必然失败的条件;</li>
+</ul>
+
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -1010,44 +724,29 @@ DDB（Distributed database）是网易杭研院立项最早，应用最为广泛
 <span class='line-number'>9</span>
 <span class='line-number'>10</span>
 <span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class RoutingDataSource extends AbstractRoutingDataSource {
-</span><span class='line'>    @Override
-</span><span class='line'>    protected Object determineCurrentLookupKey() {
-</span><span class='line'>        return DataSourceKeyHolder.getDataSource();
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public class DataSourceKeyHolder {
-</span><span class='line'>    private static final ThreadLocal&lt;String&gt; holder = new ThreadLocal&lt;String&gt;();
-</span><span class='line'>
-</span><span class='line'>    public static String getDataSource() {
-</span><span class='line'>        return holder.get();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void putDataSource(String value) {
-</span><span class='line'>        holder.set(value);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void clear(){
-</span><span class='line'>        holder.remove();
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;where&gt;
+</span><span class='line'>    &lt;choose&gt;
+</span><span class='line'>        &lt;when test="id != null"&gt;
+</span><span class='line'>            ...
+</span><span class='line'>        &lt;/when&gt;
+</span><span class='line'>        ...
+</span><span class='line'>        &lt;otherwise&gt;
+</span><span class='line'>        and 1=2
+</span><span class='line'>        &lt;/otherwise&gt;
+</span><span class='line'>    &lt;/choose&gt;
+</span><span class='line'>&lt;/where&gt;</span></code></pre></td></tr></table></div></figure>
 
 
-<h3>3.2 自己实现RoutingDataSource</h3>
+<ul>
+<li>3.Mybatis拦截器;</li>
+</ul>
 
-<p>Spring自带的AbstractRoutingDataSource功能强大,但是略先麻烦(最终使用的其实只有resolvedDataSources这个Map).我们完全可以自己实现一个简单的RoutingDataSource,比如我们要实现读写分离的动态数据库,一个简单实现如下:</p>
+
+<p>前两种措施都是依赖人,从这个层面讲,是不靠谱的,即一个策略不是强制的,就是不靠谱的.相对而言,第三种是不依赖程序员的自觉性,是最靠谱的.乘周六有时间,实现一个简单的Mybatis拦截器来拦截where条件为空的SQL语句.</p>
+
+<h1>1.实现</h1>
+
+<p>先上代码,这里拦截了SqlCommandType为select,update,delete这三种类型.出现情况目前只是打日志.</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -1115,491 +814,75 @@ DDB（Distributed database）是网易杭研院立项最早，应用最为广泛
 <span class='line-number'>64</span>
 <span class='line-number'>65</span>
 <span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-<span class='line-number'>108</span>
-<span class='line-number'>109</span>
-<span class='line-number'>110</span>
-<span class='line-number'>111</span>
-<span class='line-number'>112</span>
-<span class='line-number'>113</span>
-<span class='line-number'>114</span>
-<span class='line-number'>115</span>
-<span class='line-number'>116</span>
-<span class='line-number'>117</span>
-<span class='line-number'>118</span>
-<span class='line-number'>119</span>
-<span class='line-number'>120</span>
-<span class='line-number'>121</span>
-<span class='line-number'>122</span>
-<span class='line-number'>123</span>
-<span class='line-number'>124</span>
-<span class='line-number'>125</span>
-<span class='line-number'>126</span>
-<span class='line-number'>127</span>
-<span class='line-number'>128</span>
-<span class='line-number'>129</span>
-<span class='line-number'>130</span>
-<span class='line-number'>131</span>
-<span class='line-number'>132</span>
-<span class='line-number'>133</span>
-<span class='line-number'>134</span>
-<span class='line-number'>135</span>
-<span class='line-number'>136</span>
-<span class='line-number'>137</span>
-<span class='line-number'>138</span>
-<span class='line-number'>139</span>
-<span class='line-number'>140</span>
-<span class='line-number'>141</span>
-<span class='line-number'>142</span>
-<span class='line-number'>143</span>
-<span class='line-number'>144</span>
-<span class='line-number'>145</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class RoutingDataSource extends AbstractDataSource implements InitializingBean {
-</span><span class='line'>    /**
-</span><span class='line'>     * 写库, key是String
-</span><span class='line'>     */
-</span><span class='line'>    private Map&lt;String, DataSource&gt; writeDataSourceMap;
-</span><span class='line'>    /**
-</span><span class='line'>     * 读库, key是String
-</span><span class='line'>     */
-</span><span class='line'>    private Map&lt;String, DataSource&gt; readDataSourceMap;
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public Connection getConnection() throws SQLException {
-</span><span class='line'>        //从上下文中获取key
-</span><span class='line'>        ConnectionKey connectionKey = ConnectionKeyHolder.get();
-</span><span class='line'>        try {
-</span><span class='line'>            //默认情况,返回随机一个写库
-</span><span class='line'>            if (connectionKey == null) {
-</span><span class='line'>                return fetchConnection(writeDataSourceMap, null);
-</span><span class='line'>            }
-</span><span class='line'>
-</span><span class='line'>            //只读
-</span><span class='line'>            if (connectionKey.getType().equals(ConnectionKey.READ)) {
-</span><span class='line'>                return fetchConnection(readDataSourceMap, connectionKey.getKey());
-</span><span class='line'>            }
-</span><span class='line'>
-</span><span class='line'>            //可读可写
-</span><span class='line'>            if (connectionKey.getType().equals(ConnectionKey.READ_WRITE)) {
-</span><span class='line'>                return fetchConnection(writeDataSourceMap, connectionKey.getKey());
-</span><span class='line'>            }
-</span><span class='line'>        } catch (Exception e) {
-</span><span class='line'>            logger.error("getConnectionError", e);
-</span><span class='line'>            if (e instanceof SQLException) {
-</span><span class='line'>                throw (SQLException) e;
-</span><span class='line'>            } else {
-</span><span class='line'>                throw new SQLException(e);
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        // impossible code
-</span><span class='line'>        throw new IllegalArgumentException("invalid connection type: " + connectionKey.getType() + ", key: "
-</span><span class='line'>                + connectionKey.getKey());
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 根据key从对应的Map中获取数据库连接
-</span><span class='line'>     *
-</span><span class='line'>     * @param dbSourceMap
-</span><span class='line'>     * @param key
-</span><span class='line'>     * @return
-</span><span class='line'>     * @throws SQLException
-</span><span class='line'>     */
-</span><span class='line'>    private Connection fetchConnection(final Map&lt;String, DataSource&gt; dbSourceMap, String key) throws SQLException {
-</span><span class='line'>        if (key == null || key.length() == 0) { // null key, return a random read connection
-</span><span class='line'>            key = randomKey(dbSourceMap);
-</span><span class='line'>        }
-</span><span class='line'>        if (dbSourceMap.get(key) == null) {
-</span><span class='line'>            key = randomKey(dbSourceMap);
-</span><span class='line'>        }
-</span><span class='line'>        return dbSourceMap.get(key).getConnection();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 随机获取一个Key
-</span><span class='line'>     * @return
-</span><span class='line'>     */
-</span><span class='line'>    private String randomKey(final Map&lt;String, DataSource&gt; dbSourceMap) {
-</span><span class='line'>        String[] keys = dbSourceMap.keySet().toArray(new String[0]);
-</span><span class='line'>        int size = dbSourceMap.size();
-</span><span class='line'>        int rand = new Random().nextInt(size);
-</span><span class='line'>        return keys[rand];
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public Connection getConnection(String username, String password) throws SQLException {
-</span><span class='line'>        throw new UnsupportedOperationException();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public void afterPropertiesSet() throws Exception {
-</span><span class='line'>        Preconditions.checkArgument(MapUtils.isNotEmpty(writeDataSourceMap));
-</span><span class='line'>        Preconditions.checkArgument(MapUtils.isNotEmpty(readDataSourceMap));
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setWriteDataSource(Map&lt;String, DataSource&gt; writeDataSourceMap) {
-</span><span class='line'>        this.writeDataSourceMap = writeDataSourceMap;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setReadDataSourceMap(Map&lt;String, DataSource&gt; readDataSourceMap) {
-</span><span class='line'>        this.readDataSourceMap = readDataSourceMap;
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public class ConnectionKey {
-</span><span class='line'>    /**
-</span><span class='line'>     * 读库,只读
-</span><span class='line'>     */
-</span><span class='line'>    public static final String READ = "R";
-</span><span class='line'>    /**
-</span><span class='line'>     * 写库,可读可写
-</span><span class='line'>     */
-</span><span class='line'>    public static final String READ_WRITE = "RW";
-</span><span class='line'>
-</span><span class='line'>    private String type;
-</span><span class='line'>    private String key;
-</span><span class='line'>
-</span><span class='line'>    public ConnectionKey() {
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public ConnectionKey(String type, String key) {
-</span><span class='line'>        this.type = type;
-</span><span class='line'>        this.key = key;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public String getType() {
-</span><span class='line'>        return type;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public String getKey() {
-</span><span class='line'>        return key;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setType(String type) {
-</span><span class='line'>        this.type = type;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setKey(String key) {
-</span><span class='line'>        this.key = key;
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public class ConnectionKeyHolder {
-</span><span class='line'>    private static ThreadLocal&lt;ConnectionKey&gt; connType = new ThreadLocal&lt;ConnectionKey&gt;();
-</span><span class='line'>
-</span><span class='line'>    public static void set(ConnectionKey type) {
-</span><span class='line'>        connType.set(type);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static ConnectionKey get() {
-</span><span class='line'>        return connType.get();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void release() {
-</span><span class='line'>        connType.remove();
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>3.3 使用实现动态数据源</h3>
-
-<p>以我们自己实现的为例子,我们简单展示一下如何使用Spring加上AOP使用我们的动态数据源.</p>
-
-<p>首先定义使用读库和使用写库的注解:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
 </pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'>* 使用读库的注解,value()代表key
-</span><span class='line'>*/
-</span><span class='line'>@Target({ ElementType.TYPE, ElementType.METHOD })
-</span><span class='line'>@Retention(RetentionPolicy.RUNTIME)
-</span><span class='line'>@Documented
-</span><span class='line'>public @interface Read {
-</span><span class='line'>    String value() default "";
-</span><span class='line'>}
-</span><span class='line'>/**
-</span><span class='line'>* 使用写库的注解,value()代表key
-</span><span class='line'>*/
-</span><span class='line'>@Target({ ElementType.TYPE, ElementType.METHOD })
-</span><span class='line'>@Retention(RetentionPolicy.RUNTIME)
-</span><span class='line'>@Documented
-</span><span class='line'>public @interface Write {
-</span><span class='line'>    String value() default "";
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>然后定义Aspect,逻辑很简单,只是在执行我们的业务逻辑之前给线程上文写入ConnectionKey信息:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class RoutingAop {
+</span><span class='line'> * Mybatis拦截器, 拦截:
+</span><span class='line'> *      select语句where条件为空
+</span><span class='line'> *      update语句where条件为空
+</span><span class='line'> *      delete语句where条件为空
+</span><span class='line'> *
+</span><span class='line'> * 处理: 目前只是打warning日志,因为项目中存在数据量很少的表读全表的情况(比如加载数据进缓存)
+</span><span class='line'> *      TODO:后续考虑设置拦截器的白名单,不在白名单的触发where条件为空的直接抛出异常.
+</span><span class='line'> *
+</span><span class='line'> * @author: xiaobaoqiu  Date: 15-8-22 Time: 上午10:26
+</span><span class='line'> */
+</span><span class='line'>@Intercepts({ @Signature(
+</span><span class='line'>        type = StatementHandler.class,
+</span><span class='line'>        method = "prepare",
+</span><span class='line'>        args = { Connection.class }) })
+</span><span class='line'>public class EmptyWhereInterceptor implements Interceptor {
 </span><span class='line'>
-</span><span class='line'>    protected Logger log = LoggerFactory.getLogger(getClass());
+</span><span class='line'>    private static final Logger logger = LoggerFactory.getLogger(EmptyWhereInterceptor.class);
 </span><span class='line'>
 </span><span class='line'>    /**
-</span><span class='line'>     * 解析读库的注解
-</span><span class='line'>     *
-</span><span class='line'>     * @param pjp
-</span><span class='line'>     * @param read
-</span><span class='line'>     * @return
-</span><span class='line'>     * @throws Throwable
+</span><span class='line'>     * 拦截的 COMMAND 类型
 </span><span class='line'>     */
-</span><span class='line'>    public Object aroundRead(ProceedingJoinPoint pjp, Read read) throws Throwable {
-</span><span class='line'>        ConnectionKey origType = ConnectionKeyHolder.get();
-</span><span class='line'>        try {
-</span><span class='line'>            ConnectionKey newType = ConnectionKey.buildReadConnectionKey(read.value());
-</span><span class='line'>            ConnectionKeyHolder.set(newType);
-</span><span class='line'>            return pjp.proceed();
-</span><span class='line'>        } catch (Throwable throwable) {
-</span><span class='line'>            log.warn("error while processing read method", throwable);
-</span><span class='line'>            throw throwable;
-</span><span class='line'>        } finally {
-</span><span class='line'>            if (origType != null) {
-</span><span class='line'>                ConnectionKeyHolder.set(origType);
-</span><span class='line'>            } else {
-</span><span class='line'>                ConnectionKeyHolder.release();
+</span><span class='line'>    private static final Set&lt;String&gt; INTERCEPTOR_COMMAND = Sets.newHashSet("select", "update", "delete");
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public Object intercept(Invocation invocation) throws Throwable {
+</span><span class='line'>        StatementHandler handler = (StatementHandler) invocation.getTarget();
+</span><span class='line'>
+</span><span class='line'>        //获取实际的StatementHandler
+</span><span class='line'>        if (handler instanceof RoutingStatementHandler) {
+</span><span class='line'>            handler = (BaseStatementHandler) ReflectUtil.getFieldValue(handler, "delegate");
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        //获取SqlCommandType
+</span><span class='line'>        String commandType = getCommandType(handler);
+</span><span class='line'>
+</span><span class='line'>        if (INTERCEPTOR_COMMAND.contains(commandType)) {
+</span><span class='line'>            String originSql = handler.getBoundSql().getSql().toLowerCase();  //获取sql
+</span><span class='line'>            if (!originSql.contains("where")) {
+</span><span class='line'>                logger.warn("禁止使用不带where条件的SQL语句.原始SQL={}", originSql);
 </span><span class='line'>            }
 </span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        return invocation.proceed();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public Object plugin(Object target) {
+</span><span class='line'>        return Plugin.wrap(target, this);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public void setProperties(Properties properties) {
 </span><span class='line'>    }
 </span><span class='line'>
 </span><span class='line'>    /**
-</span><span class='line'>     * 解析写库的注解
+</span><span class='line'>     * 获取Command类型,小写化返回
 </span><span class='line'>     *
-</span><span class='line'>     * @param pjp
-</span><span class='line'>     * @param write
+</span><span class='line'>     * @param handler
 </span><span class='line'>     * @return
-</span><span class='line'>     * @throws Throwable
 </span><span class='line'>     */
-</span><span class='line'>    public Object aroundWrite(ProceedingJoinPoint pjp, Write write) throws Throwable {
-</span><span class='line'>        ConnectionKey origType = ConnectionKeyHolder.get();
-</span><span class='line'>        try {
-</span><span class='line'>            ConnectionKey newType = ConnectionKey.buildWriteConnectionKey(write.value());
-</span><span class='line'>            ConnectionKeyHolder.set(newType);
-</span><span class='line'>            return pjp.proceed();
-</span><span class='line'>        } catch (Throwable throwable) {
-</span><span class='line'>            log.warn("error while processing write method", throwable);
-</span><span class='line'>            throw throwable;
-</span><span class='line'>        } finally {
-</span><span class='line'>            if (origType != null) {
-</span><span class='line'>                ConnectionKeyHolder.set(origType);
-</span><span class='line'>            } else {
-</span><span class='line'>                ConnectionKeyHolder.release();
-</span><span class='line'>            }
-</span><span class='line'>        }
+</span><span class='line'>    private String getCommandType(StatementHandler handler) {
+</span><span class='line'>        MappedStatement mappedStatement = (MappedStatement) ReflectUtil.getFieldValue(handler, "mappedStatement");
+</span><span class='line'>        return mappedStatement.getSqlCommandType().toString().toLowerCase();
 </span><span class='line'>    }
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<p>在Spring配置文件中定义好各个读库和各个写库,定义我们的RoutingDataSource的bean,之后扫描注解就可以了:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;!-- DataSource 写库  --&gt;
-</span><span class='line'>&lt;bean id="writeDataSource" class="..."&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;!-- DataSource 读库  --&gt;
-</span><span class='line'>&lt;bean id="readDataSource" class="..."&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;bean id="routingDataSource" class="com.Xxx.RoutingDataSource"&gt;
-</span><span class='line'>    &lt;property name="writeDataSourceMap"&gt;
-</span><span class='line'>        &lt;map key-type="java.lang.String" value-type="javax.sql.DataSource"&gt;
-</span><span class='line'>            &lt;entry key="write1" value-ref="writeDataSource"/&gt;
-</span><span class='line'>        &lt;/map&gt;
-</span><span class='line'>    &lt;/property&gt;
-</span><span class='line'>    &lt;property name="readDataSourceMap"&gt;
-</span><span class='line'>        &lt;map key-type="java.lang.String" value-type="javax.sql.DataSource"&gt;
-</span><span class='line'>            &lt;entry key="read1" value-ref="readDataSource"/&gt;
-</span><span class='line'>        &lt;/map&gt;
-</span><span class='line'>    &lt;/property&gt;
-</span><span class='line'>&lt;/bean&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;bean id="routingAop" class="com.Xxx.RoutingAop"/&gt;
-</span><span class='line'>&lt;!-- 定义Read Write注解扫描  --&gt;
-</span><span class='line'>&lt;aop:config&gt;
-</span><span class='line'>    &lt;aop:aspect ref="routingAop"&gt;
-</span><span class='line'>        &lt;aop:around method="aroundRead" arg-names="read" pointcut="@annotation(read) &amp;&amp; execution(public * com.Xxx.controller.*.*(..))" /&gt;
-</span><span class='line'>    &lt;/aop:aspect&gt;
-</span><span class='line'>
-</span><span class='line'>    &lt;aop:aspect ref="routingAop"&gt;
-</span><span class='line'>        &lt;aop:around method="aroundWrite" arg-names="write" pointcut="@annotation(write) &amp;&amp; execution(public * com.Xxx.controller.*.*(..)) " /&gt;
-</span><span class='line'>    &lt;/aop:aspect&gt;
-</span><span class='line'>&lt;/aop:config&gt;
-</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/05/21/elasticsearchpei-zhi-jie-xi/">Elasticsearch配置解析</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-05-21T04:31:05+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>21</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>4:31 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>可以使用正则grep出各个配置项:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>grep '^#\w' elasticsearch.yml</span></code></pre></td></tr></table></div></figure>
-
-
-<p>解析Elasticsearch的配置文件elasticsearch.yml中各个关键参数的意义:</p>
+<p>包括一个简单反射工具的实现:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -1688,1347 +971,108 @@ DDB（Distributed database）是网易杭研院立项最早，应用最为广泛
 <span class='line-number'>85</span>
 <span class='line-number'>86</span>
 <span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-<span class='line-number'>108</span>
-<span class='line-number'>109</span>
-<span class='line-number'>110</span>
-<span class='line-number'>111</span>
-<span class='line-number'>112</span>
-<span class='line-number'>113</span>
-<span class='line-number'>114</span>
-<span class='line-number'>115</span>
-<span class='line-number'>116</span>
-<span class='line-number'>117</span>
-<span class='line-number'>118</span>
-<span class='line-number'>119</span>
-<span class='line-number'>120</span>
-<span class='line-number'>121</span>
-<span class='line-number'>122</span>
-<span class='line-number'>123</span>
-<span class='line-number'>124</span>
-<span class='line-number'>125</span>
-<span class='line-number'>126</span>
-<span class='line-number'>127</span>
-<span class='line-number'>128</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>################################### Cluster ###################################
-</span><span class='line'>elasticsearch的config文件夹里面有两个配置文件：elasticsearch.yml和logging.yml，第一个是es的基本配置文件，第二个是日志配置文件，es也是使用log4j来记录日志的，所以logging.yml里的设置按普通log4j配置文件来设置就行了。下面主要讲解下elasticsearch.yml这个文件中可配置的东西。
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 反射工具
+</span><span class='line'> *
+</span><span class='line'> * @author: xiaobaoqiu  Date: 15-8-22 Time: 上午11:52
+</span><span class='line'> */
+</span><span class='line'>public class ReflectUtil {
+</span><span class='line'>    public ReflectUtil() {
+</span><span class='line'>    }
 </span><span class='line'>
-</span><span class='line'>cluster.name: elasticsearch
-</span><span class='line'>配置es的集群名称，默认是elasticsearch，es会自动发现在同一网段下的es，如果在同一网段下有多个集群，就可以用这个属性来区分不同的集群。
+</span><span class='line'>    /**
+</span><span class='line'>     * 改变 Accessible,便于访问private等属性
+</span><span class='line'>     * @param field
+</span><span class='line'>     */
+</span><span class='line'>    private static void makeAccessible(Field field) {
+</span><span class='line'>        if(!Modifier.isPublic(field.getModifiers())) {
+</span><span class='line'>            field.setAccessible(true);
+</span><span class='line'>        }
+</span><span class='line'>    }
 </span><span class='line'>
-</span><span class='line'>node.name: "Franz Kafka"
-</span><span class='line'>节点名，默认随机指定一个name列表中名字，该列表在es的jar包中config文件夹里name.txt文件中，其中有很多作者添加的有趣名字。
+</span><span class='line'>    /**
+</span><span class='line'>     * 获取 object 的字段,字段名称为filedName,获取不到返回null
+</span><span class='line'>     * @param object
+</span><span class='line'>     * @param filedName
+</span><span class='line'>     * @return
+</span><span class='line'>     */
+</span><span class='line'>    private static Field getDeclaredField(Object object, String filedName) {
+</span><span class='line'>        Class superClass = object.getClass();
 </span><span class='line'>
-</span><span class='line'>node.master: true
-</span><span class='line'>指定该节点是否有资格被选举成为node，默认是true，es是默认集群中的第一台机器为master，如果这台机挂了就会重新选举master。
+</span><span class='line'>        while(superClass != Object.class) {
+</span><span class='line'>            try {
+</span><span class='line'>                return superClass.getDeclaredField(filedName);
+</span><span class='line'>            } catch (NoSuchFieldException var4) {
+</span><span class='line'>                superClass = superClass.getSuperclass();
+</span><span class='line'>            }
+</span><span class='line'>        }
 </span><span class='line'>
-</span><span class='line'>node.data: true
-</span><span class='line'>指定该节点是否存储索引数据，默认为true。
+</span><span class='line'>        return null;
+</span><span class='line'>    }
 </span><span class='line'>
-</span><span class='line'>index.number_of_shards: 5
-</span><span class='line'>设置默认索引分片个数，默认为5片。
-</span><span class='line'>
-</span><span class='line'>index.number_of_replicas: 1
-</span><span class='line'>设置默认索引副本个数，默认为1个副本。
-</span><span class='line'>
-</span><span class='line'>path.conf: /path/to/conf
-</span><span class='line'>设置配置文件的存储路径，默认是es根目录下的config文件夹。
-</span><span class='line'>
-</span><span class='line'>path.data: /path/to/data
-</span><span class='line'>设置索引数据的存储路径，默认是es根目录下的data文件夹，可以设置多个存储路径，用逗号隔开，例：
-</span><span class='line'>path.data: /path/to/data1,/path/to/data2
-</span><span class='line'>
-</span><span class='line'>path.work: /path/to/work
-</span><span class='line'>设置临时文件的存储路径，默认是es根目录下的work文件夹。
-</span><span class='line'>
-</span><span class='line'>path.logs: /path/to/logs
-</span><span class='line'>设置日志文件的存储路径，默认是es根目录下的logs文件夹
-</span><span class='line'>
-</span><span class='line'>path.plugins: /path/to/plugins
-</span><span class='line'>设置插件的存放路径，默认是es根目录下的plugins文件夹
-</span><span class='line'>
-</span><span class='line'>bootstrap.mlockall: true
-</span><span class='line'>设置为true来锁住内存。因为当jvm开始swapping时es的效率会降低，所以要保证它不swap，可以把ES_MIN_MEM和ES_MAX_MEM两个环境变量设置成同一个值，并且保证机器有足够的内存分配给es。同时也要允许elasticsearch的进程可以锁住内存，linux下可以通过`ulimit -l unlimited`命令。设置ES_HEAP_SIZE表示ES_MIN_MEM和ES_MAX_MEM相同且为ES_HEAP_SIZE的值.
-</span><span class='line'>
-</span><span class='line'>network.bind_host: 192.168.0.1
-</span><span class='line'>设置绑定的ip地址，可以是ipv4或ipv6的，默认为0.0.0.0。
-</span><span class='line'>
-</span><span class='line'>network.publish_host: 192.168.0.1
-</span><span class='line'>设置其它节点和该节点交互的ip地址，如果不设置它会自动判断，值必须是个真实的ip地址。
-</span><span class='line'>
-</span><span class='line'>network.host: 192.168.0.1
-</span><span class='line'>这个参数是用来同时设置bind_host和publish_host上面两个参数。
-</span><span class='line'>
-</span><span class='line'>transport.tcp.port: 9300
-</span><span class='line'>设置节点间交互的tcp端口，默认是9300。
-</span><span class='line'>
-</span><span class='line'>transport.tcp.compress: true
-</span><span class='line'>设置是否压缩tcp传输时的数据，默认为false，不压缩。
-</span><span class='line'>
-</span><span class='line'>http.port: 9200
-</span><span class='line'>设置对外服务的http端口，默认为9200。
-</span><span class='line'>
-</span><span class='line'>http.max_content_length: 100mb
-</span><span class='line'>设置内容的最大容量，默认100mb
-</span><span class='line'>
-</span><span class='line'>http.enabled: false
-</span><span class='line'>是否使用http协议对外提供服务，默认为true，开启。
-</span><span class='line'>
-</span><span class='line'>gateway.type: local
-</span><span class='line'>gateway的类型，默认为local即为本地文件系统，可以设置为本地文件系统，分布式文件系统，hadoop的HDFS，和amazon的s3服务器，其它文件系统的设置方法下次再详细说。
-</span><span class='line'>
-</span><span class='line'>gateway.recover_after_nodes: 1
-</span><span class='line'>设置集群中N个节点启动时进行数据恢复，默认为1。
-</span><span class='line'>
-</span><span class='line'>gateway.recover_after_time: 5m
-</span><span class='line'>设置初始化数据恢复进程的超时时间，默认是5分钟。
-</span><span class='line'>
-</span><span class='line'>gateway.expected_nodes: 2
-</span><span class='line'>设置这个集群中节点的数量，默认为2.一旦一旦这N个节点启动(并且数字和recover_after_nodes相同),就会立即开始数据恢复而不用等待gateway.recover_after_time时间之后再开始.
-</span><span class='line'>
-</span><span class='line'>cluster.routing.allocation.node_initial_primaries_recoveries: 4
-</span><span class='line'>初始化数据恢复时，并发恢复线程的个数，默认为4。
-</span><span class='line'>
-</span><span class='line'>cluster.routing.allocation.node_concurrent_recoveries: 2
-</span><span class='line'>添加删除节点或负载均衡时并发恢复线程的个数，默认为4。
-</span><span class='line'>
-</span><span class='line'>indices.recovery.max_size_per_sec: 0
-</span><span class='line'>设置数据恢复时限制的带宽，如入100mb，默认为0，即无限制。
-</span><span class='line'>
-</span><span class='line'>indices.recovery.concurrent_streams: 5
-</span><span class='line'>设置这个参数来限制从其它分片恢复数据时最大同时打开并发流的个数，默认为5。
-</span><span class='line'>
-</span><span class='line'>discovery.zen.minimum_master_nodes: 1
-</span><span class='line'>设置这个参数来保证集群中的节点可以知道其它N个有master资格的节点。默认为1，对于大的集群来说，可以设置大一点的值(2-4).
-</span><span class='line'>
-</span><span class='line'>discovery.zen.ping.timeout: 3s
-</span><span class='line'>设置集群中自动发现其它节点时ping连接超时时间，默认为3秒，对于比较差的网络环境可以高点的值来防止自动发现时出错。
-</span><span class='line'>
-</span><span class='line'>discovery.zen.ping.multicast.enabled: false
-</span><span class='line'>设置是否打开多播发现节点，默认是true。使用单播发现节点策略(Unicast discovery)允许显示的控制使用哪个节点去发现集群.
-</span><span class='line'>
-</span><span class='line'>discovery.zen.ping.unicast.hosts: ["host1", "host2:port", "host3[portX-portY]"]
-</span><span class='line'>设置集群中master节点的初始列表，可以通过这些节点来自动发现新加入集群的节点。
-</span><span class='line'>
-</span><span class='line'>下面是一些查询时的慢日志参数设置,默认日志级别为TRACE.
-</span><span class='line'>超过10秒的查询打印warn日志,超过5秒的查询打印info日志,超过2秒的查询打印debug日志,超过0.5秒的查询打印trace日志
-</span><span class='line'>index.search.slowlog.level: TRACE
-</span><span class='line'>index.search.slowlog.threshold.query.warn: 10s
-</span><span class='line'>index.search.slowlog.threshold.query.info: 5s
-</span><span class='line'>index.search.slowlog.threshold.query.debug: 2s
-</span><span class='line'>index.search.slowlog.threshold.query.trace: 500ms
-</span><span class='line'>
-</span><span class='line'>index.search.slowlog.threshold.fetch.warn: 1s
-</span><span class='line'>index.search.slowlog.threshold.fetch.info: 800ms
-</span><span class='line'>index.search.slowlog.threshold.fetch.debug:500ms
-</span><span class='line'>index.search.slowlog.threshold.fetch.trace: 200ms
-</span><span class='line'>
-</span><span class='line'>超过10秒的查检索引打印warn日志,超过5秒的查检索引打印info日志,超过2秒的查检索引打印debug日志,超过0.5秒的查检索引打印trace日志
-</span><span class='line'>index.indexing.slowlog.threshold.index.warn: 10s
-</span><span class='line'>index.indexing.slowlog.threshold.index.info: 5s
-</span><span class='line'>index.indexing.slowlog.threshold.index.debug: 2s
-</span><span class='line'>index.indexing.slowlog.threshold.index.trace: 500ms
-</span><span class='line'>
-</span><span class='line'>下面是GC日志相关的配置,young GC超过1000ms打印warn日志,超过700ms打印info日志,超过400ms打印的debug日志
-</span><span class='line'>monitor.jvm.gc.young.warn: 1000ms
-</span><span class='line'>monitor.jvm.gc.young.info: 700ms
-</span><span class='line'>monitor.jvm.gc.young.debug: 400ms
-</span><span class='line'>
-</span><span class='line'>full GC超过10s打印warn日志,超过5s打印info日志,超过2s打印的debug日志
-</span><span class='line'>monitor.jvm.gc.old.warn: 10s
-</span><span class='line'>monitor.jvm.gc.old.info: 5s
-</span><span class='line'>monitor.jvm.gc.old.debug: 2s</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/05/20/elasticsearch/">Elasticsearch</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-05-20T22:14:33+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>20</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>10:14 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h1>1.简介</h1>
-
-<p>Elasticsearch 是一个建立在全文搜索引擎 Apache Lucene&trade; 基础上的分布式的，高可用的，基于json格式的数据构建索引，准实时查询的搜索引擎。Lucene 是当今最先进最高效的全功能开源搜索引擎框架,但是Lucene使用非常复杂。</p>
-
-<p>Elasticsearch使用 Lucene 作为内部引擎，但是在你使用它做全文搜索时，只需要使用统一开发好的API即可，而并不需要了解其背后复杂的 Lucene 的运行原理。</p>
-
-<p>Elasticsearch是一种准实时搜索，其实是可以做到实时的，因为lucene是可以做到实时的，但是这样做，要么是牺牲索引的效率（每次都索引之后刷新），要么就是牺牲查询的效率（每次查询之前都进行刷新），所以
-采取一种折中的方案，每隔n秒自动刷新，这样你创建索引之后，最多在ns之内肯定能查到，这就是所谓的准实时(near real-time)查询，缺省是刷新间隔时间是1秒，可以通过index.refresh_interval参数修改间隔.</p>
-
-<p>刷新是为了让文档可以搜索到，但是不保证这些数据被写入disk进入一个永久的存储状态，数据会被先被写入一个事务日志，然后在适当的时候持久化到磁盘中.</p>
-
-<p>官网:<a href="https://www.elastic.co/products/elasticsearch">https://www.elastic.co/products/elasticsearch</a></p>
-
-<p>文档:<a href="https://www.elastic.co/guide/index.html">https://www.elastic.co/guide/index.html</a></p>
-
-<p>github地址:<a href="https://github.com/elastic/elasticsearch">https://github.com/elastic/elasticsearch</a></p>
-
-<p>博客地址:<a href="https://www.elastic.co/blog">https://www.elastic.co/blog</a></p>
-
-<p>其优点很吸引人:</p>
-
-<pre><code>1.分布式,可扩展,高科用(Distributed, scalable, and highly available);
-2.提供实时搜索和分析(Real-time search and analytics capabilities);
-3.复杂的RESTful API接口(Sophisticated RESTful API);
-</code></pre>
-
-<p>其特征如下:</p>
-
-<pre><code>1.Real-Time Data
-2.Real-Time Analytics
-3.Distributed
-最开始规模可能很小,elasticsearch很方便的支持横向扩展,通过简单的在集群中增加节点就可以
-4.High Availability
-Elasticsearch集群是弹性的,它可以自动的感知新增的或者失效的节点,自动做数据的分发和均衡,保证数据客房问并且是安全的.
-5.Multitenancy
-集群可能包含多个索引(index),它们可以独立的提供查询服务,也可以组合在一起对外提供查询服务.
-6.Full-Text Search
-支持多种开发语言
-7.Document-Oriented
-将真实世界的复杂对象结构化乘JSON文档.所有字段默认都建立索引,所有的索引都可以单独提供查询.并且瞬间(breathtaking speed)返回复杂结果.
-8.Schema-Free
-对一个JSON文档建立索引,就会自动识别数据的结构和类型,创建所有并对外提供搜索服务.同时也可以自定义数据如何建立索引.
-9.Developer-Friendly, RESTful API
-Elasticsearch是API驱动的.基本所有的操作都可以通过一个简单的使用JSON格式数据的HTTP上的RESTful API.提供了很多种语言的Client.
-10.Per-Operation Persistence
-Elasticsearch将数据安全放在第一位.任何文档的变更都会记录在集群中多个节点上的事物日志,以此来将数据丢失几率降低到最小.
-11.Apache 2 Open Source License
-12.Build on top of Apache Lucene
-Elasticsearch以Lucene为基础提供其优秀的分布式搜索和分析能力.
-13.Conflict Management
-</code></pre>
-
-<h1>2.安装</h1>
-
-<h3>2.1 elasticsearch安装</h3>
-
-<p>安装很简单:</p>
-
-<pre><code>1.下载并解压
-下载地址:https://www.elastic.co/downloads/elasticsearch
-这里下载是1.5.2版本,解压之后可以创建软链es:
-
-```
-xiaobaoqiu@xiaobaoqiu:~/elasticsearch$ ln -s elasticsearch-1.5.2 es
-```
-
-目录下主要三个文件夹:
-
-```
-xiaobaoqiu@xiaobaoqiu:~/elasticsearch/es$ ll
-总用量 48
-drwxr-xr-x 5 xiaobaoqiu xiaobaoqiu  4096  4月 27 09:22 ./
-drwxr-xr-x 3 xiaobaoqiu xiaobaoqiu  4096  5月 20 14:40 ../
-drwxr-xr-x 2 xiaobaoqiu xiaobaoqiu  4096  4月 27 09:22 bin/
-drwxr-xr-x 2 xiaobaoqiu xiaobaoqiu  4096  5月 20 14:42 config/
-drwxr-xr-x 3 xiaobaoqiu xiaobaoqiu  4096  4月 27 09:22 lib/
--rw-rw-r-- 1 xiaobaoqiu xiaobaoqiu 11358  4月 27 07:05 LICENSE.txt
--rw-rw-r-- 1 xiaobaoqiu xiaobaoqiu   150  4月 27 07:05 NOTICE.txt
--rw-rw-r-- 1 xiaobaoqiu xiaobaoqiu  8499  4月 27 09:03 README.textile
-```
-其中bin包含一些启动脚本(包括windows下的bat脚本和linux下的shell脚本),config主要是配置文件,lib包括es依赖的jar,在里面就可以看到熟悉的Lucene,查询,高亮等依赖的jar包.
-
-启动elasticsearch之后会产生log目录,用于记录elasticsearch系统的一些中心日志信息:
-
-```
--rw-r--r-- 1    0  5月 20 15:05 elasticsearch_index_indexing_slowlog.log
--rw-r--r-- 1    0  5月 20 15:05 elasticsearch_index_search_slowlog.log
--rw-r--r-- 1 1254  5月 20 15:06 elasticsearch.log
-```
-其中elasticsearch.log是系统日志,记录什么类型的日志,日志的命名及日志文件的滚动(Rolling)策略等由config目录下的logging.yml配置文件决定.
-
-启动elasticsearch之后会产生data目录,用于
-elasticSearch的数据存放位置
-
-2.启动
-直接启动bin目录下的elasticsearch的shell:
-
-```
-xiaobaoqiu@xiaobaoqiu:~/elasticsearch/es/bin$ ./elasticsearch -d
-```
-
-3.验证
-直接本机浏览器访问:http://localhost:9200/
-
-```
-{
-status: 200,
-name: "Agon",
-cluster_name: "elasticsearch",
-version: {
-    number: "1.5.2",
-    build_hash: "62ff9868b4c8a0c45860bebb259e21980778ab1c",
-    build_timestamp: "2015-04-27T09:21:06Z",
-    build_snapshot: false,
-    lucene_version: "4.10.4"
-},
-tagline: "You Know, for Search"
-}
-```
-这说明Elasticsearch集群已经上线运行了，这时我们就可以进行各种实验了.
-</code></pre>
-
-<h3>2.2 集群管理工具插件</h3>
-
-<p>elasticsearch-head是一个elasticsearch的集群管理工具，它是完全由html5编写的独立网页程序，其他它可以更好的获得各个切片和节点的信息.</p>
-
-<p>该工具的git地址是： <a href="https://github.com/Aconex/elasticsearch-head">https://github.com/Aconex/elasticsearch-head</a></p>
-
-<p>安装该插件:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/elasticsearch$ ./es/bin/plugin -install mobz/elasticsearch-head
-</span><span class='line'>-&gt; Installing mobz/elasticsearch-head...
-</span><span class='line'>...//省略若干</span></code></pre></td></tr></table></div></figure>
-
-
-<p>然后就可以访问(可以使用具体节点的IP):
-<a href="http://localhost:9200/_plugin/head/">http://localhost:9200/_plugin/head/</a></p>
-
-<p>图形化界面如下,包括集群的健康状况等信息:</p>
-
-<p><img src="/images/Elasticsearch/elasticsearch_plugin_head.png"></p>
-
-<h3>2.3 集群监控工具插件</h3>
-
-<p>bigdesk是elasticsearch的一个集群监控工具，可以通过它来查看es集群的各种状态，如：cpu、内存使用情况，索引数据、搜索情况，http连接数等。</p>
-
-<p>项目git地址： <a href="https://github.com/lukas-vlcek/bigdesk">https://github.com/lukas-vlcek/bigdesk</a></p>
-
-<p>安装该插件:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/elasticsearch$ ./es/bin/plugin -install lukas-vlcek/bigdesk
-</span><span class='line'>-&gt; Installing lukas-vlcek/bigdesk...
-</span><span class='line'>...//省略若干</span></code></pre></td></tr></table></div></figure>
-
-
-<p>然后就可以访问(可以使用具体节点的IP):
-<a href="http://localhost:9200/_plugin/bigdesk/">http://localhost:9200/_plugin/bigdesk/</a></p>
-
-<p>图形化界面如下,包括JVM,Thread Pools,OS,Process,HTTP &amp; Transport,Indices和File system等监控图:</p>
-
-<p><img src="/images/Elasticsearch/elasticsearch_plugin_bigdesk.png"></p>
-
-<h3>2.4 安装Marvel</h3>
-
-<p>Marvel是Elasticsearch的管理和监控工具，是一个商业版本的插件,在开发环境下免费使用。它包含了一个叫做Sense的交互式控制台，使用户方便的通过浏览器直接与Elasticsearch进行交互。</p>
-
-<p>运行以下命令来下载和安装Marvel:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/elasticsearch$ ./es/bin/plugin -i elasticsearch/marvel/latest
-</span><span class='line'>-&gt; Installing elasticsearch/marvel/latest...
-</span><span class='line'>...//省略若干</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Marvel包括一系列酷炫的监控,还有一个Sense的交互式控制台:</p>
-
-<p><img src="/images/Elasticsearch/elasticsearch_plugin_marvel.png"></p>
-
-<p><img src="/images/Elasticsearch/elasticsearch_plugin_marvel_sense.png"></p>
-
-<p>你可能想要禁用监控，你可以通过以下命令关闭Marvel：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>echo 'marvel.agent.enabled: false' &gt;&gt; ./config/elasticsearch.yml</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.基本概念</h1>
-
-<h3>3.1 集群和节点</h3>
-
-<p>节点是Elasticsearch运行的实例。集群是一组有着同样cluster.name的节点，它们协同工作，互相分享数据，提供了故障转移和扩展的功能。当然一个节点也可以是一个集群。ES集群有自动发现的机制，只要几个节点用的是一个clustername，并且在一个局域网内，那么这些节点就可以自动的发现对方，并组成一个集群.</p>
-
-<p>我们上面的运行就是一个单节点的集群.节点的cluster.name在配置文件elasticsearch.yml中配置,默认就叫elasticsearch:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>cluster.name: elasticsearch</span></code></pre></td></tr></table></div></figure>
-
-
-<p>ES的集群是一个去中心化的集群，每一个节点都可以被选举为主节点，如果主节点挂了，集群就会选举出新的主节点。</p>
-
-<p>主节点的作用主要是管理集群，例如感知集群节点的增加和减少，平衡数据分配等.</p>
-
-<p>ES集群对外是透明的，各个节点之间协同工作，分享数据，我们不管访问的是哪一个节点，这个节点都知道数据存在于哪个节点上，然后转发请求到数据所在的节点上，并且负责收集各节点返回的数据，最后一起返回给客户端.</p>
-
-<h3>3.2 分片(shard)</h3>
-
-<p>一个索引会被分割为多个片段存储，这样可以充分使用节点的吞吐率</p>
-
-<h3>3.2 索引(index)</h3>
-
-<p>相当于数据库</p>
-
-<h3>3.3 类型(type)</h3>
-
-<p>相当于数据库中的表</p>
-
-<h3>3.4 文档(doc)</h3>
-
-<p>相当于数据库中的一条记录，json串</p>
-
-<h3>3.5 字段(Field)</h3>
-
-<p>相当路数据库中的列。</p>
-
-<p>参考:
-<a href="http://es.xiaoleilu.com/">http://es.xiaoleilu.com/</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/05/20/tpcc-mysqljian-jie/">TPCC-MySQL简介</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-05-20T06:47:02+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>20</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:47 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>TPC(Tracsaction Processing Performance Council) 事务处理性能协会是一个评价大型数据库系统软硬件性能的非盈利的组织,TPC-C是TPC协会制定的，用来测试典型的复杂OLTP系统的性能；</p>
-
-<p>Tpcc-mysql是percona基于tpcc衍生出来的产品，专用于mysql基准测试，其源码放在bazaar上，因此需要先安装bazaar客户端.</p>
-
-<h1>1.OLTP and OLAP</h1>
-
-<p>一般来说，可将数据库的应用类型分为OLTP(OnLine Transaction Processing，联机事务处理)和OLAP(OnLine Analysis Processing，联机分析处理)两种。OLTP是传统关系型数据库的主要应用，其主要面向基本的、日常的事务处理，例如银行交易。OLAP是数据仓库系统的主要应用，支持复杂的分析操作，侧重决策支持，并且提供直观易懂的查询结果.</p>
-
-<p>OLTP也被称为面向交易的处理系统，其基本特征是可以立即将顾客的原始数据传送到计算中心进行处理，并在很短的时间内给出处理结果，这个过程的最大优点是可以即时地处理输入的数据、及时地回答，因此OLTP又被称为实时系统(Real Time System)。衡量OLTP系统的一个重要性能指标是系统性能，具体体现为实时响应时间(Response Time,简称RT)，即从用户在终端输入数据到计算机对这个请求做出回复所需的时间。OLTP 数据库旨在使事务应用程序仅完成对所需数据的写入，以便尽快处理单个事务。</p>
-
-<p>OLAP的概念最早是由关系数据库之父E.F.Codd博士于1993年提出的，是一种用于组织大型商务数据库和支持商务智能的技术。OLAP数据库分为一个或多个多维数据集，每个多维数据集都由多维数据集管理员组织和设计，以适应用户检索和分析数据的方式，从而更易于创建和使用所需的数据透视表和数据透视图。</p>
-
-<h1>2.Tpcc-mysql</h1>
-
-<p>Tpcc-mysql简单说就是mysql的一个基准测试工具.一般用于比较Mysql在不同配置下的性能差异,从而选择一个相对较优的配置.</p>
-
-<p>参考:
-<a href="http://www.zhaokunyao.com/archives/5793">http://www.zhaokunyao.com/archives/5793</a></p>
-
-<h1>3.NoSQL测试</h1>
-
-<p>顺便记录一下一个NOSQL的测试case:</p>
-
-<p><a href="https://www.aerospike.com/wp-content/uploads/2013/02/Ultra-High-Performance-NoSQL-Benchmarking_zh-CN.pdf">https://www.aerospike.com/wp-content/uploads/2013/02/Ultra-High-Performance-NoSQL-Benchmarking_zh-CN.pdf</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/05/20/crate-jdbccha-xun-si-xun-huan-bug/">Crate Jdbc查询死循环bug</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-05-20T05:41:17+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>20</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:41 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>历经一个月的项目,使用Crate提升搜索速度终于要上线.先交代一下背景,我们使用的crate相关的依赖的版本:</p>
-
-<pre><code>1.crate-client  0.47.8
-2.crate-jdbc    1.5.1
-</code></pre>
-
-<p>发布之后,验证阶段一切正常,等把流量入口打开,一段时间之后,猛然发现crate的一个查询服务所在的机器load飙到20往上,机器是4核CPU,4G内存的虚拟机.</p>
-
-<p>top -H发现有大量的tomcat线程(10+),每个线程占用的CPU都达到20%,并且这种线程有增多的趋势.</p>
-
-<p>vmstat命令发现r数字特别高,即正在等待CPU的线程非常多.</p>
-
-<p>jstack的结果发现runnable的线程多达300多.</p>
-
-<p>看现象,感觉问题是线程池分配没有回收,但是定位不到问题在哪.</p>
-
-<p>最终定位的问题是在特定场景下存在死循环,并且直接才crate服务器执行相同的查询逻辑正常返回,因此基本定位在crate-jdbc中.</p>
-
-<h1>1.死循环场景</h1>
-
-<pre><code>1.crate中数据为空,这是很从crate中查询数据;
-2.crate中存在满足查询条件数据,我们分页查询,假设总数据量为10页,我们因为代码问题,直接查询第11页的内容(实际上肯定不存在);
-</code></pre>
-
-<h1>2.原因</h1>
-
-<p>原因是这个版本crate-jdbc和mybatis一起存在死循环,如下,我们对crate的查询首先经过mybatis,从</p>
-
-<pre><code>1.MapperProxy.invoke
-2.MapperMethod.execute
-3.SqlSessionTemplate.selectList, SqlSessionTemplate.invoke
-4.DefaultSqlSession.selectList
-5.BaseExecutor.query, BaseExecutor.queryFromDatabase
-6.ReuseExecutor.doQuery
-7.RoutingStatementHandler.query
-8.PreparedStatementHandler.query
-9.CratePreparedStatement.execute()
-10.DefaultResultSetHandler.handleResultSets, DefaultResultSetHandler.getFirstResultSet
-</code></pre>
-
-<p>问题的代码就在DefaultResultSetHandler.getFirstResultSet中:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>private ResultSetWrapper getFirstResultSet(Statement stmt) throws SQLException {
-</span><span class='line'>    ResultSet rs = stmt.getResultSet();
-</span><span class='line'>    while (rs == null) {
-</span><span class='line'>        // move forward to get the first resultset in case the driver
-</span><span class='line'>        // doesn't return the resultset as the first result (HSQLDB 2.1)
-</span><span class='line'>        if (stmt.getMoreResults()) {
-</span><span class='line'>            rs = stmt.getResultSet();
+</span><span class='line'>    /**
+</span><span class='line'>     * 获取object字段fieldName的值,如果字段不存在直接抛异常
+</span><span class='line'>     *
+</span><span class='line'>     * @param object
+</span><span class='line'>     * @param fieldName
+</span><span class='line'>     * @return
+</span><span class='line'>     */
+</span><span class='line'>    public static Object getFieldValue(Object object, String fieldName) {
+</span><span class='line'>        Field field = getDeclaredField(object, fieldName);
+</span><span class='line'>        if(field == null) {
+</span><span class='line'>            throw new IllegalArgumentException("Could not find field [" + fieldName + "] on target [" + object + "]");
 </span><span class='line'>        } else {
-</span><span class='line'>            if (stmt.getUpdateCount() == -1) {
-</span><span class='line'>                // no more results. Must be no resultset
-</span><span class='line'>                break;
+</span><span class='line'>            makeAccessible(field);
+</span><span class='line'>            Object result = null;
+</span><span class='line'>
+</span><span class='line'>            try {
+</span><span class='line'>                result = field.get(object);
+</span><span class='line'>            } catch (IllegalAccessException var5) {
+</span><span class='line'>                var5.printStackTrace();
 </span><span class='line'>            }
+</span><span class='line'>
+</span><span class='line'>            return result;
 </span><span class='line'>        }
 </span><span class='line'>    }
-</span><span class='line'>    return rs != null ? new ResultSetWrapper(rs, configuration) : null;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中stmt为CratePreparedStatement,其getMoreResults()实现:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
-</span><span class='line'>public boolean getMoreResults() throws SQLException {
-</span><span class='line'>    return false;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>因此逻辑进入到else中,stmt.getUpdateCount()的实现:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
-</span><span class='line'>public int getUpdateCount() throws SQLException {
-</span><span class='line'>    checkClosed();  //check connection是否被关闭
-</span><span class='line'>    if (resultSet == null && sqlResponse != null) {
-</span><span class='line'>        return (int) sqlResponse.rowCount();
-</span><span class='line'>    }
-</span><span class='line'>    return -1;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中CratePreparedStatement的resultSet为null,并且sqlResponse不为空,sqlResponse的rowCount为0,因此getUpdateCount()返回值为0.因此getFirstResultSet中继续在while循环中,无法跳出.</p>
-
-<p><img src="/images/crate/crate_jdbc_bug_code.png"></p>
-
-<h1>3.绕过</h1>
-
-<p>归结起来产生问题的很简单,就是查询的结果集为空的时候,就会产生死循环,针对两种死循环场景,我们都可以绕过:</p>
-
-<pre><code>1.查询之前,先执行count查询,当count为0,即crate中没有满足我们查询条件的数据,则直接返回空数据集;
-2.分页查询的时候,先执行count查询,当分页的offset大于等于count,则值额节返回空数据集;
-</code></pre>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/05/19/mysql-thread-pool-size/">Mysql Thread_pool_size</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-05-19T06:23:18+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>19</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:23 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近项目中的beta环境,多个应用(10+个)连接数据库,使用的是连接池管理数据库连接.</p>
-
-<p>最近应用中经常抛出数据库连接异常(我们使用的连接池是druid),简单的就是说无法获取Mysql的连接,创建连接失败(create connection error):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[2015-05-14 15:50:51 ERROR com.alibaba.druid.pool.DruidDataSource:1363] create connection error 
-</span><span class='line'>com.mysql.jdbc.exceptions.jdbc4.CommunicationsException: Communications link failure
-</span><span class='line'>
-</span><span class='line'>The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
-</span><span class='line'>    at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method) ~[na:1.7.0_45]
-</span><span class='line'>    at sun.reflect.NativeConstructorAccessorImpl.newInstance(NativeConstructorAccessorImpl.java:57) ~[na:1.7.0_45]
-</span><span class='line'>    at sun.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45) ~[na:1.7.0_45]
-</span><span class='line'>    at java.lang.reflect.Constructor.newInstance(Constructor.java:526) ~[na:1.7.0_45]
-</span><span class='line'>    at com.mysql.jdbc.Util.handleNewInstance(Util.java:411) ~[mysql-connector-java-5.1.21.jar:na]
-</span><span class='line'>    at com.mysql.jdbc.SQLError.createCommunicationsException(SQLError.java:1117) ~[mysql-connector-java-5.1.21.jar:na]
-</span><span class='line'>    at com.mysql.jdbc.MysqlIO.&lt;init&gt;(MysqlIO.java:350) ~[mysql-connector-java-5.1.21.jar:na]
-</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.coreConnect(ConnectionImpl.java:2393) ~[mysql-connector-java-5.1.21.jar:na]
-</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.connectOneTryOnly(ConnectionImpl.java:2430) ~[mysql-connector-java-5.1.21.jar:na]
-</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.createNewIO(ConnectionImpl.java:2215) ~[mysql-connector-java-5.1.21.jar:na]
-</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.&lt;init&gt;(ConnectionImpl.java:813) ~[mysql-connector-java-5.1.21.jar:na]
-</span><span class='line'>    at com.mysql.jdbc.JDBC4Connection.&lt;init&gt;(JDBC4Connection.java:47) ~[mysql-connector-java-5.1.21.jar:na]
-</span><span class='line'>    at sun.reflect.GeneratedConstructorAccessor34.newInstance(Unknown Source) ~[na:na]
-</span><span class='line'>    at sun.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45) ~[na:1.7.0_45]
-</span><span class='line'>    at java.lang.reflect.Constructor.newInstance(Constructor.java:526) ~[na:1.7.0_45]
-</span><span class='line'>    at com.mysql.jdbc.Util.handleNewInstance(Util.java:411) ~[mysql-connector-java-5.1.21.jar:na]
-</span><span class='line'>    at com.mysql.jdbc.ConnectionImpl.getInstance(ConnectionImpl.java:399) ~[mysql-connector-java-5.1.21.jar:na]
-</span><span class='line'>    at com.mysql.jdbc.NonRegisteringDriver.connect(NonRegisteringDriver.java:334) ~[mysql-connector-java-5.1.21.jar:na]
-</span><span class='line'>    at com.alibaba.druid.pool.DruidAbstractDataSource.createPhysicalConnection(DruidAbstractDataSource.java:1296) ~[druid-0.2.18.jar:0.2.18]
-</span><span class='line'>    at com.alibaba.druid.pool.DruidAbstractDataSource.createPhysicalConnection(DruidAbstractDataSource.java:1352) ~[druid-0.2.18.jar:0.2.18]
-</span><span class='line'>    at com.alibaba.druid.pool.DruidDataSource$CreateConnectionThread.run(DruidDataSource.java:1361) ~[druid-0.2.18.jar:0.2.18]
-</span><span class='line'>Caused by: java.net.ConnectException: Connection refused
-</span><span class='line'>        at java.net.PlainSocketImpl.socketConnect(Native Method) ~[na:1.7.0_45]
-</span><span class='line'>        at java.net.AbstractPlainSocketImpl.doConnect(AbstractPlainSocketImpl.java:339) ~[na:1.7.0_45]
-</span><span class='line'>        at java.net.AbstractPlainSocketImpl.connectToAddress(AbstractPlainSocketImpl.java:200) ~[na:1.7.0_45]
-</span><span class='line'>        at java.net.AbstractPlainSocketImpl.connect(AbstractPlainSocketImpl.java:182) ~[na:1.7.0_45]
-</span><span class='line'>        at java.net.SocksSocketImpl.connect(SocksSocketImpl.java:392) ~[na:1.7.0_45]
-</span><span class='line'>        at java.net.Socket.connect(Socket.java:579) ~[na:1.7.0_45]
-</span><span class='line'>        at java.net.Socket.connect(Socket.java:528) ~[na:1.7.0_45]
-</span><span class='line'>        at java.net.Socket.&lt;init&gt;(Socket.java:425) ~[na:1.7.0_45]
-</span><span class='line'>        at java.net.Socket.&lt;init&gt;(Socket.java:241) ~[na:1.7.0_45]
-</span><span class='line'>        at com.mysql.jdbc.StandardSocketFactory.connect(StandardSocketFactory.java:257) ~[mysql-connector-java-5.1.21.jar:na]
-</span><span class='line'>        at com.mysql.jdbc.MysqlIO.&lt;init&gt;(MysqlIO.java:300) ~[mysql-connector-java-5.1.21.jar:na]
-</span><span class='line'>        ... 14 common frames omitted</span></code></pre></td></tr></table></div></figure>
-
-
-<p>开始怀疑机器的压力过大,将一些应用停止,还是出现这个问题.</p>
-
-<p>但是相同的代码在dev环境一切正常,beta环境的机器配置要优于dev环境的.</p>
-
-<h1>1.Druid配置</h1>
-
-<p>首先怀疑那块的代码问题导致的Mysql连接没有被释放.</p>
-
-<p>由于我们使用Druid连接池,尝试使用Druid的removeAbandoned功能,这个配置的意义就是连接泄漏监测,通过这个监控没有发现异常.</p>
-
-<p>当程序存在缺陷时，申请的连接忘记关闭，这时候，就存在连接泄漏了。Druid提供了RemoveAbandanded相关配置，用来关闭长时间不使用的连接.</p>
-
-<p>配置removeAbandoned对性能会有一些影响，建议怀疑存在泄漏之后再打开。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;property name="removeAbandoned" value="true" /&gt; &lt;!-- 打开removeAbandoned功能--&gt;
-</span><span class='line'>&lt;property name="removeAbandonedTimeout" value="600" /&gt; &lt;!-- 600秒，也就是10分钟--&gt;
-</span><span class='line'>&lt;property name="logAbandoned" value="true" /&gt; &lt;!-- 关闭abanded连接时输出错误日志--&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>`
-当removeAbandoned=true之后，可以在内置监控界面datasource.html中的查看ActiveConnection StackTrace属性的，可以看到未关闭连接的具体堆栈信息，从而方便查出哪些连接泄漏了。</p>
-
-<p>参考:
-<a href="https://github.com/alibaba/druid/wiki/%E8%BF%9E%E6%8E%A5%E6%B3%84%E6%BC%8F%E7%9B%91%E6%B5%8B">https://github.com/alibaba/druid/wiki/%E8%BF%9E%E6%8E%A5%E6%B3%84%E6%BC%8F%E7%9B%91%E6%B5%8B</a></p>
-
-<h1>2.diff mysql status</h1>
-
-<p>既然dev环境正常,因此我们的做法是拿出dev环境和beta环境的show status结果进行diff,结果发现了一个比较可疑的参数的配置有差异:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>thread_pool_size</span></code></pre></td></tr></table></div></figure>
-
-
-<p>dev环境配置是16,而beta环境是4,同时线上环境的配置是24.初步判断beta环境的thread_pool_size设置应该是有问题的.</p>
-
-<h1>3.thread_pool_size</h1>
-
-<p>参考官网的描述</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>thread_pool_size is the most important parameter controlling thread pool performance. It can be set only at server startup. Our experience in testing the thread pool indicates the following:
-</span><span class='line'>
-</span><span class='line'>If the primary storage engine is InnoDB, the optimal thread_pool_size setting is likely to be between 16 and 36, with the most common optimal values tending to be from 24 to 36. We have not seen any situation where the setting has been optimal beyond 36. There may be special cases where a value smaller than 16 is optimal.
-</span><span class='line'>
-</span><span class='line'>For workloads such as DBT2 and Sysbench, the optimum for InnoDB seems to be usually around 36. For very write-intensive workloads, the optimal setting can sometimes be lower.
-</span><span class='line'>
-</span><span class='line'>If the primary storage engine is MyISAM, the thread_pool_size setting should be fairly low. We tend to get optimal performance for values from 4 to 8. Higher values tend to have a slightly negative but not dramatic impact on performance.</span></code></pre></td></tr></table></div></figure>
-
-
-<p>简单的翻译一下:
-thread_pool_size是控制线程池性能最重要的一个参数,这个参数只能在Mysql服务启动的时候设置(这是官网5.5版本的文档,5.6版本证明是可以动态修改的).官网的推荐设置:</p>
-
-<pre><code>1.如果存储引擎是InnoDB,thread_pool_size值设置16到36之间比较好,一般配置在24到36之间;
-2.如果存储引擎是MyISAM,thread_pool_size值应该被设置得相当小,倾向于设置在4到8之间;
-</code></pre>
-
-<p>官方网站:
-<a href="https://dev.mysql.com/doc/refman/5.5/en/thread-pool-tuning.html">https://dev.mysql.com/doc/refman/5.5/en/thread-pool-tuning.html</a></p>
-
-<h3>3.1 thread_pool_size意义</h3>
-
-<p>参数thread_pool_size的命令可能会让大家产生误解，它不是指的线程池的大小，而是线程组的大小。</p>
-
-<p>类似所有创建的线程都在某一个group里，group的编号从1~thread_pool_size，每个group里的worker线程数可以通过参数thread_pool_oversubscribe来控制（默认为3）.</p>
-
-<p>同时活跃的最大worker线程数=thread_pool_size * (thread_pool_oversubscribe + 1);</p>
-
-<p>thread_pool_size默认值为CPU核心数，最大为128(MAX_THREAD_GROUPS)，在启动时，就会把128个Group对应的结构体(all_groups)初始化好。每个group(编号小于等于thread_pool_size)会创建一个epoll对象；</p>
-
-<p>当MySQL建立connection时, MySQL根据connection的thread id对thread_pool_size取模,将 connection发起的sql语句分配到对应的group.若worker达到最大数量后还是不足以处理回话请求, 则连接在本group上等待,导致sql语句的RT(Response time)增大。</p>
-
-<p>简单示意图如下:</p>
-
-<p><img src="/images/mysql/Mysql_Pool.png"></p>
-
-<p>所有之前的问题出现的情况是:</p>
-
-<pre><code>1.thread_pool_size为4,即mysql每个thread pool的group中work线程的大小为4,如果有多个应用,恰好多个线程的connection被分发到某一个group上(假设为group-2),并且相当长一段时间一致在占有(比如我们在beta环境的连接,会占用并忙碌长达半小时),这时候,新来的连接正好也分发到group-2上,这时候Mysql上的group-2就没有多余的work线程来为其服务,即其无法和mysql创建连接,从而出现create connection error的异常.
-</code></pre>
-
-<p>参考:
-<a href="http://get.jobdeer.com/908.get">http://get.jobdeer.com/908.get</a>
-<a href="http://chuansong.me/n/1192563">http://chuansong.me/n/1192563</a>
-<a href="http://mysqllover.com/?p=826">http://mysqllover.com/?p=826</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/05/18/spring-aopwu-xiao/">Spring AOP无效</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-05-18T19:31:35+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>18</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:31 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近在重构项目,有一个场景:根据方法的返回值判断是否成功,成功则从入参里获取需要的参数,构造消息(Msg)并发送通知其他模块.</p>
-
-<p>因为是比较通用的逻辑(判断返回值,获取参数,发送消息),因此做成Spring注解的形式,注解中会用AOP拦截方法获取方法的返回值和参数.</p>
-
-<p>其中获取参数使用的是Spring SpEL表达式.</p>
-
-<h1>1.使用背景</h1>
-
-<p>碰到的一个问题是AOP拦截无法获取private,protected和inner方法的参数.使用场景如下:</p>
-
-<h3>1.1 注解定义</h3>
-
-<p>首先定义注解用于获取</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>@Target(ElementType.METHOD)
-</span><span class='line'>@Retention(RetentionPolicy.RUNTIME)
-</span><span class='line'>public @interface Param {
-</span><span class='line'>    /**
-</span><span class='line'>     * 参数定义,标识了参数的获取方式,或常量值
-</span><span class='line'>     */
-</span><span class='line'>    String[] params();
 </span><span class='line'>
 </span><span class='line'>    /**
-</span><span class='line'>     * 操作类型,标识了当前这注解该被哪个处理类来处理
-</span><span class='line'>     */
-</span><span class='line'>    String[] operate();
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.2 定义切面</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>@Aspect
-</span><span class='line'>public class testAspect {
-</span><span class='line'>    /**
-</span><span class='line'>     * 根据注解获取切面
-</span><span class='line'>     */
-</span><span class='line'>    @Pointcut("@annotation(com.aaa.bbb.ccc.ParamGrabber)")
-</span><span class='line'>    public void aspectPointCut() {
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>    * AOP, 定义方法返回之后的操作
-</span><span class='line'>    */
-</span><span class='line'>    @AfterReturning(value = "aspectPointCut()", returning = "returnValue")
-</span><span class='line'>    public void afterReturning(JoinPoint point, Object returnValue){
-</span><span class='line'>        //1.获取拦截的类和方法
-</span><span class='line'>
-</span><span class='line'>        //2.获取方法上我们定义的特定注解
-</span><span class='line'>
-</span><span class='line'>        //3.根据注解的参数中的spel表达式,从方法入参中获取我们需要的参数
-</span><span class='line'>
-</span><span class='line'>        //4.一些列的Processor处理逻辑
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.3 处理类</h3>
-
-<p>定义获取的参数之后的处理类的逻辑:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public interface Processor {
-</span><span class='line'>    /**
-</span><span class='line'>     * 本processor可以处理的操作类型
-</span><span class='line'>     */
-</span><span class='line'>    List&lt;String&gt; supportOperates();
-</span><span class='line'>
-</span><span class='line'>    /**
+</span><span class='line'>     * 设置object字段fieldName的值,如果字段不存在直接抛异常
 </span><span class='line'>     *
-</span><span class='line'>     * 此processor的处理逻辑
+</span><span class='line'>     * @param object
+</span><span class='line'>     * @param fieldName
+</span><span class='line'>     * @param value
 </span><span class='line'>     */
-</span><span class='line'>    void process(XxxContext context);
+</span><span class='line'>    public static void setFieldValue(Object object, String fieldName, Object value) {
+</span><span class='line'>        Field field = getDeclaredField(object, fieldName);
+</span><span class='line'>        if(field == null) {
+</span><span class='line'>            throw new IllegalArgumentException("Could not find field [" + fieldName + "] on target [" + object + "]");
+</span><span class='line'>        } else {
+</span><span class='line'>            makeAccessible(field);
 </span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 返回值验证,是否需要执行process操作
-</span><span class='line'>     */
-</span><span class='line'>    boolean isReturnValid(XxxContext context, Object returnValue);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>之后利用Spring就可以获取上下问中所有的实现类:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class ProcessorSupport implements ApplicationContextAware, InitializingBean {
-</span><span class='line'>    // Spring上下文
-</span><span class='line'>    private ApplicationContext applicationContext;
-</span><span class='line'>
-</span><span class='line'>    private final Multimap&lt;String, Processor&gt; processorMap = HashMultimap.create();
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
-</span><span class='line'>        this.applicationContext = applicationContext;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public void afterPropertiesSet() throws Exception {
-</span><span class='line'>        // 从Spring上下文获取Processor的所有具体实现类
-</span><span class='line'>        Map&lt;String, Processor&gt; beansOfType = applicationContext.getBeansOfType(Processor.class);
-</span><span class='line'>        for(Processor processor : beansOfType.values()) {
-</span><span class='line'>            for(String op : processor.supportOperates()) {
-</span><span class='line'>                processorMap.put(op, processor);
+</span><span class='line'>            try {
+</span><span class='line'>                field.set(object, value);
+</span><span class='line'>            } catch (IllegalAccessException var5) {
+</span><span class='line'>                var5.printStackTrace();
 </span><span class='line'>            }
+</span><span class='line'>
 </span><span class='line'>        }
 </span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    //根据注解中定义的operate来获取具体的处理类Processor
-</span><span class='line'>    @Override
-</span><span class='line'>    public Collection&lt;Processor&gt; getProcessor(String operate) {
-</span><span class='line'>        return processorMap.get(operate);
-</span><span class='line'>    }
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<h3>1.4 使用</h3>
+<h1>2.Mybatis的Interceptor原理</h1>
 
-<p>使用的时候,首先得实现一个具体的Processor:</p>
+<p><a href="http://www.tuicool.com/articles/RbyUfu">这篇文章</a>很好的解释了Mybatis的Interceptor机制.</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class MyProcessor implements Processor {
-</span><span class='line'>
-</span><span class='line'>    public static final String SPECIFIC_PROCESSOR_KEY = "SPECIFIC_PROCESSOR_KEY";
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public List&lt;String&gt; supportOperates() {
-</span><span class='line'>        return ImmutableList.of(
-</span><span class='line'>                SPECIFIC_PROCESSOR_KEY
-</span><span class='line'>        );
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public void process(XxxContext context) {
-</span><span class='line'>        //获取注解解析得到的参数
-</span><span class='line'>        Map&lt;String, Object&gt; parsedParam = context.getParsedParam();
-</span><span class='line'>
-</span><span class='line'>        //构建发送的消息内容
-</span><span class='line'>        Msg msg = buildNoticeMsg(parsedParam);
-</span><span class='line'>
-</span><span class='line'>        //发送消息
-</span><span class='line'>        noticeService.doNotice(msg);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public boolean isReturnValid(XxxContext context, Object returnValue) {
-</span><span class='line'>        //判断返回值是否有效...
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<p>mybatis读取配置再xml文件中Interceptor,通过反射构造其实例，将所有的Interceptor保存到InterceptorChain中。</p>
 
-
-<p>具体使用的地方:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'>* 根据SPECIFIC_PROCESSOR_KEY找到MyProcessor
-</span><span class='line'>* params中使用SpEL获取参数中的某个属性
-</span><span class='line'>*/
-</span><span class='line'>@Param(operate = MyProcessor.SPECIFIC_PROCESSOR_KEY, params = {
-</span><span class='line'>        CrateConstants.KEYS_KEY + "={#p0.![propertyName]}"})
-</span><span class='line'>public int batchInsert(List&lt;Tag&gt; tagList) {
-</span><span class='line'>    if (CollectionUtils.isEmpty(tagList)) {
-</span><span class='line'>        return 0;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    return tagDao.insertBatchly(tagList);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.问题</h1>
-
-<h3>2.1 private和protected方法无效</h3>
-
-<p>private和protected方法(通常为类的inner方法)无法使用我们定义的注解来达到目的,如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>//供外部调用的方法
-</span><span class='line'>public class XxxService {
-</span><span class='line'>    public int outerMethod(List&lt;Tag&gt; tagList) {
-</span><span class='line'>        return innerMethod(tagList);
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>//被当前类的其他方法调用的内部方法
-</span><span class='line'>@Param(operate = MyProcessor.SPECIFIC_PROCESSOR_KEY, params = {
-</span><span class='line'>        CrateConstants.KEYS_KEY + "={#p0.![propertyName]}"})
-</span><span class='line'>private int innerMethod(List&lt;Tag&gt; tagList) {
-</span><span class='line'>    if (CollectionUtils.isEmpty(tagList)) {
-</span><span class='line'>        return 0;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    return tagDao.insertBatchly(tagList);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.2 inner public方法无效</h3>
-
-<p>定义如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>//供外部调用的方法
-</span><span class='line'>public class XxxService {
-</span><span class='line'>    public int outerMethod(List&lt;Tag&gt; tagList) {
-</span><span class='line'>        return innerMethod(tagList);
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>//被当前类的其他方法调用的内部方法
-</span><span class='line'>@Param(operate = MyProcessor.SPECIFIC_PROCESSOR_KEY, params = {
-</span><span class='line'>        CrateConstants.KEYS_KEY + "={#p0.![propertyName]}"})
-</span><span class='line'>public int innerMethod(List&lt;Tag&gt; tagList) {
-</span><span class='line'>    if (CollectionUtils.isEmpty(tagList)) {
-</span><span class='line'>        return 0;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    return tagDao.insertBatchly(tagList);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>调用的时候调用</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xxxServiceIns.outerMethod(...);</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.原因</h1>
-
-<h3>3.1 private和protected方法无效</h3>
-
-<p>Spring的AOP框架基于代理实现的(proxy-based).使用原生的Java的代理是无法代理protected和private类型的方法(详见后续结束).</p>
-
-<p>而CGLIB的代理虽然在技术上可以代理protected和private类型的方法,但是用于AOP的时候不推荐代理protected和private类型的方法.</p>
-
-<p>结论就是,任何定义的pointcut只在public方法上有效.</p>
+<p>mybatis的拦截器只能代理指定的四个类：ParameterHandler、ResultSetHandler、StatementHandler以及Executor。</p>
 
 <p>参考:</p>
 
-<p><a href="http://stackoverflow.com/questions/15093894/aspectj-pointcut-for-annotated-private-methods">http://stackoverflow.com/questions/15093894/aspectj-pointcut-for-annotated-private-methods</a></p>
+<p><a href="http://www.tuicool.com/articles/RbyUfu">http://www.tuicool.com/articles/RbyUfu</a></p>
 
-<p>spring官方文档关于AOP的解释中也有相关的说明:</p>
-
-<p><a href="http://docs.spring.io/spring/docs/3.1.x/spring-framework-reference/html/aop.html#aop-introduction-spring-defn">http://docs.spring.io/spring/docs/3.1.x/spring-framework-reference/html/aop.html#aop-introduction-spring-defn</a></p>
-
-<h3>3.2 inner public方法无效</h3>
-
-<p>原因其实就是一句话:Spring AOP是基于代理机制的.</p>
-
-<p>考虑如下场景,当你拿到一个无代理的、无任何特殊之处的对象引用时:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class SimplePojo implements SimpleInterface {
-</span><span class='line'>    public void foo() {
-</span><span class='line'>       // this next method invocation is a direct call on the 'this' reference
-</span><span class='line'>       this.bar();
-</span><span class='line'>    }
-</span><span class='line'>                
-</span><span class='line'>    public void bar() {
-</span><span class='line'>        // some logic...
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>当你调用一个对象引用的方法时,此对象引用上的方法直接被调用,如下所示:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void main(String[] args) {
-</span><span class='line'>   SimplePojo ins = new SimplePojo();
-</span><span class='line'>   // this is a direct method call on the 'ins' reference
-</span><span class='line'>   ins.foo();
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p><img src="/images/sping/call_native.png"></p>
-
-<p>当客户代码所持有的引用是一个代理的时候则略有不同了,当调用foo()方法时候,首先会调用原始foo()方法上的@Before的代码逻辑,然后调用原始的foo()方法,原始foo()方法内的bar()调用的是原始对象的this.bar(),即一旦调用最终抵达了目标对象 (此处为SimplePojo类的引用),任何对自身的调用例如this.bar()将对this引用进行调用而非代理。</p>
-
-<p>这一点意义重大,它意味着自我调用将不会导致和方法调用关联的AOP通知得到执行的机会。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>SimplePojo proxy = proxyFactory.getProxy(Pojo.class);
-</span><span class='line'>proxy.foo();</span></code></pre></td></tr></table></div></figure>
-
-
-<p><img src="/images/sping/call_proxy.png"></p>
-
-<p>参考:
-<a href="http://m.oschina.net/blog/161387">http://m.oschina.net/blog/161387</a></p>
-
-<h1>4.Spring AOP代理</h1>
-
-<p>Spring AOP使用JDK动态代理或者CGLIB来为目标对象创建代理。</p>
-
-<p>如果被代理的目标对象实现了至少一个接口,则会使用JDK动态代理。所有该目标类型实现的接口都将被代理。 若该目标对象没有实现任何接口,则创建一个CGLIB代理。</p>
-
-<p>如果你希望强制使用CGLIB代理,(例如：希望代理目标对象的所有方法,而不只是实现自接口的方法) 那也可以。但是需要考虑以下问题:</p>
-
-<pre><code>1.无法通知(advise)final方法,因为他们不能被覆写。
-2.代理对象的构造器会被调用两次。因为在CGLIB代理模式下每一个代理对象都会 产生一个子类。每一个代理实例会生成两个对象：实际代理对象和它的一个实现了通知的子类实例 而是用JDK代理时不会出现这样的行为。通常情况下,调用代理类型的构造器两次并不是问题, 因为除了会发生指派外没有任何真正的逻辑被实现。
-3.CGLib的效率没有使用JDK代理机制高,速度平均要慢8倍左右。
-</code></pre>
-
-<p>强制使用CGLIB代理需要将&lt;aop:config>的proxy-target-class属性设为true:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;aop:config proxy-target-class="true"&gt;
-</span><span class='line'>   ...
-</span><span class='line'>&lt;/aop:config&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>当使用@AspectJ自动代理时要强制使用CGLIB,请将&lt;aop:aspectj-autoproxy>的proxy-target-class属性设置为true:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;aop:aspectj-autoproxy proxy-target-class="true"/&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-
+<p><a href="http://blog.csdn.net/hupanfeng/article/details/9247379">http://blog.csdn.net/hupanfeng/article/details/9247379</a></p>
 </div>
   
   
@@ -3041,7 +1085,7 @@ thread_pool_size是控制线程池性能最重要的一个参数,这个参数只
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2015/04/28/cratehuan-jing-da-jian/">Crate环境搭建</a></h1>
+      <h1 class="entry-title"><a href="/blog/2015/08/12/mysql-packettoobigexception/">Mysql PacketTooBigException</a></h1>
     
     
       <p class="meta">
@@ -3050,94 +1094,20 @@ thread_pool_size是控制线程池性能最重要的一个参数,这个参数只
 
 
 
-<time class='entry-date' datetime='2015-04-28T01:42:15+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>28</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>1:42 am</span></time>
+<time class='entry-date' datetime='2015-08-12T16:44:38+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>12</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:44 pm</span></time>
         
       </p>
     
   </header>
 
 
-  <div class="entry-content"><h1>1.Crate简介</h1>
-
-<p>最近工作中使用Crate来做搜索.总结工作中Crate的知识.</p>
-
-<p>官方网站:<a href="https://crate.io/">https://crate.io/</a></p>
-
-<h1>2.Crate安装要求</h1>
-
-<p>Crate最低版本要求Java 7,并且Crate的所有节点和客户端需要使用相同的JVM版本.
-并且Java 7要求update 55或者之后的版本,Java 8则要求update 20或者之后的版本.</p>
-
-<p>警告:JAVA 7之前的版本会造成脏数据和数据丢失.</p>
-
-<h1>3.Crate安装</h1>
-
-<p>这里选择最基本的通过下载tar.gz安装包的形式安装,还可以通过Docker等形式安装</p>
-
-<p>详见:<a href="https://crate.io/docs/en/latest/installation.html">https://crate.io/docs/en/latest/installation.html</a></p>
-
-<h3>3.1.下载</h3>
-
-<p>从下面的url下载最新的稳定版本:
-<a href="https://crate.io/download/">https://crate.io/download/</a></p>
-
-<p>所有可下载版本见:
-<a href="https://cdn.crate.io/downloads/releases/">https://cdn.crate.io/downloads/releases/</a></p>
-
-<p>这里下载的是0.47.7版本:</p>
+  <div class="entry-content"><p>最近做一个同步线上数据导dev或者beta环境的小工具.今天遇到一个小异常:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>wget https://cdn.crate.io/downloads/releases/crate-0.47.7.tar.gz --no-check-certificate</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Caused by: com.mysql.jdbc.PacketTooBigException: Packet for query is too large (17610152 &gt; 16777216). You can change this value on the server by setting the max_allowed_packet' variable.</span></code></pre></td></tr></table></div></figure>
 
 
-<h3>3.2.解压</h3>
-
-<p>自动生成crate-0.47.7目录</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>cd /home/work
-</span><span class='line'>sudo tar zxf ~/crate-0.47.7.tar.gz</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.Crate配置</h1>
-
-<p>Crate配置参考:
-<a href="https://crate.io/docs/en/latest/configuration.html">https://crate.io/docs/en/latest/configuration.html</a></p>
-
-<p>Crate的有一套默认配置,通常情况下不需要额外的配置.</p>
-
-<p>Crate的配置主要通过config/crate.yml文件,下载中的config/crate.yml包含了所有的配置项,包括其默认值和注释.</p>
-
-<p>启动Crate的时候可以指定自己的配置文件</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>./bin/crate -Des.config=/path/to/config.yml</span></code></pre></td></tr></table></div></figure>
-
-
-<p>任何配置都可以在配置文件中指定或者作为启动时候的系统属性.比如据群名称的设置可以在启动时设置:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>./bin/crate -Des.cluster.name=cluster</span></code></pre></td></tr></table></div></figure>
-
-
-<p>也可以在配置文件中配置:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>cluster.name = cluster</span></code></pre></td></tr></table></div></figure>
-
-
-<p>配置的优先级如下,越往后优先级越大(即后面的配置会覆盖前面的配置):</p>
-
-<pre><code>1.internal defaults
-2.system properties
-3.options from config file
-4.command-line properties
-</code></pre>
-
-<h3>4.1 基本配置</h3>
-
-<p>一些基本的配置,工作目录和机器列表等:</p>
+<p>原因就是一次插入的数据太大了.Mysql存在数据包最大大小的配置,默认是1M,这里我们的dev环境是16M,但是我这里出现了大于16M的数据packet:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -3146,662 +1116,33 @@ thread_pool_size是控制线程池性能最重要的一个参数,这个参数只
 <span class='line-number'>5</span>
 <span class='line-number'>6</span>
 <span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>path.data: /home/work/crate/data
-</span><span class='line'>path.work: /home/work/crate/work
-</span><span class='line'>path.logs: /home/work/crate/logs
-</span><span class='line'>
-</span><span class='line'>discovery.zen.minimum_master_nodes: 2
-</span><span class='line'>discovery.zen.ping.timeout: 6s
-</span><span class='line'>discovery.zen.ping.multicast.enabled: false
-</span><span class='line'>discovery.zen.ping.unicast.hosts: ["192.168.1.100:4300", "192.168.1.101:4300", "192.168.1.102:4300"]
-</span><span class='line'>discovery.zen.fd.ping_interval: 10s
-</span><span class='line'>
-</span><span class='line'>cluster.name: crate1
-</span><span class='line'>transport.tcp.port: 4300
-</span><span class='line'>http.port: 4200</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show VARIABLES like '%max_allowed_packet%';
+</span><span class='line'>+--------------------------+------------+
+</span><span class='line'>| Variable_name            | Value      |
+</span><span class='line'>+--------------------------+------------+
+</span><span class='line'>| max_allowed_packet       | 16777216   |
+</span><span class='line'>| slave_max_allowed_packet | 1073741824 |
+</span><span class='line'>+--------------------------+------------+</span></code></pre></td></tr></table></div></figure>
 
 
-<h1>5.Crate运行</h1>
+<p>修改max_allowed_packet:</p>
 
-<h3>5.1.启动</h3>
+<ul>
+<li>1.set global max_allowed_packet = 2<em>1024</em>1024*10</li>
+<li>2.修改my.conf文件(windows为my.ini)</li>
+</ul>
 
-<p>在前台运行(可以通过Control-C中断其运行):</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>cd ./crate-0.47.7
-</span><span class='line'>./bin/crate</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>max_allowed_packet      = 16M</span></code></pre></td></tr></table></div></figure>
 
 
-<p>加上-d参数让crate在后台运行.</p>
+<p>注意点:</p>
 
-<h3>5.2.Crash</h3>
+<ul>
+<li>1.保证Master和Slave的max_allowed_packet参数一致(一般都要求所以参数一致);</li>
+</ul>
 
-<p>bin下面还包含Crash(The Crate Shell),需要python环境运行,可以通过这个Crash输入诸如sql等命令</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[/workspace/crate/bin]$ ./crash
-</span><span class='line'>...
-</span><span class='line'>CONNECT OK
-</span><span class='line'>cr&gt; select count(1) from test;
-</span><span class='line'>+----------+
-</span><span class='line'>| count(1) |
-</span><span class='line'>+----------+
-</span><span class='line'>|   522835 |
-</span><span class='line'>+----------+
-</span><span class='line'>SELECT 1 row in set (0.032 sec)</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>5.3.Admin</h3>
-
-<p>Crate同时也提供了一个基于web的administration接口.在端口4200上提供服务,可以在浏览器中通过机器名访问:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>http://host1.example.com:4200/_plugin/crate-admin/#/console</span></code></pre></td></tr></table></div></figure>
-
-
-<p>这个Admin在Crate的每个节点上都可以运行.</p>
-
-<h1>6.Crate安装简单示例</h1>
-
-<p>这里使用3台机器搭建Crate集群,假设三台机器的IP如下:</p>
-
-<pre><code>host1.example.com    192.168.1.100
-host2.example.com    192.168.1.101
-host3.example.com    192.168.1.102
-</code></pre>
-
-<p>每台机器上做相同的工作:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>1.将Crate下载到自己的目录
-</span><span class='line'>wget https://cdn.crate.io/downloads/releases/crate-0.47.7.tar.gz --no-check-certificate
-</span><span class='line'>
-</span><span class='line'>2.解压
-</span><span class='line'>cd /home/work
-</span><span class='line'>sudo tar zxf ~/crate-0.47.7.tar.gz
-</span><span class='line'>
-</span><span class='line'>3.创建Crate工作目录
-</span><span class='line'>cd /home/work
-</span><span class='line'>sudo mkdir crate
-</span><span class='line'>cd crate
-</span><span class='line'>sudo mkdir data
-</span><span class='line'>sudo mkdir logs
-</span><span class='line'>sudo mkdir work
-</span><span class='line'>
-</span><span class='line'>4.修改基本配置(/config/crate.yml文件)
-</span><span class='line'>path.data: /home/work/crate/data
-</span><span class='line'>path.work: /home/work/crate/work
-</span><span class='line'>path.logs: /home/work/crate/logs
-</span><span class='line'>
-</span><span class='line'>discovery.zen.minimum_master_nodes: 2
-</span><span class='line'>discovery.zen.ping.timeout: 6s
-</span><span class='line'>discovery.zen.ping.multicast.enabled: false
-</span><span class='line'>discovery.zen.ping.unicast.hosts: ["192.168.1.100:4300", "192.168.1.101:4300", "192.168.1.102:4300"]
-</span><span class='line'>discovery.zen.fd.ping_interval: 10s
-</span><span class='line'>
-</span><span class='line'>5.配置内存大小(/bin/crate文件)
-</span><span class='line'>CRATE_HEAP_SIZE=4g
-</span><span class='line'>
-</span><span class='line'>6.启动Crate
-</span><span class='line'>sudo /home/work/crate-0.47.7/bin/crate -d
-</span><span class='line'>
-</span><span class='line'>7.查看启动日志
-</span><span class='line'>tail -f /home/work/crate/logs/crate.log</span></code></pre></td></tr></table></div></figure>
-
-
-<p>三台机器都启动了,它们之间会相互感应,形成一个集群.</p>
-
-<h1>7.Crate SQL</h1>
-
-<p>crate的sql操作和mysql基本一致,详细可以参考:
-<a href="https://crate.io/docs/en/latest/sql/index.html">https://crate.io/docs/en/latest/sql/index.html</a></p>
-
-<h1>8.Crate运维脚本</h1>
-
-<p>因为dev环境需求,搭建了6套dev的crate环境,发现每次启动停止crate比较麻烦,因此自己写了点基本的维护脚本,只适用于我当前的环境,即在/home/q/crate_workspace下存在6套环境,其他环境可以根据情况自行修改使用:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>drwxr-xr-x 4 root root 4096 Apr 28 17:37 crate1
-</span><span class='line'>drwxr-xr-x 4 root root 4096 Apr 28 17:37 crate2
-</span><span class='line'>drwxr-xr-x 4 root root 4096 Apr 28 17:37 crate3
-</span><span class='line'>drwxr-xr-x 4 root root 4096 Apr 30 11:25 crate4
-</span><span class='line'>drwxr-xr-x 4 root root 4096 Apr 28 17:37 crate5
-</span><span class='line'>drwxr-xr-x 4 root root 4096 Apr 28 17:37 crate6
-</span><span class='line'>-rwxr-xr-x 1 root root   53 Apr 28 15:41 restart_crate.sh
-</span><span class='line'>-rwxr-xr-x 1 root root  724 Apr 28 16:31 start_crate.sh
-</span><span class='line'>-rwxr-xr-x 1 root root 1041 Apr 28 17:15 stop_crate.sh</span></code></pre></td></tr></table></div></figure>
-
-
-<p>每套环境之下有自己的配置(crate-source)和工作目录(crate)和一个存放crate线程id的文件:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>drwxr-xr-x 6 root root 4096 Apr 28 15:05 crate
-</span><span class='line'>drwxr-xr-x 6 root root 4096 Apr 28 15:54 crate-source
-</span><span class='line'>-rw-r--r-- 1 root root    5 Apr 28 17:37 pid</span></code></pre></td></tr></table></div></figure>
-
-
-<p>脚本如下,启动crate的脚本start_crate.sh:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
-</span><span class='line'>
-</span><span class='line'>if echo $1 | grep -q "/home/q/crate_workspace"
-</span><span class='line'>then
-</span><span class='line'>    export CRATE_BASE=${1%/}
-</span><span class='line'>else
-</span><span class='line'>    export CRATE_BASE=/home/q/crate_workspace/${1%/}
-</span><span class='line'>fi
-</span><span class='line'>echo -e $CRATE_BASE
-</span><span class='line'>
-</span><span class='line'>if ! [ -e $CRATE_BASE/crate-source/bin/crate ]
-</span><span class='line'>then
-</span><span class='line'>    echo -e " usage: $0 home/q/crate_workspace/CRATE_DIR\n"
-</span><span class='line'>    exit 1;
-</span><span class='line'>fi
-</span><span class='line'>
-</span><span class='line'>if [ -e $CRATE_BASE/pid ]
-</span><span class='line'>then
-</span><span class='line'>    CRATE_ID=`cat $CRATE_BASE/pid`
-</span><span class='line'>    echo "crate(${CRATE_ID}) still running now , please shutdown it firest";
-</span><span class='line'>    exit 2;
-</span><span class='line'>fi
-</span><span class='line'>
-</span><span class='line'>#CRATE_START_LOG=`$CRATE_BASE/crate-source/bin/crate -p $CRATE_BASE/pid -d`
-</span><span class='line'>$CRATE_BASE/crate-source/bin/crate -p $CRATE_BASE/pid -d
-</span><span class='line'>
-</span><span class='line'>if [ "$?" = "0" ]; then
-</span><span class='line'>    echo "$0 ${1%/} start succeed"
-</span><span class='line'>else
-</span><span class='line'>    echo "$0 ${1%/} start failed"
-</span><span class='line'>    echo $CRATE_START_LOG
-</span><span class='line'>fi</span></code></pre></td></tr></table></div></figure>
-
-
-<p>停止crate的脚本stop_crate.sh:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
-</span><span class='line'>
-</span><span class='line'>if echo $1 | grep -q "/home/q/crate_workspace"
-</span><span class='line'>then
-</span><span class='line'>    export CRATE_BASE=${1%/}
-</span><span class='line'>else
-</span><span class='line'>    export CRATE_BASE=/home/q/crate_workspace/${1%/}
-</span><span class='line'>fi
-</span><span class='line'>echo -e $CRATE_BASE
-</span><span class='line'>
-</span><span class='line'>if ! [ -e $CRATE_BASE/crate-source/bin/crate ]
-</span><span class='line'>then
-</span><span class='line'>    echo -e " usage: $0 home/q/crate_workspace/CRATE_DIR\n"
-</span><span class='line'>    exit 1;
-</span><span class='line'>fi
-</span><span class='line'>
-</span><span class='line'>if ! [ -e $CRATE_BASE/pid ]
-</span><span class='line'>then
-</span><span class='line'>    echo "crate instance not found : ${1%/}";
-</span><span class='line'>    exit;
-</span><span class='line'>fi
-</span><span class='line'>
-</span><span class='line'>CRATE_ID=`cat $CRATE_BASE/pid`
-</span><span class='line'>
-</span><span class='line'>for i in {1..10}; do
-</span><span class='line'>    if [ -e $CRATE_BASE/pid ]; then
-</span><span class='line'>        CRATE_ID=`cat $CRATE_BASE/pid`
-</span><span class='line'>        if [ "$i" = "1" ]; then
-</span><span class='line'>            echo -n "trying stop ($CRATE_ID): $i"
-</span><span class='line'>        else
-</span><span class='line'>            echo -n -e "\b$i"
-</span><span class='line'>        fi
-</span><span class='line'>        
-</span><span class='line'>        if [ $i -ge 5 ]; then
-</span><span class='line'>            kill "$CRATE_ID"
-</span><span class='line'>            rm -f "$CRATE_BASE/pid"
-</span><span class='line'>        fi
-</span><span class='line'>
-</span><span class='line'>        sleep 1 
-</span><span class='line'>    else
-</span><span class='line'>        if [ $i -gt 5 ]; then
-</span><span class='line'>            echo -e "\n$CRATE_BASE was killed($i)"
-</span><span class='line'>        else
-</span><span class='line'>            echo -e "\n$CRATE_BASE was stoped"
-</span><span class='line'>        fi
-</span><span class='line'>
-</span><span class='line'>        exit;
-</span><span class='line'>    fi
-</span><span class='line'>done;
-</span><span class='line'>
-</span><span class='line'>kill -9 "$CRATE_ID"
-</span><span class='line'>
-</span><span class='line'>echo "$CRATE_BASE was force killed"</span></code></pre></td></tr></table></div></figure>
-
-
-<p>重启crate的脚本restart_crate.sh:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
-</span><span class='line'>
-</span><span class='line'>./stop_crate.sh $1
-</span><span class='line'>
-</span><span class='line'>./start_crate.sh $1</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/04/11/telnet-dubbo/">Telnet Dubbo</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-04-11T03:10:33+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>11</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>3:10 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>Dubbo 2.0.5版本以后支持telnet命令，可以用来debug各个dubbo接口。</p>
-
-<p>Dubbo官网：<a href="http://dubbo.io/User+Guide-zh.htm">http://dubbo.io/User+Guide-zh.htm</a></p>
-
-<p>telnet涉及的命令包括：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>ls
-</span><span class='line'>ps
-</span><span class='line'>cd
-</span><span class='line'>pwd
-</span><span class='line'>trace
-</span><span class='line'>count
-</span><span class='line'>invoke
-</span><span class='line'>status
-</span><span class='line'>log
-</span><span class='line'>help
-</span><span class='line'>clear
-</span><span class='line'>exit</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>1.telnet</h1>
-
-<p>连接dubbo的provider：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>telnet 127.0.0.1 20880</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.ls</h1>
-
-<p>ls显示服务列表,ls -l显示服务详细信息列表:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>dubbo&gt;ls
-</span><span class='line'>Xxx.xx.xxx.service.ConsumerMessageHandler
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<p>ls XxxService显示服务的方法列表，ls -l XxxService显示服务的方法详细信息列表</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>ls -l Xxx.xx.xxx.service.ConsumerMessageHandler</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.ps</h1>
-
-<p>ps显示服务端口列表，ps -l显示服务地址列表(ip + 端口)：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>dubbo&gt;ps -l
-</span><span class='line'>dubbo://10.100.11.222:30003</span></code></pre></td></tr></table></div></figure>
-
-
-<p>ps 20880显示端口上的连接信息，ps -l 20880显示端口上的连接详细信息：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>dubbo&gt;ps -l 20880
-</span><span class='line'>/127.0.0.1:51478 -&gt; /127.0.0.1:20880
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.cd</h1>
-
-<p>改变缺省服务，当设置了缺省服务，凡是需要输入服务名作为参数的命令，都可以省略服务参数。</p>
-
-<p>cd /可以取消缺省服务</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>dubbo&gt;cd Xxx.xx.xxx.service.ConsumerMessageHandler 
-</span><span class='line'>Used the Xxx.xx.xxx.service.ConsumerMessageHandler as default.
-</span><span class='line'>You can cancel default service by command: cd /</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>5.pwd</h1>
-
-<p>显示当前缺省服务</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>dubbo&gt;pwd
-</span><span class='line'>Xxx.xx.xxx.service.ConsumerMessageHandler
-</span><span class='line'>
-</span><span class='line'>dubbo&gt;cd /
-</span><span class='line'>Cancelled default service qunar.tc.qmq.service.ConsumerMessageHandler.
-</span><span class='line'>
-</span><span class='line'>dubbo&gt;pwd 
-</span><span class='line'>/</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>6.trace</h1>
-
-<p>trace用来跟踪调用情况，当响应的Service的方法被调有，就会有调用日志：</p>
-
-<pre><code>trace XxxService                跟踪1次服务任意方法的调用情况
-trace XxxService 10             跟踪10次服务任意方法的调用情况
-trace XxxService xxxMethod      跟踪1次服务方法的调用情况
-trace XxxService xxxMethod 10   跟踪10次服务方法的调用情况
-</code></pre>
-
-<h1>7.count</h1>
-
-<pre><code>count XxxService                统计1次服务任意方法的调用情况。
-count XxxService 10             统计10次服务任意方法的调用情况。
-count XxxService xxxMethod      统计1次服务方法的调用情况。
-count XxxService xxxMethod 10   统计10次服务方法的调用情况。
-</code></pre>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>dubbo&gt;count Xxx.xx.xxx.service.ConsumerMessageHandler
-</span><span class='line'>dubbo&gt;
-</span><span class='line'>+-------------------+-------+--------+--------+---------+-----+
-</span><span class='line'>| method            | total | failed | active | average | max |
-</span><span class='line'>+-------------------+-------+--------+--------+---------+-----+
-</span><span class='line'>| queryMessageState | 0     | 0      | 0      | 0ms     | 0ms |
-</span><span class='line'>| handle            | 0     | 0      | 0      | 0ms     | 0ms |
-</span><span class='line'>+-------------------+-------+--------+--------+---------+-----+</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>8.invoke</h1>
-
-<pre><code>调用服务的某个方法:  invoke XxxService.xxxMethod({"prop": "value"})
-调用服务的方法(自动查找包含此方法的服务):  invoke xxxMethod({"prop": "value"})
-</code></pre>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>invoke Xxx.xx.xxx.service..batchGetExpiredList({"batch":1})</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>9.status</h1>
-
-<pre><code>status:显示汇总状态，该状态将汇总所有资源的状态，当全部OK时则显示OK，只要有一个ERROR则显示ERROR，只要有一个WARN则显示WARN
-
-status -l:显示状态列表。
-</code></pre>
-
-<p>所有的资源包括:</p>
-
-<pre><code>load        cpu数据,包括当前load,cpu核数
-server      ip+port的列表(ps -l的数据)
-datasource  数据库连接参数
-threadpool  线程池参数
-memory      当前JVM的内存使用情况(max,used,free)
-registry    注册中心参数
-spring      spring的配置文件
-summary     上面这些信息中出现的Error等信息的汇总
-</code></pre>
-
-<p>示例如下
-+&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;-+
-| resource   | status | message                          |
-+&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;-+
-| load       | OK     | load:0.61,cpu:4                  |
-| spring     | OK     | classpath:applicationContext.xml |
-| summary    | ERROR  | registry                         |
-+&mdash;&mdash;&mdash;&mdash;+&mdash;&mdash;&ndash;+&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;-+</p>
-
-<h1>10.log</h1>
-
-<p>2.0.6以上版本支持</p>
-
-<pre><code>log  error:     修改dubbo logger的日志级别
-log 100:        查看file logger的最后100字符的日志
-</code></pre>
-
-<h1>11.help</h1>
-
-<pre><code>help        显示telnet命帮助信息
-help Xxx    显示xxx命令的详细帮助信息
-</code></pre>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>dubbo&gt;help 
-</span><span class='line'>Please input "help [command]" show detail.
-</span><span class='line'> log level                        - Change log level or show log 
-</span><span class='line'> pwd                              - Print working default service.
-</span><span class='line'> trace [service] [method] [times] - Trace the service.
-</span><span class='line'> clear [lines]                    - Clear screen.
-</span><span class='line'> exit                             - Exit the telnet.
-</span><span class='line'> help [command]                   - Show help.
-</span><span class='line'> info                             - show dubbo info
-</span><span class='line'> ls [-l] [service]                - List services and methods.
-</span><span class='line'> invoke [service.]method(args)    - Invoke the service method.
-</span><span class='line'> ps [-l] [port]                   - Print server ports and connections.
-</span><span class='line'> cd [service]                     - Change default service.
-</span><span class='line'> status [-l]                      - Show status.
-</span><span class='line'> count [service] [method] [times] - Count the service.</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>12.clear</h1>
-
-<pre><code>clear           清除屏幕上的内容
-clear 100       清除屏幕上的指定行数的内容
-</code></pre>
-
-<h1>13.exit</h1>
-
-<pre><code>exit    退出当前telnet命令行。
-</code></pre>
 </div>
   
   
@@ -3845,6 +1186,26 @@ clear 100       清除屏幕上的指定行数的内容
     
       <li class="post">
         <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/02/03/strace/">Strace</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/01/28/who-eat-jvms-memory/">Who Eats JVM's Memory</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a>
       </li>
     
   </ul>

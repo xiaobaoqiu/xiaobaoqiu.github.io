@@ -9,7 +9,7 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近项目中遇到一个问题，无意中发现Spring SpEL语法，Spring的Cache正是基于此实现的，感觉很强大，学习一下。 1.简介 SpEL官网：http://docs.spring.io/spring/docs/current/spring-framework-reference/html &hellip;">
+  <meta name="description" content="最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer. 其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -44,7 +44,7 @@
   <header role="banner"><hgroup>
   <h1><a href="/">xiaobaoqiu Blog</a></h1>
   
-    <h2>Keep Runnnnnnnnnning...</h2>
+    <h2>Think More, Code Less</h2>
   
 </hgroup>
 
@@ -79,7 +79,7 @@
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2015/04/09/spring-spelyu-fa/">Spring SpEL语法</a></h1>
+      <h1 class="entry-title"><a href="/blog/2015/08/08/oomkiller/">Oomkiller</a></h1>
     
     
       <p class="meta">
@@ -88,222 +88,175 @@
 
 
 
-<time class='entry-date' datetime='2015-04-09T07:25:44+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>9</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:25 am</span></time>
+<time class='entry-date' datetime='2015-08-08T12:33:53+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>8</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>12:33 pm</span></time>
         
       </p>
     
   </header>
 
 
-  <div class="entry-content"><p>最近项目中遇到一个问题，无意中发现Spring SpEL语法，Spring的Cache正是基于此实现的，感觉很强大，学习一下。</p>
+  <div class="entry-content"><p>最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer.</p>
 
-<h1>1.简介</h1>
+<p>其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用,每个Tomcat至少要求了0.5G的内存,很多要求的是默认的2G的内存.</p>
 
-<p>SpEL官网：<a href="http://docs.spring.io/spring/docs/current/spring-framework-reference/html/expressions.html">http://docs.spring.io/spring/docs/current/spring-framework-reference/html/expressions.html</a></p>
+<p>这里主要简单介绍一下oomkiller是什么东西,原理是什么,以及对我们的影响.</p>
 
-<p>Spring表达式语言全称为Spring Expression Language(缩写为SpEL)，能在运行时构建复杂表达式、存取对象图属性、对象方法调用等等，并且能与Spring功能完美整合，如能用来配置Bean定义。
-表达式语言给静态Java语言增加了动态功能。</p>
+<h1>1.oomkiller简介</h1>
 
-<p>SpEL是单独模块，只依赖于core模块，不依赖于其他模块，可以单独使用。</p>
+<p>简单的说,Linux 内核有个机制叫OOM killer(Out-Of-Memory killer)，该机制会监控那些占用内存过大，尤其是瞬间很快消耗大量内存的进程(为什么后面会讲到)，为了防止内存耗尽而内核会把该进程杀掉,从而腾出内存留给系统用。</p>
 
-<p>SpEL支持以下功能:</p>
+<p>现象就是相关的日志文件(/var/log/messages)里面会看到下面类似的 Out of memory: Kill process 信息(日志里面把机器host去掉了),还包括一些如pid，process name，cpu mask，trace等信息:</p>
 
-<pre><code>1.文本表达式(Literal expressions)
-2.布尔操作和关系操作(Boolean and relational operators)
-3.正则表达式(Regular expressions)
-4.类表达式(Class expressions)
-5.访问属性,数组,list和map(Accessing properties, arrays, lists, maps)
-6.方法调用(Method invocation)
-7.关系操作符(Relational operators)
-8.赋值(Assignment)
-9.调用构造器(Calling constructors)
-10.Bean引用(Bean references)
-11.数组构造(Array construction)
-12.内脸list(Inline lists)
-13.内联Map(Inline maps)
-14.三元运算符(Ternary operator)
-15.变量(Variables)
-16.自定义函数(User defined functions)
-17.集合投影(Collection projection)
-18.集合筛选(Collection selection)
-19.模板表达式(Templated expressions)
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Aug  4 22:03:18  kernel: Out of memory: Kill process 21447 (java) score 81 or sacrifice child
+</span><span class='line'>Aug  4 22:03:18  kernel: Killed process 21447, UID 40001, (java) total-vm:4242176kB, anon-rss:711240kB, file-rss:1832kB
+</span><span class='line'>Aug  5 01:17:21  ntpd[1195]: synchronized to Xx.xx.xxx.xx, stratum 3
+</span><span class='line'>Aug  5 01:35:52  kernel: java invoked oom-killer: gfp_mask=0xd0, order=0, oom_adj=0, oom_score_adj=0
+</span><span class='line'>Aug  5 01:35:52  kernel: java cpuset=/ mems_allowed=0
+</span><span class='line'>Aug  5 01:35:52  kernel: Pid: 17391, comm: java Not tainted 2.6.32-358.23.2.el6.x86_64 #1</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.oomkiller原理</h1>
+
+<p>Linux 内核根据应用程序的要求分配内存，通常来说应用程序分配了内存但是并没有实际全部使用，为了提高性能，这部分没用的内存可以留作它用，这部分内存是属于每个进程的，内核直接回收利用的话比较麻烦，所以内核采用一种过度分配内存(over-commit memory)的办法来间接利用这部分 “空闲” 的内存，提高整体内存的使用效率。</p>
+
+<p>所谓的过度分配内存,可以理解为"打白条",进程A告诉系统我需要2G内存,系统只会答应不会拒绝,因为系统认为任何一个进程不可能每时每刻都全部占用其申请的内存.所以实际上系统并没有给进程A完整的2G内存,而是需要使用的时候才临时分配.这就好像银行现金肯定远远小于所以储户的总值,因为银行认为不可能所以储户同一时间把所以的钱都取出来.</p>
+
+<p>一般来说这样做没有问题，但当大多数应用程序都消耗完自己的内存的时候麻烦就来了，因为这些应用程序的内存需求加起来超出了物理内存(包括 swap)的容量，内核(OOM killer)必须杀掉一些进程才能腾出空间保障系统正常运行。</p>
+
+<p>用银行的例子来讲可能更容易懂一些，部分储户取钱的时候银行不怕，银行有足够的存款应付，当全国所以的储户(或者绝大多数储户)都取钱而且每个人都想把自己钱取完的时候银行的麻烦就来了，银行实际上是没有这么多钱给大家取的。</p>
+
+<h3>2.1 根据什么kill</h3>
+
+<p>内核检测到系统内存不足,然后挑选并杀掉某个进程的过程可以参考内核源代码 linux/mm/oom_kill.c，当系统内存不足的时候，oom_kill被触发，然后选择一个进程杀掉，如何判断和选择一个进程呢，总不能随机选吧?系统会根据进程使用内存的情况给进程打分,选择进程kill的时候主要根据这个分数,打分的机制很朴素:最占用内存的进程。</p>
+
+<p>每个进程的分数都由进程的oom_score记录:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$cat /proc/26893/oom_score
+</span><span class='line'>76
+</span><span class='line'>[baoqiu.xiao@Xxx ~]$ cat /proc/14969/oom_score
+</span><span class='line'>82</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外一个重要的参数就是进程的oom_adj,表示该pid进程被oom killer杀掉的权重，介于 [-17,15]之间，越高的权重，意味着更可能被oom killer选中，-17表示禁止被kill掉。默认为0.</p>
+
+<p>一些其他的细节:</p>
+
+<pre><code>1.子进程会继承父进程的oom_adj;
+2.OOM不适合于解决内存泄漏(Memory leak)的问题;
+3.有时free查看还有充足的内存，但还是会触发OOM，是因为该进程可能占用了特殊的内存地址空间;
 </code></pre>
 
-<h1>2.SpEL使用</h1>
+<h3>2.2 如何关闭oomkiller</h3>
 
-<p>下面通过一些简单的case来示范SpEL的使用.</p>
+<p>有几种方法关闭oomkiller机制:</p>
 
-<h3>2.1 第一个SpEL</h3>
-
-<p>SpEL表达式可以直接使用ExpressionParser解析,主要是调用ExpressionParser的parseExpression()方法:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_1(){
-</span><span class='line'>    Expression expression = parser.parseExpression("'Testing Spring Expression Framework'");
-</span><span class='line'>    String message = (String) expression.getValue();
-</span><span class='line'>    System.out.println("Message is " + message);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<ul>
+<li>1.调整oom_adj
+将进程的oom_adj设置为17即禁止了该进程被kill.</li>
+</ul>
 
 
-<h3>2.2 字面量表达式</h3>
-
-<p>SpEL支持的字面量包括字符串、数字类型（int、long、float、double）、bool类型、null类型,注意字符串必须要单引号括起来:</p>
+<p>比如系统的ssh一般是禁止oom的:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
 <span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_2(){
-</span><span class='line'>    // evals to "Hello World"
-</span><span class='line'>    String helloWorld = (String) parser.parseExpression("'Hello World'").getValue();
-</span><span class='line'>    double avogadrosNumber = (Double) parser.parseExpression("6.0221415E+23").getValue();
-</span><span class='line'>
-</span><span class='line'>    // evals to 2147483647
-</span><span class='line'>    int maxValue = (Integer) parser.parseExpression("0x7FFFFFFF").getValue();
-</span><span class='line'>    boolean trueValue = (Boolean) parser.parseExpression("true").getValue();
-</span><span class='line'>    Object nullValue = parser.parseExpression("null").getValue();
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@ ~]$ ps aux | grep sshd
+</span><span class='line'>root      1208  0.0  0.0  64116   296 ?        Ss   May28   1:47 /usr/sbin/sshd
+</span><span class='line'>[baoqiu.xiao@ ~]$ cat /proc/1208/oom_adj 
+</span><span class='line'>-17</span></code></pre></td></tr></table></div></figure>
 
 
-<h3>2.3 算数运算表达式</h3>
+<p>其他需要禁用,可以如下:</p>
 
-<p>SpEL支持加(+)、减(-)、乘(*)、除(/)、求余（%）、幂（^）运算,SpEL还提供求余（MOD）和除（DIV）而外两个运算符，与"%&ldquo;和&rdquo;/&ldquo;等价，不区分大小写:</p>
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>pgrep -f "sshd" | while read PID; do echo -17 &gt; /proc/$PID/oom_adj;done</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其实在oom-killer的日志中我们是可以看到未-17的一些应用:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
 <span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_3(){
-</span><span class='line'>    int result1 = parser.parseExpression("1+2-3*4/2").getValue(Integer.class);
-</span><span class='line'>    int result2 = parser.parseExpression("4%3").getValue(Integer.class);
-</span><span class='line'>    int result3 = parser.parseExpression("2^3").getValue(Integer.class);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Aug  5 01:35:52 l-crm4.des.dev.cn0 kernel: [ pid ]   uid  tgid total_vm      rss cpu oom_adj oom_score_adj name
+</span><span class='line'>...
+</span><span class='line'>Aug  5 01:35:52 l-crm4.des.dev.cn0 kernel: [ 1187]     0  1187    16029       73   2     -17         -1000 sshd
+</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
 
 
-<h3>2.4 关系表达式</h3>
+<ul>
+<li><p>2.修改内核参数
+sysctl 下有2个可配置选项：</p>
 
-<p>等于（==）、不等于(!=)、大于(>)、大于等于(>=)、小于(&lt;)、小于等于(&lt;=)，区间（between）运算:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_4(){
-</span><span class='line'>    boolean result1 = parser.parseExpression("1&gt;2").getValue(boolean.class);
-</span><span class='line'>    boolean result2 = parser.parseExpression("1 between {1, 2}").getValue(boolean.class);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<p>  vm.panic_on_oom = 0                 #内存不够时内核是否直接panic,0表示开启
+  vm.oom_kill_allocating_task = 1         #oom-killer是否选择当前正在申请内存的进程进行kill</p></li>
+</ul>
 
 
-<p>between运算符右边操作数必须是列表类型，且只能包含2个元素。第一个元素为开始，第二个元素为结束，区间运算是包含边界值的。</p>
-
-<p>SpEL同样提供了等价的"EQ" 、"NE"、 &ldquo;GT"、"GE"、 "LT&rdquo; 、"LE"来表示等于、不等于、大于、大于等于、小于、小于等于，不区分大小写。</p>
-
-<h3>2.5 逻辑表达式</h3>
-
-<p>且（and）、或(or)、非(!或NOT),注意,逻辑运算符不支持 Java中的 &amp;&amp; 和 ||:</p>
+<p>只要设置/etc/sysctl.conf文件中vm.panic_on_oom=1就表示关闭oom-killer(线上环境一般不推荐):</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
 <span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_5() {
-</span><span class='line'>    String expression1 = "2&gt;1 and (!true or !false)";
-</span><span class='line'>    boolean result1 = parser.parseExpression(expression1).getValue(boolean.class);
-</span><span class='line'>
-</span><span class='line'>    String expression2 = "2&gt;1 and (NOT true or NOT false)";
-</span><span class='line'>    boolean result2 = parser.parseExpression(expression2).getValue(boolean.class);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+</pre></td><td class='code'><pre><code class=''><span class='line'># sysctl -w vm.panic_on_oom=1
+</span><span class='line'>vm.panic_on_oom = 1   //1表示关闭，默认为0表示开启OOM
+</span><span class='line'># sysctl -p</span></code></pre></td></tr></table></div></figure>
 
 
-<h3>2.6 字符串连接及截取表达式</h3>
-
-<p>使用"+&ldquo;进行字符串连接，使用&rdquo;&lsquo;String&rsquo;[0] [index]&ldquo;来截取一个字符，目前只支持截取一个，如&rdquo;&lsquo;Hello &rsquo; + &lsquo;World!&rsquo;&ldquo;得到"Hello World!"；而&rdquo;&lsquo;Hello World!&rsquo;[0]&ldquo;将返回"H"。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_6() {
-</span><span class='line'>//    String expression1 = "'Hello Spring SpEL'[0] [5]";
-</span><span class='line'>//    String result1 = parser.parseExpression(expression1).getValue(String.class);
-</span><span class='line'>//    System.out.println("result1=" + result1);
-</span><span class='line'>
-</span><span class='line'>    String expression2 = "'Hello' + 'Spring' + 'SpEL.'";
-</span><span class='line'>    String result2 = parser.parseExpression(expression2).getValue(String.class);
-</span><span class='line'>//    System.out.println("result1=" + result1);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<p>参考: <a href="http://lwn.net/Articles/317814/">http://lwn.net/Articles/317814/</a></p>
+</div>
+  
+  
 
 
-<h3>2.7 三目运算</h3>
-
-<p>三目运算符 &ldquo;表达式1?表达式2:表达式3"用于构造三目运算表达式，如"2>1?true:false"将返回true；</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_7() {
-</span><span class='line'>    boolean result1 = parser.parseExpression("2&gt;1?true:false").getValue(boolean.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.8 正则表达式</h3>
-
-<p>可以正则,格式为:str matches regex</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_8() {
-</span><span class='line'>    boolean result1 = parser.parseExpression("'123' matches '\\d{3}'").getValue(boolean.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/08/03/fan-she-de-xiao-lu/">反射的效率</a></h1>
+    
+    
+      <p class="meta">
+        
 
 
-<h3>2.9 括号优先级表达式</h3>
-
-<p>使用"(表达式)&ldquo;构造，括号里的具有高优先级</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_9() {
-</span><span class='line'>    int result1 = parser.parseExpression("1+2-3*4/2").getValue(Integer.class);
-</span><span class='line'>    int result2 = parser.parseExpression("1+(2-3)*4/2").getValue(Integer.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<h3>2.10 类类型表达式</h3>
+<time class='entry-date' datetime='2015-08-03T20:54:57+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>8:54 pm</span></time>
+        
+      </p>
+    
+  </header>
 
-<p>使用"T(Type)&ldquo;来表示java.lang.Class实例，"Type"必须是类全限定名，"java.lang"包除外，即该包下的类可以不指定包名；使用类类型表达式还可以进行访问类静态方法及类静态字段。</p>
+
+  <div class="entry-content"><h1>1.toString实现</h1>
+
+<p>测试不同的toString实现方式的效率，目前包括的case：</p>
+
+<pre><code>1.String的+连接生成；
+2.StringBuilder生成；
+3.StringBuffer生成；
+4.Guava的ToStringHelper生成；
+5.Apache.commons.lang3的lang3的ToStringBuilder生成;
+6.Apache.commons.lang3的ReflectionToStringBuilder生成;
+</code></pre>
+
+<p>toString的对象包含各种类型的属性：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -316,98 +269,20 @@
 <span class='line-number'>9</span>
 <span class='line-number'>10</span>
 <span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_10() {
-</span><span class='line'>    //java.lang包类访问
-</span><span class='line'>    Class&lt;String&gt; result1 = parser.parseExpression("T(String)").getValue(Class.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>    //其他包类访问
-</span><span class='line'>    String expression2 = "T(com.qunar.scm.spel.SpelParser)";
-</span><span class='line'>    Class&lt;String&gt; result2 = parser.parseExpression(expression2).getValue(Class.class);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>    //类静态字段访问
-</span><span class='line'>    int result3=parser.parseExpression("T(Integer).MAX_VALUE").getValue(int.class);
-</span><span class='line'>    System.out.println("result3=" + result3);
-</span><span class='line'>    //类静态方法调用
-</span><span class='line'>    int result4 = parser.parseExpression("T(Integer).parseInt('1')").getValue(int.class);
-</span><span class='line'>    System.out.println("result4=" + result4);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.11 类实例化</h3>
-
-<p>类实例化同样使用java关键字"new"，类名必须是全限定名，但java.lang包内的类型除外，如String、Integer.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_11() {
-</span><span class='line'>    String result1 = parser.parseExpression("new String('Spring SpEL')").getValue(String.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
+</pre></td><td class='code'><pre><code class=''><span class='line'>private int age;
 </span><span class='line'>
-</span><span class='line'>    Date result2 = parser.parseExpression("new java.util.Date()").getValue(Date.class);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.12 instanceof表达式</h3>
-
-<p>SpEL支持instanceof运算符，跟Java内使用同义:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_12() {
-</span><span class='line'>    boolean result1 = parser.parseExpression("'Spring SpEL' instanceof T(String)").getValue(Boolean.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.13 变量定义及引用</h3>
-
-<p>变量定义通过EvaluationContext接口的setVariable(variableName, value)方法定义；在表达式中使用"#variableName"引用；</p>
-
-<p>除了引用自定义变量，SpE还允许引用根对象及当前上下文对象，使用"#root"引用根对象，使用"#this"引用当前上下文对象；</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_13() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>    context.setVariable("variable", "Spring SpEL");
-</span><span class='line'>    String result1 = parser.parseExpression("#variable").getValue(context, String.class);
-</span><span class='line'>    System.out.println("result1=" + result1);   //Spring SpEL
+</span><span class='line'>private String name;
 </span><span class='line'>
-</span><span class='line'>    context = new StandardEvaluationContext("Spring SpEL");
-</span><span class='line'>    String result2 = parser.parseExpression("#root").getValue(context, String.class);
-</span><span class='line'>    System.out.println("result2=" + result2);   //Spring SpEL
-</span><span class='line'>    String result3 = parser.parseExpression("#this").getValue(context, String.class);
-</span><span class='line'>    System.out.println("result3=" + result3);   //Spring SpEL
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+</span><span class='line'>private String address;
+</span><span class='line'>
+</span><span class='line'>private List&lt;String&gt; phone;
+</span><span class='line'>
+</span><span class='line'>private BigDecimal salary;
+</span><span class='line'>
+</span><span class='line'>private Map&lt;String, Object&gt; attrs;</span></code></pre></td></tr></table></div></figure>
 
 
-<h3>2.14 自定义函数</h3>
-
-<p>学习编写自定义的函数并将其注册,这样这个函数就可以在SpEL表达式中使用.</p>
-
-<p>首先是两个工具类的代码</p>
+<p>各个toString的实现版本，其中ReflectionToStringBuilder是我们项目中使用最多的，因为它最简单：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -456,59 +331,130 @@
 <span class='line-number'>45</span>
 <span class='line-number'>46</span>
 <span class='line-number'>47</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class CollectionUtils {
-</span><span class='line'>    /**
-</span><span class='line'>     * 集合中的最大元素
-</span><span class='line'>     * @param collection
-</span><span class='line'>     * @return
-</span><span class='line'>     */
-</span><span class='line'>    public static Integer maxElement(Collection&lt;Integer&gt; collection) {
-</span><span class='line'>        Integer maxElement = null;
-</span><span class='line'>        Iterator iterator = collection.iterator();
-</span><span class='line'>        while (iterator.hasNext()) {
-</span><span class='line'>
-</span><span class='line'>            Integer integer = (Integer) iterator.next();
-</span><span class='line'>
-</span><span class='line'>            if (maxElement == null) {
-</span><span class='line'>                maxElement = integer;
-</span><span class='line'>            } else {
-</span><span class='line'>                if (integer.intValue() &gt; maxElement.intValue()) {
-</span><span class='line'>                    maxElement = integer;
-</span><span class='line'>                }
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>        return maxElement;
-</span><span class='line'>    }
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 使用字符串+
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String concatToString() {
+</span><span class='line'>    return "Person{" +
+</span><span class='line'>            "age=" + age +
+</span><span class='line'>            ", name='" + name + '\'' +
+</span><span class='line'>            ", address='" + address + '\'' +
+</span><span class='line'>            ", phone=" + phone +
+</span><span class='line'>            ", salary=" + salary +
+</span><span class='line'>            ", attrs=" + attrs +
+</span><span class='line'>            '}';
 </span><span class='line'>}
 </span><span class='line'>
-</span><span class='line'>public class MathUtils {
-</span><span class='line'>    /**
-</span><span class='line'>     * 测试一个数字是否为素数
-</span><span class='line'>     * @param number
-</span><span class='line'>     * @return
-</span><span class='line'>     */
-</span><span class='line'>    public static boolean isPrime(Integer number) {
+</span><span class='line'>/**
+</span><span class='line'> * 使用StringBuilder
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String stringBuilderToString() {
+</span><span class='line'>    StringBuilder builder = new StringBuilder("Person{");
+</span><span class='line'>    builder.append("age=").append(age)
+</span><span class='line'>            .append(", name='").append(name).append("'")
+</span><span class='line'>            .append(", address='").append(address).append("'")
+</span><span class='line'>            .append(", phone=").append(phone)
+</span><span class='line'>            .append(", salary=").append(salary)
+</span><span class='line'>            .append(", attrs=").append(attrs)
+</span><span class='line'>            .append("}");
+</span><span class='line'>    return builder.toString();
+</span><span class='line'>}
 </span><span class='line'>
-</span><span class='line'>        if (number == 0) {
-</span><span class='line'>            return false;
-</span><span class='line'>        }
+</span><span class='line'>/**
+</span><span class='line'> * 使用StringBuffer
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String stringBufferToString() {
+</span><span class='line'>    StringBuffer buffer = new StringBuffer("Person{");
+</span><span class='line'>    buffer.append("age=").append(age)
+</span><span class='line'>            .append(", name='").append(name).append("'")
+</span><span class='line'>            .append(", address='").append(address).append("'")
+</span><span class='line'>            .append(", phone=").append(phone)
+</span><span class='line'>            .append(", salary=").append(salary)
+</span><span class='line'>            .append(", attrs=").append(attrs)
+</span><span class='line'>            .append("}");
+</span><span class='line'>    return buffer.toString();
+</span><span class='line'>}
 </span><span class='line'>
-</span><span class='line'>        for (int index = 2; index &lt; number; index++) {
-</span><span class='line'>            if (number % index == 0) {
-</span><span class='line'>                return false;
-</span><span class='line'>            } else {
-</span><span class='line'>                continue;
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>        return true;
-</span><span class='line'>    }
+</span><span class='line'>/**
+</span><span class='line'> * Guava的Objects,即ToStringHelper
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String toStringHelperToString() {
+</span><span class='line'>    return Objects.toStringHelper(this)
+</span><span class='line'>            .add("age", age)
+</span><span class='line'>            .add("name", name)
+</span><span class='line'>            .add("address", address)
+</span><span class='line'>            .add("phone", phone)
+</span><span class='line'>            .add("salary", salary)
+</span><span class='line'>            .add("attrs", attrs)
+</span><span class='line'>            .toString();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * apache.commons.lang3的ToStringBuilder
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String toStringBuilderToString() {
+</span><span class='line'>    return new ToStringBuilder(this)
+</span><span class='line'>            .append("age", age)
+</span><span class='line'>            .append("name", name)
+</span><span class='line'>            .append("address", address)
+</span><span class='line'>            .append("phone", phone)
+</span><span class='line'>            .append("salary", salary)
+</span><span class='line'>            .append("attrs", attrs)
+</span><span class='line'>            .toString();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * apache.commons.lang3的ReflectionToStringBuilder
+</span><span class='line'> * @return
+</span><span class='line'> */
+</span><span class='line'>public String reflectionToStringBuilderToString() {
+</span><span class='line'>    return ReflectionToStringBuilder.reflectionToString(this, ToStringStyle.SIMPLE_STYLE);
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<p>下面,我们首先初始化一个EvaluationContext,具体类是StandardEvaluationContext.</p>
-
-<p>一个context evaluation object能用来存储任意多个对象,这些对象会在在随后的表达式解析中使用.
-另外evaluation context也能用来注册用户自定义的方法.</p>
+<p>OS是Ubuntu 14.04 LTS版本，Java版本是1.7.0_80。跑1000次，记录最大最小平均时间:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -533,174 +479,187 @@
 <span class='line-number'>21</span>
 <span class='line-number'>22</span>
 <span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void main(String[] args) throws Exception {
-</span><span class='line'>        ExpressionParser parser = new SpelExpressionParser();
+</pre></td><td class='code'><pre><code class=''><span class='line'>Concat Min(微秒)=25.385
+</span><span class='line'>Concat Max(微秒)=2218.851
+</span><span class='line'>Concat Avg(微秒)=56.728432999999995
 </span><span class='line'>
-</span><span class='line'>        StandardEvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>        Method method = null;
-</span><span class='line'>        Expression expression = null;
-</span><span class='line'>        Boolean value = null;
+</span><span class='line'>StringBuilder Min(微秒)=22.501
+</span><span class='line'>StringBuilder Max(微秒)=6934.066
+</span><span class='line'>StringBuilder Avg(微秒)=50.724183
 </span><span class='line'>
-</span><span class='line'>        // 注册方法 isPrime() 为 prime
-</span><span class='line'>        method = MathUtils.class.getMethod("isPrime", Integer.class);
-</span><span class='line'>        context.registerFunction("prime", method);
+</span><span class='line'>StringBuffer Min(微秒)=29.553
+</span><span class='line'>StringBuffer Max(微秒)=3159.808
+</span><span class='line'>StringBuffer Avg(微秒)=64.113464
 </span><span class='line'>
-</span><span class='line'>        expression = parser.parseExpression("#prime(10)");
-</span><span class='line'>        value = expression.getValue(context, Boolean.class);
-</span><span class='line'>        System.out.println("Number 10 is prime: " + value);
+</span><span class='line'>ToStringHelper Min(微秒)=44.893
+</span><span class='line'>ToStringHelper Max(微秒)=9503.836
+</span><span class='line'>ToStringHelper Avg(微秒)=112.351293
 </span><span class='line'>
-</span><span class='line'>        expression = parser.parseExpression("#prime(37)");
-</span><span class='line'>        value = expression.getValue(context, Boolean.class);
-</span><span class='line'>        System.out.println("Number 37 is prime: " + value);
+</span><span class='line'>ToStringBuilder Min(微秒)=62.806
+</span><span class='line'>ToStringBuilder Max(微秒)=20228.186
+</span><span class='line'>ToStringBuilder Avg(微秒)=194.728656
 </span><span class='line'>
-</span><span class='line'>        // 注册方法 maxElement() 为 max
-</span><span class='line'>        method = CollectionUtils.class.getMethod("maxElement", Collection.class);
-</span><span class='line'>        context.registerFunction("max", method);
+</span><span class='line'>ReflectionToStringBuilder Min(微秒)=37.057
+</span><span class='line'>ReflectionToStringBuilder Max(微秒)=11402.172
+</span><span class='line'>ReflectionToStringBuilder Avg(微秒)=219.219879</span></code></pre></td></tr></table></div></figure>
+
+
+<p>整理成表格，数据如下：</p>
+
+<table>
+<thead>
+<tr>
+<th style="text-align:center;">toString策略 </th>
+<th style="text-align:center;"> 平均(微秒) </th>
+<th style="text-align:center;"> 最大(微秒) </th>
+<th style="text-align:center;"> 最小(微秒)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">Concat </td>
+<td style="text-align:center;">56.728433  </td>
+<td style="text-align:center;">2218.851 </td>
+<td style="text-align:center;"> 25.385</td>
+</tr>
+<tr>
+<td style="text-align:center;">StringBuilder </td>
+<td style="text-align:center;">50.724183  </td>
+<td style="text-align:center;">6934.066 </td>
+<td style="text-align:center;"> 22.501</td>
+</tr>
+<tr>
+<td style="text-align:center;">StringBuffer </td>
+<td style="text-align:center;">64.113464  </td>
+<td style="text-align:center;">3159.808 </td>
+<td style="text-align:center;"> 29.553</td>
+</tr>
+<tr>
+<td style="text-align:center;">ToStringHelper </td>
+<td style="text-align:center;">112.351293  </td>
+<td style="text-align:center;">9503.836 </td>
+<td style="text-align:center;"> 44.893</td>
+</tr>
+<tr>
+<td style="text-align:center;">ToStringBuilder </td>
+<td style="text-align:center;">194.728656  </td>
+<td style="text-align:center;">20228.186 </td>
+<td style="text-align:center;"> 62.806</td>
+</tr>
+<tr>
+<td style="text-align:center;">ReflectionToStringBuilder </td>
+<td style="text-align:center;">219.219879  </td>
+<td style="text-align:center;">11402.172 </td>
+<td style="text-align:center;"> 37.057</td>
+</tr>
+</tbody>
+</table>
+
+
+<p>通过上面的数据，concat和StringBuilder及StringBuffer的速度差不多。其他集中语法糖普遍慢一些，我们最常用的ReflectionToStringBuilder实际上是最慢的一个版本。</p>
+
+<h3>1.1 实现原理</h3>
+
+<p>简单分析一下各个toString方式的实现原理。</p>
+
+<ul>
+<li>1.Concat</li>
+</ul>
+
+
+<p>没什么说的，使用的是字符串的拼接。</p>
+
+<ul>
+<li>2.StringBuilder</li>
+</ul>
+
+
+<p>内部使用char数组，每次append都会先检查数组空间释放足够，不够的话先申请一块临时数组，大小是原来的两倍大小，再用Arrays.copyOf将数据拷贝。</p>
+
+<ul>
+<li>3.StringBuffer</li>
+</ul>
+
+
+<p>和StringBuilder一样，也是继承自AbstractStringBuilder类，唯一区别是为了保证线程安全，变更数据的方法都加上了synchronized关键字。</p>
+
+<ul>
+<li>4.ToStringHelper</li>
+</ul>
+
+
+<p>Guava的ToStringHelper内部实现是一个简单链表，每个链表节点包含name，value以及下一个节点的指针。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private static final class ValueHolder {
+</span><span class='line'>        String name;
+</span><span class='line'>        Object value;
+</span><span class='line'>        Objects.ToStringHelper.ValueHolder next;
 </span><span class='line'>
-</span><span class='line'>        // Collection为参数maxElement()
-</span><span class='line'>        expression = parser.parseExpression("#max({10, 43, 45, 98, 32, 1})");
-</span><span class='line'>        Integer maxElement = expression.getValue(context, Integer.class);
-</span><span class='line'>        System.out.println("Max element in the list is : " + maxElement);
+</span><span class='line'>        private ValueHolder() {
+</span><span class='line'>        }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ToStringHelper类持有链表头节点和尾节点。每次调用add都是在链表尾部加一个节点，toString() 的时候遍历整个链表讲内容加到一个StringBuilder中。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static final class ToStringHelper {
+</span><span class='line'>    private final String className;
+</span><span class='line'>    private Objects.ToStringHelper.ValueHolder holderHead;
+</span><span class='line'>    private Objects.ToStringHelper.ValueHolder holderTail;
+</span><span class='line'>
+</span><span class='line'>    public Objects.ToStringHelper add(String name, long value) {
+</span><span class='line'>        return this.addHolder(name, String.valueOf(value));
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private Objects.ToStringHelper addHolder(String name, @Nullable Object value) {
+</span><span class='line'>        Objects.ToStringHelper.ValueHolder valueHolder = this.addHolder();
+</span><span class='line'>        valueHolder.value = value;
+</span><span class='line'>        valueHolder.name = (String)Preconditions.checkNotNull(name);
+</span><span class='line'>        return this;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private Objects.ToStringHelper.ValueHolder addHolder() {
+</span><span class='line'>        Objects.ToStringHelper.ValueHolder valueHolder = new Objects.ToStringHelper.ValueHolder();
+</span><span class='line'>        this.holderTail = this.holderTail.next = valueHolder;
+</span><span class='line'>        return valueHolder;
 </span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
 
 
-<p>注：EvaluationContext开销较大，所以多用于数据变化较少的情况。如果数据变化频繁，我们可以考虑直接引用对象（比如上例中的simple）以减小开销。</p>
-
-<h3>2.15 赋值表达式</h3>
-
-<p>SpEL即允许给自定义变量赋值，也允许给跟对象赋值，直接使用"#variableName=value"即可赋值：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_15() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>    //1.给自定义变量赋值
-</span><span class='line'>    context.setVariable("variable", "Spring SpEL");
-</span><span class='line'>    String result1 = parser.parseExpression("#variable").getValue(context, String.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>
-</span><span class='line'>    //修改
-</span><span class='line'>    String result2 = parser.parseExpression("#variable='ABC'").getValue(context, String.class);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<ul>
+<li>5.ToStringBuilder</li>
+</ul>
 
 
-<h3>2.16 对象属性存取及安全导航表达式</h3>
-
-<p>对象属性获取非常简单，即使用如"a.property.property"这种点缀式获取，SpEL对于属性名首字母是不区分大小写的；修改对象属性值则可以通过赋值表达式或Expression接口的setValue方法修改。</p>
-
-<p>对于当前上下文对象属性及方法访问，可以直接使用属性或方法名访问，注意此处属性名首字母不区分大小写。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_16() {
-</span><span class='line'>    ExpressionParser parser = new SpelExpressionParser();
-</span><span class='line'>    // 1.访问root对象属性
-</span><span class='line'>    Date date = new Date();
-</span><span class='line'>    System.out.println("date=" + date);
-</span><span class='line'>    StandardEvaluationContext context = new StandardEvaluationContext(date);
-</span><span class='line'>    int result1 = parser.parseExpression("Month").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>    int result2 = parser.parseExpression("month").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>SpEL还引入了Groovy语言中的安全导航运算符"(对象|属性)?.属性"，用来避免但"?.&ldquo;前边的表达式为null时抛出空指针异常，而是返回null；</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_16() {
-</span><span class='line'>    ExpressionParser parser = new SpelExpressionParser();
-</span><span class='line'>    // 2.安全访问
-</span><span class='line'>    context.setRootObject(null);
-</span><span class='line'>    Object result3 = parser.parseExpression("#root?.year").getValue(context, Object.class);
-</span><span class='line'>    System.out.println("result3=" + result3);   //null
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.17 对象方法调用</h3>
-
-<p>对象方法调用更简单，跟Java语法一样；如"&lsquo;Spring&rsquo;.substring(2,4)&ldquo;将返回"ri"；而对于根对象可以直接调用方法；</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_17() {
-</span><span class='line'>    String result1 = parser.parseExpression("'Spring SpEL'.substring(2,4)").getValue(String.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>
-</span><span class='line'>    //root对象date方法"getYear"可以直接调用
-</span><span class='line'>    Date date = new Date();
-</span><span class='line'>    StandardEvaluationContext context = new StandardEvaluationContext(date);
-</span><span class='line'>    int result2 = parser.parseExpression("getMonth()").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.18 Bean引用</h3>
-
-<p>SpEL支持使用"@&ldquo;符号来引用Bean，在引用Bean时需要使用BeanResolver接口实现来查找Bean，Spring提供BeanFactoryResolver实现；</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_18() {
-</span><span class='line'>    ClassPathXmlApplicationContext ctx = new ClassPathXmlApplicationContext();
-</span><span class='line'>    ctx.refresh();
-</span><span class='line'>    ExpressionParser parser = new SpelExpressionParser();
-</span><span class='line'>    StandardEvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>    context.setBeanResolver(new BeanFactoryResolver(ctx));
-</span><span class='line'>    Properties result1 = parser.parseExpression("@systemProperties").getValue(context, Properties.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>在示例中我们首先初始化了一个IoC容器，ClassPathXmlApplicationContext实现默认会把"System.getProperties()&ldquo;注册为"systemProperties"Bean，因此我们使用 &rdquo;@systemProperties"来引用该Bean。</p>
-
-<h3>2.19 内联List</h3>
+<p>ToStringBuilder内部使用一个StringBuffer，默认大小为512.另外一个style设定来toString的样式，每次执行append都跳转到对应的ToStringStyle的append函数实现上，并将当前的StringBuffer带过去(StringBuffer来存储数据，ToStringStyle来保证格式)：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -716,39 +675,23 @@
 <span class='line-number'>12</span>
 <span class='line-number'>13</span>
 <span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_19() {
-</span><span class='line'>    // 将返回不可修改的空List
-</span><span class='line'>    List&lt;Integer&gt; result0 = parser.parseExpression("{}").getValue(List.class);
-</span><span class='line'>    System.out.println("result0=" + result0);   //[]
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class ToStringBuilder implements Builder&lt;String&gt; {
+</span><span class='line'>    private static volatile ToStringStyle defaultStyle;
+</span><span class='line'>    private final StringBuffer buffer;
+</span><span class='line'>    private final Object object;
+</span><span class='line'>    private final ToStringStyle style;
 </span><span class='line'>
-</span><span class='line'>    //对于字面量列表也将返回不可修改的List
-</span><span class='line'>    List&lt;Integer&gt; result1 = parser.parseExpression("{1,2,3}").getValue(List.class);
-</span><span class='line'>    System.out.println("result1=" + result1);   //[1, 2, 3]
-</span><span class='line'>    Assert.assertEquals(new Integer(1), result1.get(0));
-</span><span class='line'>    try {
-</span><span class='line'>        result1.set(0, 2);
-</span><span class='line'>        //不可能执行到这，对于字面量列表不可修改
-</span><span class='line'>    } catch (Exception e) {
-</span><span class='line'>        e.printStackTrace();
+</span><span class='line'>    static {
+</span><span class='line'>    defaultStyle = ToStringStyle.DEFAULT_STYLE;
 </span><span class='line'>    }
 </span><span class='line'>
-</span><span class='line'>    //对于列表中只要有一个不是字面量表达式，将只返回原始List， 会进行不可修改处理
-</span><span class='line'>    String expression3 = "\{\{1+2,2+4\},\{3,4+4\}\}";
-</span><span class='line'>    List&lt;List&lt;Integer&gt;&gt; result2 = parser.parseExpression(expression3).getValue(List.class);
-</span><span class='line'>    System.out.println("result2=" + result2);   //[[3, 6], [3, 8]]
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+</span><span class='line'>    public ToStringBuilder append(String fieldName, int value) {
+</span><span class='line'>        this.style.append(this.buffer, fieldName, value);
+</span><span class='line'>        return this;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
 
 
-<h3>2.20 内联数组</h3>
-
-<p>和Java 数组定义类似，只是在定义时进行多维数组初始化</p>
+<p>ToStringStyle的append实现，每个append都很简单，就是往StringBuffer中append数据：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -759,794 +702,23 @@
 <span class='line-number'>7</span>
 <span class='line-number'>8</span>
 <span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_20() {
-</span><span class='line'>    //定义一维数组并初始化
-</span><span class='line'>    int[] result1 = parser.parseExpression("new int[1]{8}").getValue(int[].class);
-</span><span class='line'>    System.out.println("result1.length=" + result1.length + ",result1=" + result1);
+</pre></td><td class='code'><pre><code class=''><span class='line'>public void append(StringBuffer buffer, String fieldName, int value) {
+</span><span class='line'>    this.appendFieldStart(buffer, fieldName);
+</span><span class='line'>    this.appendDetail(buffer, fieldName, value);
+</span><span class='line'>    this.appendFieldEnd(buffer, fieldName);
+</span><span class='line'>}
 </span><span class='line'>
-</span><span class='line'>    // 定义多维数组但不初始化, 多维数组不能初始化
-</span><span class='line'>    String expression1 = "new int[1][2]";
-</span><span class='line'>    //String expression2 = "new int[1][2]\{\{1}\{2\}\}"; //多维数组不能初始化
-</span><span class='line'>    int[][] result2 = parser.parseExpression(expression1).getValue(int[][].class);
-</span><span class='line'>    System.out.println("result2.length=" + result2.length + ",result2=" + result2);
-</span><span class='line'>
-</span><span class='line'>    //解析到多维数据
-</span><span class='line'>    String expression3 = "\{\{3,4\},\{5,6\}\}";
-</span><span class='line'>    int[][] result3 = parser.parseExpression(expression3).getValue(int[][].class);
-</span><span class='line'>    System.out.println("result3=" + result3);   //[[3, 6], [3, 8]]
-</span><span class='line'>    for (int[] row : result3) {
-</span><span class='line'>        for(int data : row) {
-</span><span class='line'>            System.out.print(data + "   ");
-</span><span class='line'>        }
-</span><span class='line'>        System.out.println();
-</span><span class='line'>    }
+</span><span class='line'>protected void appendDetail(StringBuffer buffer, String fieldName, int value) {
+</span><span class='line'>    buffer.append(value);
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<h3>2.21 集合，字典元素访问</h3>
+<ul>
+<li>6.ReflectionToStringBuilder</li>
+</ul>
 
-<p>SpEL目前支持所有集合类型和字典类型的元素访问，使用"集合[索引]&ldquo;访问集合元素，使用"map[key]"访问字典元素；</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_21() {
-</span><span class='line'>    // SpEL内联List访问
-</span><span class='line'>    int result1 = parser.parseExpression("{1,2,3}[0]").getValue(int.class);
-</span><span class='line'>    System.out.println("result1=" + result1);   //1
-</span><span class='line'>
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>
-</span><span class='line'>    //SpEL目前支持所有集合类型的访问
-</span><span class='line'>    Collection&lt;Integer&gt; collection = new HashSet&lt;Integer&gt;();
-</span><span class='line'>    collection.add(1);
-</span><span class='line'>    collection.add(2);
-</span><span class='line'>    context.setVariable("collection", collection);
-</span><span class='line'>    int result2 = parser.parseExpression("#collection[1]").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result2=" + result2);   //2
-</span><span class='line'>
-</span><span class='line'>    //SpEL对Map字典元素访问的支持
-</span><span class='line'>    Map&lt;String, Integer&gt; map = new HashMap&lt;String, Integer&gt;();
-</span><span class='line'>    map.put("A", 3);
-</span><span class='line'>    context.setVariable("map", map);
-</span><span class='line'>    int result3 = parser.parseExpression("#map['A']").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result3=" + result3);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.22 列表，字典，数组元素修改</h3>
-
-<p>可以使用赋值表达式或Expression接口的setValue方法修改</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_22() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>
-</span><span class='line'>    //1.修改数组元素值
-</span><span class='line'>    int[] array = new int[] {1, 2};
-</span><span class='line'>    context.setVariable("array", array);
-</span><span class='line'>    int result1 = parser.parseExpression("#array[1] = 3").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result1=" + result1);   //3
-</span><span class='line'>
-</span><span class='line'>    //2.修改集合值
-</span><span class='line'>    Collection&lt;Integer&gt; collection = new ArrayList&lt;Integer&gt;();
-</span><span class='line'>    collection.add(1);
-</span><span class='line'>    collection.add(2);
-</span><span class='line'>    context.setVariable("collection", collection);
-</span><span class='line'>    int result2 = parser.parseExpression("#collection[1] = 4").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result2=" + result2);   //4
-</span><span class='line'>    parser.parseExpression("#collection[1]").setValue(context, 5);
-</span><span class='line'>    int result3 = parser.parseExpression("#collection[1]").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result3=" + result3);   //5
-</span><span class='line'>
-</span><span class='line'>    //3.修改map元素值
-</span><span class='line'>    Map&lt;String, Integer&gt; map = new HashMap&lt;String, Integer&gt;();
-</span><span class='line'>    map.put("A", 1);
-</span><span class='line'>    context.setVariable("map", map);
-</span><span class='line'>    int result4 = parser.parseExpression("#map['A'] = 6").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result4=" + result4);   //6
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.23 集合投影</h3>
-
-<p>在SQL中投影指从表中选择出列，而在SpEL指根据集合中的元素中通过选择来构造另一个集合，该集合和原集合具有相同数量的元素；SpEL使用"（list|map）.![投影表达式]&ldquo;来进行投影运算.</p>
-
-<p>对于集合或数组使用如上表达式进行投影运算，其中投影表达式中"#this"代表每个集合或数组元素，可以使用比如"#this.property"来获取集合元素的属性，其中"#this"可以省略。</p>
-
-<p>SpEL投影运算还支持Map投影，但Map投影最终只能得到List结果，如上所示，对于投影表达式中的"#this"将是Map.Entry，所以可以使用"value"来获取值，使用"key"来获取键。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_23() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>
-</span><span class='line'>    //1.首先准备测试数据
-</span><span class='line'>    Collection&lt;Integer&gt; collection = new ArrayList&lt;Integer&gt;();
-</span><span class='line'>    collection.add(4);
-</span><span class='line'>    collection.add(5);
-</span><span class='line'>
-</span><span class='line'>    Map&lt;String, Integer&gt; map = new HashMap&lt;String, Integer&gt;();
-</span><span class='line'>    map.put("A", 1);
-</span><span class='line'>    map.put("B", 2);
-</span><span class='line'>
-</span><span class='line'>    //2.collection中每个值加1
-</span><span class='line'>    context.setVariable("collection", collection);
-</span><span class='line'>    Collection&lt;Integer&gt; result1 = parser.parseExpression("#collection.![#this+1]").getValue(context,
-</span><span class='line'>            Collection.class);
-</span><span class='line'>    System.out.println("result1.size()=" + result1.size() + ", result1=" + result1);//result1.size()=2, result1=[5, 6]
-</span><span class='line'>
-</span><span class='line'>    //3.测试map
-</span><span class='line'>    context.setVariable("map", map);
-</span><span class='line'>    List&lt;Integer&gt; result2 = parser.parseExpression("#map.![value+1]").getValue(context, List.class);
-</span><span class='line'>    System.out.println("result2.size()=" + result2.size() + ", result2=" + result2);    //result2.size()=2, result2=[2, 3]
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.24 集合选择</h3>
-
-<p>在SQL中指使用select进行选择行数据，而在SpEL指根据原集合通过条件表达式选择出满足条件的元素并构造为新的集合，SpEL使用"(list|map).?[选择表达式]&ldquo;，其中选择表达式结果必须是boolean类型，如果true则选择的元素将添加到新集合中，false将不添加到新集合中。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_24() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>
-</span><span class='line'>    // 1.首先准备测试数据
-</span><span class='line'>    Collection&lt;Integer&gt; collection = new ArrayList&lt;Integer&gt;();
-</span><span class='line'>    collection.add(4);
-</span><span class='line'>    collection.add(5);
-</span><span class='line'>
-</span><span class='line'>    Map&lt;String, Integer&gt; map = new HashMap&lt;String, Integer&gt;();
-</span><span class='line'>    map.put("A", 1);
-</span><span class='line'>    map.put("B", 2);
-</span><span class='line'>
-</span><span class='line'>    // 2.集合或数组测试:出集合元素值大于4的所有元素
-</span><span class='line'>    context.setVariable("collection", collection);
-</span><span class='line'>    Collection&lt;Integer&gt; result1 = parser.parseExpression("#collection.?[#this&gt;4]").getValue(context,
-</span><span class='line'>            Collection.class);
-</span><span class='line'>    System.out.println("result1.size()=" + result1.size() + ", result1=" + result1); // result1.size()=1, result1=[5]
-</span><span class='line'>
-</span><span class='line'>    // 3.字典测试:选择键值不等于"A"的,注意map选择表达式中"#this"是Map.Entry类型
-</span><span class='line'>    context.setVariable("map", map);
-</span><span class='line'>    Map&lt;String, Integer&gt; result2 = parser.parseExpression("#map.?[#this.key != 'A']").getValue(context, Map.class);
-</span><span class='line'>    System.out.println("result2=" + result2); // result2={B=2}
-</span><span class='line'>
-</span><span class='line'>    List&lt;Integer&gt; result3 = parser.parseExpression("#map.?[key != 'A'].![value+1]").getValue(context, List.class);
-</span><span class='line'>    System.out.println("result3.size()=" + result3.size() + ", result3=" + result3); // result3.size()=1,
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.25 表达式模板</h3>
-
-<h1>3.Spring Cache</h1>
-
-<p>Spring 3.1引入了激动人心的基于注释(annotation)的缓存(cache)技术，它本质上不是一个具体的缓存实现方案(例如 EHCache等)，而是一个对缓存使用的抽象,通过在既有代码中添加少量它定义的各种 annotation,即能够达到缓存方法的返回对象的效果。</p>
-
-<p>Spring Cache是使用SpEL表达式的一个地方.将会另起一篇单独介绍Sping Cache.</p>
-
-<h1>4.参考</h1>
-
-<p><a href="http://sishuok.com/forum/blogPost/list/2463.html">http://sishuok.com/forum/blogPost/list/2463.html</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/04/09/maven-compiler-plugin/">Maven-compiler-plugin</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-04-09T07:04:59+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>9</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:04 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>今天项目发布的出现一个异常：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Unsupported major.minor version 51.0 (unable to load class XXX)</span></code></pre></td></tr></table></div></figure>
-
-
-<p>一看到这个51.0,直觉想起了JDK 1.7。追查问题发现是新定义了maven-compiler-plugin，并且指定了版本为1.7,但是线上应用机器上的JDK版本是1.6,导致编译产生的1.7版本的class文件在1.6(version为50)上无法执行。</p>
-
-<p>maven-compiler-plugin用来指定编译时候的JDK版本</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;plugin&gt;
-</span><span class='line'>    &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
-</span><span class='line'>    &lt;artifactId&gt;maven-compiler-plugin&lt;/artifactId&gt;
-</span><span class='line'>    &lt;version&gt;3.1&lt;/version&gt;
-</span><span class='line'>    &lt;configuration&gt;
-</span><span class='line'>        &lt;source&gt;1.7&lt;/source&gt; &lt;!-- 源代码使用的开发版本 --&gt;
-</span><span class='line'>        &lt;target&gt;1.7&lt;/target&gt; &lt;!-- 需要生成的目标class文件的编译版本 --&gt;
-</span><span class='line'>        &lt;!-- 一般而言，target与source是保持一致的，但是，有时候为了让程序能在其他版本的jdk中运行(对于低版本目标jdk，源代码中需要没有使用低版本jdk中不支持的语法)，会存在target不同于source的情况 --&gt;
-</span><span class='line'>     
-</span><span class='line'>        &lt;!-- 这下面的是可选项 --&gt;
-</span><span class='line'>        &lt;meminitial&gt;128m&lt;/meminitial&gt;
-</span><span class='line'>        &lt;maxmem&gt;512m&lt;/maxmem&gt;
-</span><span class='line'>        &lt;fork&gt;true&lt;/fork&gt; &lt;!-- fork is enable,用于明确表示编译版本配置的可用 --&gt; 
-</span><span class='line'>        &lt;compilerVersion&gt;1.3&lt;/compilerVersion&gt;
-</span><span class='line'>         
-</span><span class='line'>        &lt;!-- 这个选项用来传递编译器自身不包含但是却支持的参数选项 --&gt;
-</span><span class='line'>        &lt;compilerArgument&gt;-verbose -bootclasspath ${java.home}\lib\rt.jar&lt;/compilerArgument&gt;
-</span><span class='line'>         
-</span><span class='line'>    &lt;/configuration&gt;
-</span><span class='line'>&lt;/plugin&gt;</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/04/08/mysql-utf8mb4/">Mysql Utf8mb4</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-04-08T04:50:24+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>8</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:50 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>MYSQL 5.5 之前， UTF8 编码只支持1-3个字节，只支持BMP这部分的unicode编码区， BMP是从哪到哪，到
-<a href="http://en.wikipedia.org/wiki/Mapping_of_Unicode_characters">http://en.wikipedia.org/wiki/Mapping_of_Unicode_characters</a>
-这里看，基本就是0000～FFFF这一区。 从MYSQL5.5开始，可支持4个字节UTF编码utf8mb4，一个字符最多能有4字节，所以能支持更多的字符集。</p>
-
-<p>utf8mb4兼容utf8，且比utf8能表示更多的字符。</p>
-
-<p>在做移动应用时，会遇到ios用户会在文本的区域输入emoji表情，emoji就是表情符号，在手机短信里面已经是很流行使用的一种表情。</p>
-
-<p>因为utf8mb4是utf8的超集，理论上即使client修改字符集为utf8mb4，也会不会对已有的utf8编码读取产生任何问题。</p>
-
-<h1>1.问题</h1>
-
-<pre><code>1.MySQL在处理utf8mb4数据时,要比utf8慢;
-2.存储字符数量,utf8mb4要比utf8少;
-3.TIMESTAMP NOT NULL DEFAULT 类型的字段，当我们在程序中传入NULL时，Mysql 5.5会自动填充默认值，而5.6不会自动填充，这就违反了非空约束，会报错;
-4.在mysql 5.6版本, utf8的表和utf8mb4的表join查询会导致索引失效;
-</code></pre>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/04/03/mysqljia-gou/">Mysql架构</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-04-03T04:07:44+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>4:07 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>这里想总结一下使用Mysql的一些架构，注意不是Mysql源码的架构。</p>
-
-<h1>1.单点</h1>
-
-<p>数据量不大，业务简单的情况下，直接单点的mysql instance足够。</p>
-
-<p><img src="/images/mysql/one_instance.PNG"></p>
-
-<h3>1.1 优点</h3>
-
-<pre><code>1.简单，不存在数据一致性等问题;
-</code></pre>
-
-<h3>1.2 缺点瓶颈</h3>
-
-<pre><code>1.单机存储数据量有限;
-2.数据索引单机内存可能放不下,导致和只能加载部分索引，印象性能;
-3.单机访问速度有极限;
-4.读写混合，不正当的写操作导致的锁表等问题，可能导致读操作也失败，进而拖死整个系统;
-5.无法容灾;
-</code></pre>
-
-<p>很多业务场景简单的，单表可以一般足够，比如对于用户信息这类表 （3个索引），16G内存能放下大概2000W行数据的索引，简单的读和写混合访问量3000/s左右没有问题。</p>
-
-<h1>2.垂直拆分</h1>
-
-<p>当单表遇到瓶颈的时候，最简单的想法是垂直拆分，从业务角度来看，将关联性不强的数据拆分到不同的instance上，从而达到消除瓶颈的目标。</p>
-
-<p>另外，绝大部分的业务常见读写复合2-8原则，即80%的数据库操作会是读操作，因此对于重复读类型比较多的场景，我们还可以加一层cache，来减少对DB的压力。</p>
-
-<p><img src="/images/mysql/v_multi_instance.PNG"></p>
-
-<h3>2.1 优点</h3>
-
-<pre><code>1.业务隔离，互不影响;
-</code></pre>
-
-<h3>2.2 缺点瓶颈</h3>
-
-<pre><code>1.读写混合的问题依然存在;
-</code></pre>
-
-<h1>3.Master-Slave</h1>
-
-<p>基于业务的读写2-8原则，我们将读写分离，即读和写打到不同的数据库服务器，通常读服务器会有多台，这即典型的Master-Slave结构，主库(Master)抗写压力，通过从库(Slave)来分担读压力。MS结构非常适合读多写少的应用场景，比如博客类网站等。</p>
-
-<p><img src="/images/mysql/master_slave.PNG"></p>
-
-<p>Slave通过binlog来同步Master的数据变更：
-<img src="/images/mysql/master-salve.jpg"></p>
-
-<p>主从机器的硬件配置和MySQL版本、各种参数配置最好都要一样，这样才能保证出问题时应用程 序能够平滑地从主库切换到备库上。</p>
-
-<h3>3.1 优点</h3>
-
-<pre><code>1.读写分离，减少相互影响;
-2.实时备份;
-</code></pre>
-
-<h3>3.2 缺点瓶颈</h3>
-
-<pre><code>1.数据一致性难以保障;
-2.主从切换麻烦，而且切换所带来的麻烦会随着备库的增多而逐步上升;
-</code></pre>
-
-<h1>4.Proxy</h1>
-
-<p>在Application和DB中间加以层Proxy，Proxy来解析sql协议，按sharding key 来寻找cluster, 判断是读操作还是写操作来请求主服务器或者从服务器，这一切内部的细节都由proxy来屏蔽。</p>
-
-<p>Proxy做的工作包括：</p>
-
-<pre><code>1.SQL解析
-2.SQL改写
-3.查询Dispatch
-4.读写分离、主从切换逻辑
-5.缓冲区控制
-6.归并+排序
-</code></pre>
-
-<h1>5.Heartbeat+DRBD</h1>
-
-<h3>5.1 Heartbeat介绍</h3>
-
-<p>heartbeat可以资源(VIP地址及程序服务)从一台有故障的服务器快速的转移到另一台正常的服务器提供服务，heartbeat和keepalived相似，heartbeat可以实现failover功能，但不能实现对后端的健康检查。</p>
-
-<p><a href="http://linux-ha.org/wiki/Main_Page">http://linux-ha.org/wiki/Main_Page</a></p>
-
-<h3>5.2 DRBD介绍</h3>
-
-<p>DRBD(Distributed Replicated Block Device)是一个基于块设备级别在远程服务器直接同步和镜像数据的软件，用软件实现的、无共享的、服务器之间镜像块设备内容的存储复制解决方案。</p>
-
-<p>它可以实现在网络中两台服务器之间基于块设备级别的实时镜像或同步复制(两台服务器都写入成功)/异步复制(本地服务器写入成功)，相当于网络的RAID1，由于是基于块设备(磁盘，LVM逻辑卷)，在文件系统的底层，所以数据复制要比cp命令更快。DRBD已经被MySQL官方写入文档手册作为推荐的高可用的方案之一。</p>
-
-<p>官方站点：<a href="http://www.drbd.org/">http://www.drbd.org/</a></p>
-
-<h3>5.3 Heartbeat+DRBD</h3>
-
-<p>适用于数据库访问量不太大，短期内访问量增长不会太快，对数据库可用性要求非常高的场景。</p>
-
-<h1>6.MMM</h1>
-
-<p>主从切换是Master-Slave结构的一个硬伤，如果备库只是用来实时备份数据和承担小部分读压力，那么MM结构将会是取代MS结构的不二之选。MM(Master-Master)就是主主结构,任意一个时刻，只有一个实际意义上的Master，另外一个作为Slave，只有当前的Master出现故障或者问题的使用，两台Master的角色切换，即原始的Master变为Slave，而原始的Slave切换为Master。</p>
-
-<p>MMM(Master-Master replication manager for MySQ)是一套支持双主故障切换和双主日常管理的脚本程序。MMM使用Perl语言开发，主要用来监控和管理MySQL Master-Master复制。</p>
-
-<p>MMM项目来自 Google：<a href="http://code.google.com/p/mysql-master-master">http://code.google.com/p/mysql-master-master</a></p>
-
-<p>官方网站为：<a href="http://mysql-mmm.org">http://mysql-mmm.org</a></p>
-
-<p>虽然叫做双主复制，但是业务上同一时刻只允许对一个主进行写入，另一台备选主上提供部分读服务，以加速在主主切换时刻备选主的预热，可以说MMM这套脚本程序一方面实现了故障切换的功能，另一方面其内部附加的工具脚本也可以实现多个slave的read负载均衡。</p>
-
-<h3>6.1 MMM两种典型的使用</h3>
-
-<p>典型的MM结构，即只有两台数据库Master服务器：
-<img src="/images/mysql/MMM-usage1.png"></p>
-
-<p>MM+Slaves结构，即两台数据库Master服务器加多台Slave服务器：
-<img src="/images/mysql/MMM-usage2.png"></p>
-
-<h3>6.2 Master切换的原理</h3>
-
-<p>MMM主要的功能通过下面三个脚本来实现：</p>
-
-<pre><code>mmm_mond： 负责所有的监控工作的监控守护进程，决定节点的活动;
-mmm_agentd：运行在mysql服务器上的代理守护进程，通过远程服务提供给监控节点;
-mmm_control：通过命令行管理mmm_mond进程;
-</code></pre>
-
-<p>mysql-mmm的监管端会提供多个虚拟IP(VIP)，包括一个可写VIP，多个可读VIP，通过监管端每十秒种(默认间隔)轮询一次MySQL节点来检查其状态，仅其中的一台服务器接收到写入器角色(写的VIP，Master的某一个)，其他的可以拥有阅读器角色(读VIP，包括一个备份的Master),当写库不可用(比如宕机等)，MMM会自动将写VIP给另外一台Master。</p>
-
-<p>Mysql需要创建一个mmm_monitor和多个mmm_agent账户并授权。</p>
-
-<h3>6.3 优点</h3>
-
-<pre><code>1.克服了MS结构主从切换困难的问题;
-2.是一种HA(高可用)架构(Easy Failover)
-</code></pre>
-
-<h3>6.4 缺点瓶颈</h3>
-
-<pre><code>1.MMM不适用于对数据一致性要求很高的环境,某种情况下存在双写的问题
-</code></pre>
-
-<p>其他问题参考：</p>
-
-<pre><code>1.[What's wrong with MMM?](http://www.xaprb.com/blog/2011/05/04/whats-wrong-with-mmm/)
-2.[Problems with MMM for MySQL](http://code.openark.org/blog/mysql/problems-with-mmm-for-mysql)
-</code></pre>
-
-<p>最近我们系统遇到过一次MMM导致的问题：</p>
-
-<pre><code>1.在当前的主Master(称之为Master-A)上有读写请求，从T1时刻开始，由于大量的慢查询，且这台机器善有多个Mysql Instance，导致在业务高峰期，当前的主Master对Monitor(Master-A)没有响应，因此Monitor认为这个Master(Master-A)宕机了，因此在T2时刻将读和写的VIP都漂移到另外一台备份Master(Master-B)上，这种情况下，Master-A和Master-B之间的双写复制中断，但是实际上Master-A上的写操作还在进行，即在T2之后的一段时间内，Master-A和Master-B上都存在写操作，并且不存在双写复制，当Master-A机器恢复，读VIP漂移到Master-A上，开始执行双写复制，发现存在冲突，因此双写导致数据存在冲突(比如自增ID)。
-</code></pre>
-
-<h1>7.PXC</h1>
-
-<h3>7.1 优点</h3>
-
-<h3>7.2 缺点瓶颈</h3>
-
-<p><a href="http://www.infoq.com/cn/news/2013/03/MySQL-Reference-Architectures">http://www.infoq.com/cn/news/2013/03/MySQL-Reference-Architectures</a>
-<a href="http://www.admin10000.com/document/4539.html">http://www.admin10000.com/document/4539.html</a>
-<a href="http://www.open-open.com/lib/view/open1341302877043.html">http://www.open-open.com/lib/view/open1341302877043.html</a>
-<a href="http://mysql-mmm.org/mysql-mmm.html">http://mysql-mmm.org/mysql-mmm.html</a>
-<a href="http://www.cnblogs.com/gomysql/p/3671896.html">http://www.cnblogs.com/gomysql/p/3671896.html</a>
-<a href="http://www.luocs.com/archives/849.http">http://www.luocs.com/archives/849.http</a>
-html://wiki.corp.qunar.com/download/attachments/63242976/%E5%91%A8%E5%BD%A6%E4%BC%9F%E3%80%8AMySQL%E9%AB%98%E5%8F%AF%E7%94%A8%E6%9E%B6%E6%9E%84%E6%BC%94%E5%8F%98%E4%B9%8B%E8%B7%AF_%E4%BB%8EMMM%E5%88%B0PXC%E3%80%8B.pdf?version=1&amp;modificationDate=1418272276416</p>
-
-<p><a href="http://www.cnblogs.com/bamboos/p/3543309.html">http://www.cnblogs.com/bamboos/p/3543309.html</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/04/02/xu-ni-iphe-ippiao-yi/">虚拟IP和IP漂移</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-04-02T22:39:14+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>2</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>10:39 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>学习一下虚拟IP和IP漂移的概念。</p>
-
-<h1>1.虚拟IP</h1>
-
-<p>在 TCP/IP 的架构下，所有想上网的电脑，不论是用何种方式连上网路，都必须要有一个唯一的 IP-address。事实上IP地址是主机硬件地址的一种抽象，简单的说，MAC地址是物理地址，IP地址是逻辑地址。</p>
-
-<p>虚拟IP，就是一个未分配给真实主机的IP，也就是说对外提供服务器的主机除了有一个真实IP外还有一个虚IP，使用这两个IP中的任意一个都可以连接到这台主机。</p>
-
-<p>虚拟IP一般用作达到HA(High Availability)的目的,比如让所有项目中数据库链接一项配置的都是这个虚IP，当主服务器发生故障无法对外提供服务时，动态将这个虚IP切换到备用服务器。</p>
-
-<h1>2.虚拟IP原理</h1>
-
-<p>ARP是地址解析协议，它的作用很简单，将一个IP地址转换为MAC地址，然后给传输层使用。</p>
-
-<p>每台主机中都有一个ARP高速缓存，存储同一个网络内的IP地址与MAC地址的对应关 系，以太网中的主机发送数据时会先从这个缓存中查询目标IP对应的MAC地址，会向这个MAC地址发送数据。操作系统会自动维护这个缓存。</p>
-
-<p>在Linux下可以使用arp命令操作ARP高速缓存。</p>
-
-<p>比如存在物理机A(IP是192.168.192.54 )和物理机器B(IP是192.168.192.40)，A作为对外服务的主服务器(比如数据库主库)，B作为备份机器，两台服务器之间的通信是通过Heartbeat，即主服务器会定时的给备份服务器发送数据包，告知主服务器服务正常，当备份服务器在规定时间内没有收到主服务器的Heartbeat，就会认为主服务器宕机，则备份服务器就会升级为主服务器。假设物理机A的ARP缓存如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>地址                     类型    硬件地址            标志  Mask            接口
-</span><span class='line'>192.168.192.54           ether   ec:f4:bb:49:xx:xx   C                     eth0
-</span><span class='line'>192.168.192.237          ether   ec:f4:bb:49:xx:xx   C                     eth0
-</span><span class='line'>192.168.192.40           ether   28:e3:47:c0:xx:xx   C                     eth0
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<p>另外物理机器B(IP是192.168.192.40)的ARP缓存如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>地址                     类型    硬件地址            标志  Mask            接口
-</span><span class='line'>192.168.192.54           ether   ec:f4:bb:49:xx:xx   C                     eth0
-</span><span class='line'>192.168.192.237          ether   ec:f4:bb:49:xx:xx   C                     eth0
-</span><span class='line'>192.168.192.40           ether   ec:f4:bb:49:xx:xx   C                     eth0
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<p>当机器B通过BeatHeart得知机器A对外服务质量低于预期的时候(比如发生故障，服务无响应)，会将自己的ARP缓存发送出去，让路由器修改路由表，告知虚拟地址应该指向我(物理机器B,192.168.192.40),这时候，外界再次访问虚拟IP的时候，机器B会变成主服务器，而A降级为备份服务器。这就完成了主从机器的自动切换，这一切对外界是透明的。</p>
-
-<h1>3.IP漂移</h1>
-
-<p>上面的VIP自动切换的过程就称之为IP漂移。</p>
-
-<p>我们可以通过Keepalived来实现这个过程。 Keepalived是一个基于VRRP协议(Virtual Router Redundancy Protocol,即虚拟路由冗余协议)来实现的LVS(负载均衡器)服务高可用方案，可以利用其来避免单点故障。一个LVS服务会有2台服务器运行Keepalived，一台为主服务器（MASTER），一台为备份服务器（BACKUP），但是对外表现为一个虚拟IP，主服务器会发送特定的消息给备份服务器，当备份服务器收不到这个消息的时候，即主服务器宕机的时候， 备份服务器就会接管虚拟IP，继续提供服务，从而保证了高可用性。</p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/04/02/dubbo-thread-pool-exhausted/">Dubbo Thread Pool Exhausted</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-04-02T20:13:22+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>2</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>8:13 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>今天出现一次dubbo的Thread pool exhausted导致服务不可用。根本原因是Mysql的慢查询。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Caused by: java.util.concurrent.RejectedExecutionException: Thread pool is EXHAUSTED! Thread Name...</span></code></pre></td></tr></table></div></figure>
-
-
-<p>RejectedExecutionException表示线程池已经达到最大值，并且没有空闲连，拒绝执行了一些任务。
-Thread pool exhausted通常是min和max不一样大时，表示当前已创建的连接用完，进行了一次扩充，创建了新线程，但不影响运行。</p>
-
-<p>原因可能是连接池不够用，可以在provider的配置文件中设置threads参数：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;dubbo:provider port="20920" timeout="20000" threads="200"/&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>如果线程池已经有200，还不够，通常是业务处理占用线程时间过长，
-需优化业务，可通过jstack查看进程的状态，分析当前大多数线程都在干什么，从而分析出哪个地方是瓶颈，
-比如，如果大部分线程都在处理SQL，可能是数据库连接不够，或数据源配置错误，或SQL没走索引等。</p>
-
-<p>参考：
-<a href="http://alibaba.github.io/dubbo-doc-static/FAQ-focusedCommentId=9633823.htm#FAQ-9.%E5%87%BA%E7%8E%B0java.util.concurrent.RejectedExecutionException%E6%88%96%E8%80%85Threadpoolexhausted%E6%80%8E%E4%B9%88%E5%8A%9E%EF%BC%9F">http://alibaba.github.io/dubbo-doc-static/FAQ-focusedCommentId=9633823.htm#FAQ-9.%E5%87%BA%E7%8E%B0java.util.concurrent.RejectedExecutionException%E6%88%96%E8%80%85Threadpoolexhausted%E6%80%8E%E4%B9%88%E5%8A%9E%EF%BC%9F</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/04/01/enumfan-xu-lie-hua-wen-ti/">Enum反序列化问题</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-04-01T23:01:25+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>1</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>11:01 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h1>1.Enum原理</h1>
-
-<p>定义一个Enum，通过编译之后的字节码，我们可以发现其实现原理：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public enum FruitEnum {  
-</span><span class='line'>    APPLE, ORAGE  
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>编译器是在为我们创建一个类，这个类继承自 java.lang.Enum，有两个公共的、静态的、被声明成final的属性，它们的类型就是我们定义的FruitEnum。</p>
-
-<p>编译器还生成了一个静态初始话器，就是字节码中static{};这一行下面的代码，其中的字节码创建了两个FruitEnum对象，同时分别赋值给APPLE和ORANGE这两个属性，调用的构造函数是定义在java.lang.Enum中的protected Enum(String name, int ordinal)方法。</p>
-
-<p>在创建完成两个FruitEnum对象并且分别赋值给APPLE和ORIGIN之后，还创建了一个名叫ENUM$VALUES的数组，然后把APPLE和ORIGIN按照定义的顺序放如这个数组中。</p>
-
-<p>除了这个静态初始化器之外，编译器还为我们生成了两个静态方法，values()和 valueOf(java.lang.String)方法。其中values()方法将ENUM$VALUES数组拷贝一份然后返回，而valueOf(java.lang.String)方法则会调用java.lang.Enum类中的valueOf方法，其作用是根据参数名找到对应的具体的枚举对象，如果找不到的话会抛出一个IllegalArgumentException异常。</p>
-
-<h1>2.Enum序列化反序列化原理及问题</h1>
-
-<h3>2.1原理</h3>
-
-<p>序列化的时候Java仅仅是将枚举对象的name属性输出到结果中，反序列化的时候则是通过java.lang.Enum的valueOf方法来根据名字查找枚举对象。</p>
-
-<p>同时，编译器是不允许任何对这种序列化机制的定制的，因此禁用了writeObject、readObject、readObjectNoData、writeReplace和readResolve等方法。</p>
-
-<h3>2.2问题</h3>
-
-<p>在系统或者类库升级时，对其中定义的枚举类型多加注意，为了保持代码上的兼容性，如果我们定义的枚举类型有可能会被序列化保存(放到文件中、保存到数据库中，进入分布式内存缓存中)，那么我们是不能够删除原来枚举类型中定义的任何枚举对象的，否则程序在运行过程中，JVM就会抱怨找不到与某个名字对应的枚举对象了。</p>
-
-<p>另外，在远程方法调用过程中，如果我们发布的客户端接口返回值中使用了枚举类型，那么服务端在升级过程中就需要特别注意。如果在接口的返回结果的枚举类型中添加了新的枚举值，那就会导致仍然在使用老的客户端的那些应用出现调用失败的情况。</p>
-
-<h1>3.Enum序列化反序列化问题解决</h1>
-
-<p>使用class代替Enum,原来的枚举使用static对象替换，valueOf()方法使用一个Map实现，示例代码如下：</p>
+<p>ReflectionToStringBuilder实际上是继承自ToStringBuilder，每次都构建一个ReflectionToStringBuilder对象，toString的实现是使用反射完成，首先反射当前类的所以属性，再逐级往上获取父类并反射获取其属性,每拿到一个属性，调用一次ToStringBuilder的append方法：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -1590,309 +762,77 @@ Thread pool exhausted通常是min和max不一样大时，表示当前已创建�
 <span class='line-number'>40</span>
 <span class='line-number'>41</span>
 <span class='line-number'>42</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public final class FruitEnum implements Serializable {
-</span><span class='line'>
-</span><span class='line'>    private static final long serialVersionUID = -7230925342774763449L;
-</span><span class='line'>
-</span><span class='line'>    private static final Map&lt;Integer, FruitEnum&gt; MAP = new HashMap&lt;Integer, FruitEnum&gt;();
-</span><span class='line'>
-</span><span class='line'>    public static final FruitEnum APPLE = new FruitEnum("Apple", 0);
-</span><span class='line'>    public static final FruitEnum ORAGE = new FruitEnum("Orige", 1);
-</span><span class='line'>
-</span><span class='line'>    private String text;
-</span><span class='line'>    private int code;
-</span><span class='line'>
-</span><span class='line'>    private FruitEnum(String text, int code) {
-</span><span class='line'>        this.text = text;
-</span><span class='line'>        this.code = code;
-</span><span class='line'>
-</span><span class='line'>        MAP.put(code, this);
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static &lt;T&gt; String toString(
+</span><span class='line'>        final T object, final ToStringStyle style, final boolean outputTransients,
+</span><span class='line'>        final boolean outputStatics, final Class&lt;? super T&gt; reflectUpToClass) {
+</span><span class='line'>    return new ReflectionToStringBuilder(object, style, null, reflectUpToClass, outputTransients, outputStatics)
+</span><span class='line'>            .toString();
 </span><span class='line'>    }
 </span><span class='line'>
-</span><span class='line'>    public String getText() {
-</span><span class='line'>        return text;
+</span><span class='line'>    public String toString() {
+</span><span class='line'>        if (this.getObject() == null) {
+</span><span class='line'>            return this.getStyle().getNullText();
+</span><span class='line'>        }
+</span><span class='line'>        Class&lt;?&gt; clazz = this.getObject().getClass();
+</span><span class='line'>        this.appendFieldsIn(clazz);
+</span><span class='line'>        while (clazz.getSuperclass() != null && clazz != this.getUpToClass()) {
+</span><span class='line'>            clazz = clazz.getSuperclass();
+</span><span class='line'>            this.appendFieldsIn(clazz);
+</span><span class='line'>        }
+</span><span class='line'>        return super.toString();
 </span><span class='line'>    }
 </span><span class='line'>
-</span><span class='line'>    public void setText(String text) {
-</span><span class='line'>        this.text = text;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public int getCode() {
-</span><span class='line'>        return code;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 根据code获取FruitEnum
-</span><span class='line'>     *
-</span><span class='line'>     * @param code
-</span><span class='line'>     * @return
-</span><span class='line'>     */
-</span><span class='line'>    public static FruitEnum valueOf(int code) {
-</span><span class='line'>        return MAP.get(code);
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+</span><span class='line'>    protected void appendFieldsIn(final Class&lt;?&gt; clazz) {
+</span><span class='line'>        if (clazz.isArray()) {
+</span><span class='line'>            this.reflectionAppendArray(this.getObject());
+</span><span class='line'>            return;
+</span><span class='line'>        }
+</span><span class='line'>        final Field[] fields = clazz.getDeclaredFields();
+</span><span class='line'>        AccessibleObject.setAccessible(fields, true);
+</span><span class='line'>        for (final Field field : fields) {
+</span><span class='line'>            final String fieldName = field.getName();
+</span><span class='line'>            if (this.accept(field)) {
+</span><span class='line'>                try {
+</span><span class='line'>                    // Warning: Field.get(Object) creates wrappers objects
+</span><span class='line'>                    // for primitive types.
+</span><span class='line'>                    final Object fieldValue = this.getValue(field);
+</span><span class='line'>                    this.append(fieldName, fieldValue);
+</span><span class='line'>                } catch (final IllegalAccessException ex) {
+</span><span class='line'>                    //this can't happen. Would get a Security exception
+</span><span class='line'>                    // instead
+</span><span class='line'>                    //throw a runtime exception in case the impossible
+</span><span class='line'>                    // happens.
+</span><span class='line'>                    throw new InternalError("Unexpected IllegalAccessException: " + ex.getMessage());
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
 
 
-<p>参考：<a href="http://mysun.iteye.com/blog/1581119">http://mysun.iteye.com/blog/1581119</a></p>
-</div>
-  
-  
+<h1>2.beanCopy</h1>
 
+<p>beanCopy由很多种方式，Spring和Apache都有实现版本，这里测试各个版本的性能.包括：</p>
 
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/03/18/tomcatjia-gou/">Tomcat架构</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-03-18T19:03:09+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>18</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:03 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>主要整理Tomcat的整体架构.分析各个主要模块的功能.</p>
-
-<h1>1.整体结构</h1>
-
-<p>Tomcat基本结构图如下所示:</p>
-
-<p><img src="/images/tomcat/struct.gif"></p>
-
-<p>简单介绍:</p>
-
-<pre><code>1.一个serve包括多个service;
-2.一个service包含两个核心部件:一个容器(Container)和多个连接器(Connector),Connector主要负责对外交流,Container主要处理Connector接受的请求,主要是处理内部事务;
-3.Tomcat基于JMX(Java Management Extensions,即Java管理扩展,是一个为应用程序、设备、系统等植入管理功能的框架)管理这些组件,另外实现以上接口的组件也实现了代表生存期的接口Lifecycle,使其组件履行固定的生存期,在其整个生存期的过程中通过事件侦听LifecycleEvent实现扩展;
+<pre><code>1.原始的get/set
+2.Spring的BeanUtils
+3.cglib的BeanCopier
+4.apache的BeanUtils
+5.apache的PropertyUtils
 </code></pre>
 
-<h1>2.核心部件</h1>
+<p>原因是前段时间项目上很简单的接口时间很慢，最后同事跟到的问题是使用Spring的beanCopy方式，因为接口涉及上百个bean的属性拷贝，因此比较明显的反应了各种beancopy实现方式的差异；我们最常用的应该是Spring版本的BeanUtils。apache的BeanUtils的设计有点反人类(第一个参数是dest，第二个参数是source)。</p>
 
-<p>Tomcat的核心类图如下所示：</p>
+<p>各个包的版本：</p>
 
-<p><img src="/images/tomcat/classes.jpg"></p>
-
-<p>其中Container是一个接口,定义一些容器的行为, 比如addChild(),getPipeline()等.每个Container都有一个Pipeline,其中包含一系列的表示请求处理器的Valve,注意Pipeline不是通过server.xml配置产生的,是必须有的,在pipeline上配置不同的valve,当需要调用此容器实现逻辑时,就会按照顺序将此pipeline上的所有valve调用一遍,类似于责任链模式.Engine,Host,Context和Wrapper都是实现了Container这个接口.Container还包含用来处理安全里授权与认证Realm等组件.</p>
-
-<p>Tomcat(Container)的容器分成4个等级,如下：</p>
-
-<p><img src="/images/tomcat/tomcat_containner.jpg"></p>
-
-<p>假设访问的URL是
-<a href="http://www.mydomain.com/app/index.html">http://www.mydomain.com/app/index.html</a>
-各个容器处理的详细情况如图所示:</p>
-
-<p><img src="/images/tomcat/tomcat_path.jpg"></p>
-
-<p>Wrapper封装了具体的访问资源,例如 index.html
-Context 封装了各个wrapper资源的集合,例如 app
-Host 封装了各个context资源的集合,例如 www.mydomain.com</p>
-
-<p>下面简单介绍一下各个类:</p>
-
-<h3>2.1 Bootstrap</h3>
-
-<p>Bootstrap简单说就是Tomcat的启动类,它只负责创建Catalina实例并将输入参数传递给Catalina实例;</p>
-
-<h3>2.2 Catalina</h3>
-
-<p>Catalina是Tomcat实际的入口,执行Tomcat的初始化,启动,停止等关键逻辑;
-(1).初始化的逻辑中初始化一个解析配置文件的Digester,这个Digester使用SAX方式解析xml文件,它获取解析conf目录下的server.xml这个配置文件并会生成Server等实例;并执行Server的初始化;Server会顺序往后执行Service,Connector,Containner等的初始化.
-(2).启动逻辑就是调用Server的启动;
-(3).停止逻辑就是调用Server的停止;</p>
-
-<h3>2.3 Server</h3>
-
-<p>Server(参考StandardServer类)是整个Tomcat组件的容器,包含一个或多个Service.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public void addService(Service service);</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.4 Service</h3>
-
-<p>Service(参考StandardService类)是包含Connector和Container的集合,Service用适当的Connector接收用户的请求,再发给相应的Container来处理.</p>
-
-<h3>2.5 Connector</h3>
-
-<p>Connector是网络socket相关接口模块,默认实现HTTP、AJP等协议的.connector主要作用包括:</p>
-
-<pre><code>(1).接收socket
-(2).从socket获取数据包,并解析成HttpServletRequest对象
-(3).从engine容器开始走调用流程,经过各层valve,最后调用servlet完成业务逻辑
-(4).返回response,关闭socket
+<pre><code>1.Spring : 3.2.1
+2.cglib : 3.1
+3.commons-beanutils : 1.9.2
 </code></pre>
 
-<p>connector配置举例为:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;Connector port="80" URIEncoding="UTF-8" protocol="HTTP/1.1"
-</span><span class='line'>               connectionTimeout="20000"
-</span><span class='line'>               redirectPort="7443" /&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中protocol的选择包括
-    (1).BIO实现:
-    org.apache.coyote.http11.Http11Protocol
-    (2).NIO实现
-    org.apache.coyote.http11.Http11NioProtocol</p>
-
-<p>以Http11Protocol举例解析connector结构:</p>
-
-<p><img src="/images/tomcat/connector.jpg"></p>
-
-<p>Http11ConnectionHandler对象维护了一个Http11Processor对象池, 完成http request的解析和分派.</p>
-
-<p>JIoEndpoint维护了两个线程池,Acceptor及Worker
-Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理socket,如果worker线程池没有空闲线程,则Acceptor将阻塞;Worker是典型的线程池实现.Worker线程拿到socket后,就从Http11Processor对象池中获取Http11Processor对象;</p>
-
-<p>Mapper维护了一个从Host到Wrapper的各级容器的快照.它主要是为了,当http request被解析后,能够将http request绑定到相应的servlet进行业务处理.</p>
-
-<p>CoyoteAdapter将http request解析成HttpServletRequest对象,之后绑定相应的容器,然后从engine开始逐层调用.</p>
-
-<h3>2.6 Engine</h3>
-
-<p>Engine(参考StandardEngine类)</p>
-
-<h3>2.7 Host</h3>
-
-<p>Host(参考StandardHost类)就是我们所理解的虚拟主机.</p>
-
-<h3>2.8 Context</h3>
-
-<p>Context(参考StandardContext类)就是我们所部属的具体Web应用的上下文,每个请求都在是相应的上下文里处理的.</p>
-
-<h3>2.9 Wrapper</h3>
-
-<p>Wrapper(参考StandardWrapper类)Wrapper是针对每个Servlet的Container,每个Servlet都有相应的Wrapper来管理.</p>
-
-<p>它封装的处理资源的每个具体的servlet,除了上面提到的Pipeline和Valve之外,还包含我们熟悉的servlet对象.</p>
-
-<p>wrapper主要包括三大类</p>
-
-<pre><code>(1).处理静态资源的一个wrapper：例如html, jpg.对应wrapper为org.apache.catalina.servlets.DefaultServlet
-(2).处理jsp文件,对应wrapper为org.apache.jasper.servlet.JspServlet
-(3).自定义的servlet对象. 在web.xml中定义的serlvet
-</code></pre>
-
-<h3>2.10 Pipeline和Valve</h3>
-
-<p>Pipeline(参考StandardPipeline类),Pipeline就是一串Valve.请求到达当前容器,则从前往后执行每个Valve的逻辑.</p>
-
-<p>Valve实现具体业务逻辑单元.可以定制化valve（实现特定接口）,然后配置在server.xml里.对其包含的所有host里的应用有效.定制化的valve是可选的,但是每个容器有一个缺省的valve,例如engine的StandardEngineValve,是在StandardEngine里自带的,它主要实现了对其子host对象的StandardHostValve的调用,以此类推.</p>
-
-<p>缺省的valve的Valve实在Pipeline的最后面.</p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/03/14/mysqlyou-hua/">Mysql优化</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-03-14T05:02:34+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>14</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:02 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近项目组遇到的慢查询比较多，大家的慢查询意识逐渐有了，同事做的工作中使用到的优化慢查询的方法分享，这里简单总结一些，便于以后使用。</p>
-
-<p>通常这些优化方式是组合使用的。</p>
-
-<h1>1.合理使用索引</h1>
-
-<h3>1.1 一个表只会使用一个索引</h3>
-
-<p>假设customer表有两个索引：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  KEY `idx_create_time` (`create_time`) USING BTREE,
-</span><span class='line'>  KEY `idx_city` (`city`)</span></code></pre></td></tr></table></div></figure>
-
-
-<p>sql语句的where条件包含create_time和city</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where city = 'beijing' and create_time &gt; '2015-01-01';</span></code></pre></td></tr></table></div></figure>
-
-
-<p>这个sql语句只会走一个索引。</p>
-
-<h3>1.2 索引区分度越大越好</h3>
-
-<p>索引的区分读越大越好，可以使用show index from table看表的索引情况。</p>
-
-<h3>1.3 行数越少越好</h3>
-
-<p>执行计划中sql搜索的行数(rows)越小越好。</p>
-
-<h3>1.4 查询条件字段不要套函数，无法使用索引</h3>
-
-<p>比如下面这个sql是不走索引的</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where left(city, 2) = 'be';</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.不要复合条件查询</h1>
-
-<p>将复合条件根据规则转换为单个条件，避免多个字段去or。</p>
-
-<p>比如我们在city上面建立了索引，但是我们没有在name上建立索引，下面这个sql会走全表而不走索引</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where city = 'beijing' or name = 'beijing';</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.减少join</h1>
-
-<p>利用Mybatis的动态SQL，保证同一时刻JOIN的表最少。即满足某一个条件的时候才join。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>select * from customer
-</span><span class='line'>&lt;if test="conditions.name != null and conditions.name != ''"&gt;
-</span><span class='line'>    join user on user.id = customer.user_id
-</span><span class='line'>&lt;/if&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.分步查询</h1>
-
-<p>比如一个sql需要大量的join，并且每个join表的数据量都很大，这时候，尝试将单独的sql拆分成多个sql。</p>
-
-<p>我们可以从搜索条件入手，不包含搜索条件的表一定可以拆分成单独的sql。</p>
+<p>各种方式的实现很简单：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -1903,28 +843,647 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
 <span class='line-number'>7</span>
 <span class='line-number'>8</span>
 <span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>select *
-</span><span class='line'>from A
-</span><span class='line'>join B on ...
-</span><span class='line'>join C on ...
-</span><span class='line'>join D on ...
-</span><span class='line'>join E on ...
-</span><span class='line'>where
-</span><span class='line'>A.name = ...
-</span><span class='line'>and B.city = ...</span></code></pre></td></tr></table></div></figure>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class GetSetCopy {
+</span><span class='line'>    public static HotelVo copy(HotelEntity entity) {
+</span><span class='line'>        HotelVo vo = new HotelVo();
+</span><span class='line'>        vo.setId(entity.getId());
+</span><span class='line'>        vo.setName(entity.getName());
+</span><span class='line'>        vo.setAddress(entity.getAddress());
+</span><span class='line'>        vo.setPhone(entity.getPhone());
+</span><span class='line'>        vo.setCreateTime(entity.getCreateTime());
+</span><span class='line'>        vo.setUpdateTime(entity.getUpdateTime());
+</span><span class='line'>        vo.setPrice(entity.getPrice());
+</span><span class='line'>        vo.setKp(entity.getKp());
+</span><span class='line'>
+</span><span class='line'>        return vo;
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class ApacheBeanUtilsCopy {
+</span><span class='line'>    public static HotelVo copy(HotelEntity entity) throws Exception {
+</span><span class='line'>        HotelVo vo = new HotelVo();
+</span><span class='line'>        BeanUtils.copyProperties(vo, entity);
+</span><span class='line'>        return vo;
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class ApachePropertyUtilsCopy {
+</span><span class='line'>    public static HotelVo copy(HotelEntity entity) throws Exception {
+</span><span class='line'>        HotelVo vo = new HotelVo();
+</span><span class='line'>        PropertyUtils.copyProperties(vo, entity);
+</span><span class='line'>        return vo;
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class CglibBeanCopy {
+</span><span class='line'>    public static HotelVo copy(HotelEntity entity) {
+</span><span class='line'>        HotelVo vo = new HotelVo();
+</span><span class='line'>        BeanCopier copier = BeanCopier.create(entity.getClass(), HotelVo.class, false);
+</span><span class='line'>        copier.copy(entity, vo, null);
+</span><span class='line'>        return vo;
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class SpringBeanUtilsCopy {
+</span><span class='line'>    public static HotelVo copy(HotelEntity entity) {
+</span><span class='line'>        HotelVo vo = new HotelVo();
+</span><span class='line'>        BeanUtils.copyProperties(entity, vo);
+</span><span class='line'>        return vo;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<p>这是可以考虑对C，D，E表的查询单独拆分出来。</p>
+<p>测试的一个结果，每个copy运行10000次(各个Copy的第一次copy都很慢，跑10000次基本可以抹平这些差异)：</p>
 
-<h1>5.合理使用Cache</h1>
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>GetSetCopy Min(微秒)=1.466
+</span><span class='line'>GetSetCopy Max(微秒)=804.236
+</span><span class='line'>GetSetCopy Avg(微秒)=1.7923529
+</span><span class='line'>
+</span><span class='line'>Spring-BeanUtils Min(微秒)=3.339
+</span><span class='line'>Spring-BeanUtils Max(微秒)=99795.719
+</span><span class='line'>Spring-BeanUtils Avg(微秒)=28.2915534
+</span><span class='line'>
+</span><span class='line'>Apache-BeanUtils Min(微秒)=9.812
+</span><span class='line'>Apache-BeanUtils Max(微秒)=92416.696
+</span><span class='line'>Apache-BeanUtils Avg(微秒)=79.0868131
+</span><span class='line'>
+</span><span class='line'>Apache-PropertyUtils Min(微秒)=7.083
+</span><span class='line'>Apache-PropertyUtils Max(微秒)=6405.457
+</span><span class='line'>Apache-PropertyUtils Avg(微秒)=22.114272
+</span><span class='line'>
+</span><span class='line'>Cglib-BeanCopy Min(微秒)=7.707
+</span><span class='line'>Cglib-BeanCopy Max(微秒)=156932.173
+</span><span class='line'>Cglib-BeanCopy Avg(微秒)=33.135989</span></code></pre></td></tr></table></div></figure>
 
-<p>通常根据条件Count比较耗时，可以将Count数Cache，比如list接口的count通常成千上万，count数只是用来展示页数，这时候可以考虑缓存下来，但是需要考虑好缓存策略。</p>
 
-<h1>6.业务逻辑上优化</h1>
+<table>
+<thead>
+<tr>
+<th style="text-align:center;">copy策略 </th>
+<th style="text-align:center;"> 平均(微秒) </th>
+<th style="text-align:center;"> 最大(微秒) </th>
+<th style="text-align:center;"> 最小(微秒)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">GetSet </td>
+<td style="text-align:center;">1.7923529  </td>
+<td style="text-align:center;">804.236 </td>
+<td style="text-align:center;"> 1.466</td>
+</tr>
+<tr>
+<td style="text-align:center;">Spring-BeanUtils </td>
+<td style="text-align:center;">28.2915534  </td>
+<td style="text-align:center;">99795.719</td>
+<td style="text-align:center;"> 3.339</td>
+</tr>
+<tr>
+<td style="text-align:center;">Apache-BeanUtils </td>
+<td style="text-align:center;">79.0868131 </td>
+<td style="text-align:center;">6405.457 </td>
+<td style="text-align:center;"> 9.812</td>
+</tr>
+<tr>
+<td style="text-align:center;">Apache-PropertyUtils </td>
+<td style="text-align:center;">22.114272  </td>
+<td style="text-align:center;">9503.836 </td>
+<td style="text-align:center;"> 7.083</td>
+</tr>
+<tr>
+<td style="text-align:center;">Cglib-BeanCopy </td>
+<td style="text-align:center;">33.135989  </td>
+<td style="text-align:center;">156932.173</td>
+<td style="text-align:center;"> 7.707</td>
+</tr>
+</tbody>
+</table>
 
-<p>当我们使用上述步骤无法优化时，可以考虑从逻辑上优化。</p>
 
-<p>比如join很多个表查询的时候，我们需要确认应用方所有的字段都需要，通常减少字段能让我们少join表。</p>
+<p>原始的get/set是最快的，而且是快一个数量级。Apache-BeanUtils是最慢的。Spring-BeanUtils的性能还是比其他几个强一些（这是个错觉，其实Cglib-BeanCopy比Spring-BeanUtils快，见下面的分析）。</p>
+
+<h3>2.1 实现原理</h3>
+
+<p>简单分析一下各个bean copy方式的实现原理。</p>
+
+<ul>
+<li>1.原始的get/set</li>
+</ul>
+
+
+<p>没什么好说的，最原始。</p>
+
+<ul>
+<li>2.Spring的BeanUtils</li>
+</ul>
+
+
+<p>Spring的BeanUtils可以使用String [] ignoreProperties 指定忽略某些属性的复制，当我们需要手动处理一些特定属性的时候挺有用。</p>
+
+<p>copyProperties的原理很我们想想的一样：</p>
+
+<pre><code>1.获取target类的属性列表；
+2.循环遍历target属性，对每个属性，如果由write方法并且不在ignoreProperties里面，调用soure对应属性的read方法获取属性值，再调用target的write方法；
+</code></pre>
+
+<p>细节：</p>
+
+<pre><code>1.缓存
+获取target类的属性列表的时候有缓存，见CachedIntrospectionResults类。这也再一定成都上解释了为什么第一次调用会慢一些。
+2.Accessible
+注意，source的read和target的write方法可以不是Accessible的，即可以是private等修饰的方法；
+3.浅拷贝
+注意其拷贝是浅拷贝。
+</code></pre>
+
+<p>大致的代码(精简了一些)：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private static void copyProperties(Object source, Object target, Class&lt;?&gt; editable, String[] ignoreProperties) throws BeansException {
+</span><span class='line'>
+</span><span class='line'>        PropertyDescriptor[] targetPds = getPropertyDescriptors(actualEditable);    //获取target的属性描述符，有缓存
+</span><span class='line'>        List ignoreList = ignoreProperties != null?Arrays.asList(ignoreProperties):null;
+</span><span class='line'>        PropertyDescriptor[] arr$ = targetPds;
+</span><span class='line'>        int len$ = targetPds.length;
+</span><span class='line'>
+</span><span class='line'>        for(int i$ = 0; i$ &lt; len$; ++i$) {
+</span><span class='line'>            PropertyDescriptor targetPd = arr$[i$];
+</span><span class='line'>            if(targetPd.getWriteMethod() != null && (ignoreProperties == null || !ignoreList.contains(targetPd.getName()))) {   //有write方法并且不在ignoreProperties中
+</span><span class='line'>                PropertyDescriptor sourcePd = getPropertyDescriptor(source.getClass(), targetPd.getName());
+</span><span class='line'>                if(sourcePd != null && sourcePd.getReadMethod() != null) {
+</span><span class='line'>                    try {
+</span><span class='line'>                        Method ex = sourcePd.getReadMethod();   //获取source的read方法
+</span><span class='line'>                        if(!Modifier.isPublic(ex.getDeclaringClass().getModifiers())) {
+</span><span class='line'>                            ex.setAccessible(true);
+</span><span class='line'>                        }
+</span><span class='line'>
+</span><span class='line'>                        Object value = ex.invoke(source, new Object[0]);    //调用source的read方法获取属性对应的value
+</span><span class='line'>                        Method writeMethod = targetPd.getWriteMethod();
+</span><span class='line'>                        if(!Modifier.isPublic(writeMethod.getDeclaringClass().getModifiers())) {
+</span><span class='line'>                            writeMethod.setAccessible(true);
+</span><span class='line'>                        }
+</span><span class='line'>
+</span><span class='line'>                        writeMethod.invoke(target, new Object[]{value});    //调用target的write方法
+</span><span class='line'>                    } catch (Throwable var15) {
+</span><span class='line'>                        throw new FatalBeanException("Could not copy properties from source to target", var15);
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>3.cglib的BeanCopier</li>
+</ul>
+
+
+<p>BeanCopier是CGLIB包中的一个工具类，使用基于动态代理机制的方式进行Bean Copy。因为使用生成的子类中的方法进行属性复制，所以会比使用反射机制的复制在效率上会高出很多。前面一直想写一片代理方面的Blog，一直没完成，尽量他会补上，到时候会分析CGLIB的原理。</p>
+
+<p>我们这里的测试结果显示BeanCopier还不如Spring的BeanUtils，原因说BeanCopier.create的创建效率会比较低，所以在使用过程中建议将 BeanCopier.create 创建的对象声明为 static，避免使用中每次都去创建新的 BeanCopier 对象。我测试中发现，如果我们只显示的调用一次create方法，发现起速度明显快于Spring的BeanUtils(起最小值甚至小于get/set方式的最小值)：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>GetSetCopy Min(微秒)=1.46
+</span><span class='line'>GetSetCopy Max(微秒)=2149.855
+</span><span class='line'>GetSetCopy Avg(微秒)=2.0715596
+</span><span class='line'>
+</span><span class='line'>Spring-BeanUtils Min(微秒)=3.669
+</span><span class='line'>Spring-BeanUtils Max(微秒)=101262.127
+</span><span class='line'>Spring-BeanUtils Avg(微秒)=29.613658
+</span><span class='line'>
+</span><span class='line'>Apache-BeanUtils Min(微秒)=10.174
+</span><span class='line'>Apache-BeanUtils Max(微秒)=80342.749
+</span><span class='line'>Apache-BeanUtils Avg(微秒)=82.383995
+</span><span class='line'>
+</span><span class='line'>Apache-PropertyUtils Min(微秒)=5.468
+</span><span class='line'>Apache-PropertyUtils Max(微秒)=17185.561
+</span><span class='line'>Apache-PropertyUtils Avg(微秒)=26.5104518
+</span><span class='line'>
+</span><span class='line'>Cglib-BeanCopy Min(微秒)=0.745
+</span><span class='line'>Cglib-BeanCopy Max(微秒)=130832.581
+</span><span class='line'>Cglib-BeanCopy Avg(微秒)=14.6252958</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>4.apache的BeanUtils</li>
+</ul>
+
+
+<p>主要代码大致如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException {
+</span><span class='line'>    BeanUtilsBean.getInstance().copyProperties(dest, orig);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException {
+</span><span class='line'>        int i;
+</span><span class='line'>        String name;
+</span><span class='line'>        Object e;
+</span><span class='line'>        if(orig instanceof DynaBean) {  //DynaBean ？？
+</span><span class='line'>            DynaProperty[] origDescriptors = ((DynaBean)orig).getDynaClass().getDynaProperties(); 
+</span><span class='line'>
+</span><span class='line'>            for(i = 0; i &lt; origDescriptors.length; ++i) {
+</span><span class='line'>                name = origDescriptors[i].getName();
+</span><span class='line'>                if(this.getPropertyUtils().isReadable(orig, name) && this.getPropertyUtils().isWriteable(dest, name)) {
+</span><span class='line'>                    e = ((DynaBean)orig).get(name);
+</span><span class='line'>                    this.copyProperty(dest, name, e);
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        } else if(orig instanceof Map) {    //原始数据是一个Map，即支持从一个Map到target属性的拷贝
+</span><span class='line'>            Map var8 = (Map)orig;
+</span><span class='line'>            Iterator var10 = var8.entrySet().iterator();
+</span><span class='line'>
+</span><span class='line'>            while(var10.hasNext()) {
+</span><span class='line'>                Entry var11 = (Entry)var10.next();
+</span><span class='line'>                String var12 = (String)var11.getKey();
+</span><span class='line'>                if(this.getPropertyUtils().isWriteable(dest, var12)) {
+</span><span class='line'>                    this.copyProperty(dest, var12, var11.getValue());
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        } else { 
+</span><span class='line'>            PropertyDescriptor[] var9 = this.getPropertyUtils().getPropertyDescriptors(orig);   //获取target的属性描述符，有缓存
+</span><span class='line'>
+</span><span class='line'>            for(i = 0; i &lt; var9.length; ++i) {
+</span><span class='line'>                name = var9[i].getName();
+</span><span class='line'>                //要求source的read方法是Accessible，target的write方法是Accessible
+</span><span class='line'>                if(!"class".equals(name) && this.getPropertyUtils().isReadable(orig, name) && this.getPropertyUtils().isWriteable(dest, name)) {
+</span><span class='line'>                    try {
+</span><span class='line'>                        e = this.getPropertyUtils().getSimpleProperty(orig, name);  //获取source对应属性的value
+</span><span class='line'>                        this.copyProperty(dest, name, e);   //设置target对应属性
+</span><span class='line'>                    } catch (NoSuchMethodException var7) {
+</span><span class='line'>                        ;
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>细节：</p>
+
+<pre><code>1.BeanUtilsBean实例
+BeanUtilsBean需要第一次new实例，因此第一次调用会慢一些。
+2.缓存
+获取target类的属性列表的时候有缓存，见BeanIntrospectionData类。这也再一定成都上解释了为什么第一次调用会慢一些。
+3.Accessible
+注意，source的read和target的write方法要求都是Accessible的；
+4.浅拷贝
+其拷贝是浅拷贝。
+</code></pre>
+
+<ul>
+<li>5.apache的PropertyUtils
+PropertyUtils的实现和BeanUtils的实现基本一致。</li>
+</ul>
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException {
+</span><span class='line'>    PropertyUtilsBean.getInstance().copyProperties(dest, orig);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException {
+</span><span class='line'>        int i;
+</span><span class='line'>        String name;
+</span><span class='line'>        Object e;
+</span><span class='line'>        if(orig instanceof DynaBean) {
+</span><span class='line'>            DynaProperty[] origDescriptors = ((DynaBean)orig).getDynaClass().getDynaProperties();
+</span><span class='line'>
+</span><span class='line'>            for(i = 0; i &lt; origDescriptors.length; ++i) {
+</span><span class='line'>                name = origDescriptors[i].getName();
+</span><span class='line'>                if(this.isReadable(orig, name) && this.isWriteable(dest, name)) {
+</span><span class='line'>                    try {
+</span><span class='line'>                        e = ((DynaBean)orig).get(name);
+</span><span class='line'>                        if(dest instanceof DynaBean) {
+</span><span class='line'>                            ((DynaBean)dest).set(name, e);
+</span><span class='line'>                        } else {
+</span><span class='line'>                            this.setSimpleProperty(dest, name, e);
+</span><span class='line'>                        }
+</span><span class='line'>                    } catch (NoSuchMethodException var9) {
+</span><span class='line'>                        if(this.log.isDebugEnabled()) {
+</span><span class='line'>                            this.log.debug("Error writing to \'" + name + "\' on class \'" + dest.getClass() + "\'", var9);
+</span><span class='line'>                        }
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        } else if(orig instanceof Map) {    //sorcce是一个Map
+</span><span class='line'>            Iterator var10 = ((Map)orig).entrySet().iterator();
+</span><span class='line'>
+</span><span class='line'>            while(true) {
+</span><span class='line'>                Entry var12;
+</span><span class='line'>                do {
+</span><span class='line'>                    if(!var10.hasNext()) {
+</span><span class='line'>                        return;
+</span><span class='line'>                    }
+</span><span class='line'>
+</span><span class='line'>                    var12 = (Entry)var10.next();
+</span><span class='line'>                    name = (String)var12.getKey();
+</span><span class='line'>                } while(!this.isWriteable(dest, name)); //要求target对应属性是Accessible的
+</span><span class='line'>
+</span><span class='line'>                try {
+</span><span class='line'>                    if(dest instanceof DynaBean) {
+</span><span class='line'>                        ((DynaBean)dest).set(name, var12.getValue());
+</span><span class='line'>                    } else {
+</span><span class='line'>                        this.setSimpleProperty(dest, name, var12.getValue());
+</span><span class='line'>                    }
+</span><span class='line'>                } catch (NoSuchMethodException var8) {
+</span><span class='line'>                    if(this.log.isDebugEnabled()) {
+</span><span class='line'>                        this.log.debug("Error writing to \'" + name + "\' on class \'" + dest.getClass() + "\'", var8);
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        } else {
+</span><span class='line'>            PropertyDescriptor[] var11 = this.getPropertyDescriptors(orig); //获取target对象属性的描述符，有缓存
+</span><span class='line'>
+</span><span class='line'>            for(i = 0; i &lt; var11.length; ++i) {
+</span><span class='line'>                name = var11[i].getName();
+</span><span class='line'>                if(this.isReadable(orig, name) && this.isWriteable(dest, name)) {   //要求source的read方法是Accessible，target的write方法是Accessible
+</span><span class='line'>                    try {
+</span><span class='line'>                        e = this.getSimpleProperty(orig, name); //获取source对应属性的值
+</span><span class='line'>                        if(dest instanceof DynaBean) {
+</span><span class='line'>                            ((DynaBean)dest).set(name, e);
+</span><span class='line'>                        } else {
+</span><span class='line'>                            this.setSimpleProperty(dest, name, e);  //设置target对应属性的值
+</span><span class='line'>                        }
+</span><span class='line'>                    } catch (NoSuchMethodException var7) {
+</span><span class='line'>                        if(this.log.isDebugEnabled()) {
+</span><span class='line'>                            this.log.debug("Error writing to \'" + name + "\' on class \'" + dest.getClass() + "\'", var7);
+</span><span class='line'>                        }
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.问题</h1>
+
+<p>碰到一个小问题，因为涉及到同一个方法的多次调用，发现第一次调用的时间远大于后面的调用：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>GetSetCopy-1(微秒) : 1114.744
+</span><span class='line'>GetSetCopy-2(微秒) : 2.087
+</span><span class='line'>GetSetCopy-3(微秒) : 1.684
+</span><span class='line'>GetSetCopy-4(微秒) : 1.694
+</span><span class='line'>GetSetCopy-5(微秒) : 1.828
+</span><span class='line'>GetSetCopy-6(微秒) : 1.742
+</span><span class='line'>GetSetCopy-7(微秒) : 1.705
+</span><span class='line'>GetSetCopy-8(微秒) : 1.68
+</span><span class='line'>GetSetCopy-9(微秒) : 1.669
+</span><span class='line'>GetSetCopy-10(微秒) : 1.693</span></code></pre></td></tr></table></div></figure>
+
+
+<p>怀疑：</p>
+
+<pre><code>1.GetSetCopy类的初始化；
+2.拷贝的目标对象类(这里即HotelVo)初始化；
+3.方法调用的缓存；
+</code></pre>
+
+<p>尝试发现如果调用前先显示的new一个GetSetCopy对象和一个HotelVo对象，可以将第一次的时间下降到50微妙左右。如果再外面显示的调用一次copy方法，则循环内的第一次copy会降到和其他次的拷贝时间一样。</p>
+
+<h3>3.1 原理</h3>
+
+<p>待补充，会涉及到JVM一些JIT的优化等问题，自己也很期待到底什么原因&hellip;</p>
 </div>
   
   
@@ -1937,7 +1496,7 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2015/03/13/tomcatjian-jie/">Tomcat简介</a></h1>
+      <h1 class="entry-title"><a href="/blog/2015/08/01/mycli/">Mycli</a></h1>
     
     
       <p class="meta">
@@ -1946,69 +1505,429 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
 
 
 
-<time class='entry-date' datetime='2015-03-13T04:34:51+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>13</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:34 am</span></time>
+<time class='entry-date' datetime='2015-08-01T10:37:00+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>1</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>10:37 am</span></time>
         
       </p>
     
   </header>
 
 
-  <div class="entry-content"><p>最近会重新看一下Tomcat的源代码，整理一些东西，包括但不限于：</p>
+  <div class="entry-content"><p>相信很多同学都喜欢使用命令行和Mysql交互而不喜欢各种图形化的客户端，我也是其中之一。</p>
 
-<pre><code>1.Tomcat架构
-2.Tomcat启动过程
-3.请求在Tomcat中的流转
-4.Tomcat目录结构与配置
+<p>使用命令行交互的一个缺点就是没有自动补全等功能，很多时候忘记字段叫什么，不得不去看一下见表语句。</p>
+
+<p>现在Mycli帮我们搞定这个问题了。Mycli是一个自带自动补全和语法高亮的Mysql客户端，也适用于MariaDB和Percona。赶紧使用Mycli替换你所以的alias吧。</p>
+
+<p>Mycli官网：<a href="http://mycli.net/">http://mycli.net/</a></p>
+
+<h1>1.安装</h1>
+
+<p>Linux下可以使用Python的包管理器pip安装，首先你得有pip，我使用的是Ubuntu：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install python-pip</span></code></pre></td></tr></table></div></figure>
+
+
+<p>之后就可以安装Mycli了，可能需要sudo权限，因为它会往python的lib目录下加一些包</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>pip install mycli</span></code></pre></td></tr></table></div></figure>
+
+
+<p>高端的Mac同学使用brew就可以了。</p>
+
+<p>感觉Windows被抛弃，更详细的安装见：<a href="http://mycli.net/install">http://mycli.net/install</a></p>
+
+<p>源代码github地址：<a href="https://github.com/dbcli/mycli">https://github.com/dbcli/mycli</a></p>
+
+<p>使用pg数据库的同学可以使用类似的工具：pgcli</p>
+
+<h1>2.使用</h1>
+
+<p>使用上没啥特别，看看Mycli的手册就可以了，这里将英文简单翻译一下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Sublime/Sublime2$ mycli --help
+</span><span class='line'>Usage: mycli [OPTIONS] [DATABASE]
+</span><span class='line'>
+</span><span class='line'>Options:
+</span><span class='line'>  -h, --host TEXT             数据库host
+</span><span class='line'>  -P, --port TEXT             数据库端口. Honors $MYSQL_TCP_PORT
+</span><span class='line'>  -u, --user TEXT             用户名
+</span><span class='line'>  -S, --socket TEXT       链接数据库使用的socket文件
+</span><span class='line'>  -p, --password          密码
+</span><span class='line'>  --pass TEXT                 密码
+</span><span class='line'>  -v, --version               版本
+</span><span class='line'>  -D, --database TEXT         数据库名字
+</span><span class='line'>  -R, --prompt TEXT           提示格式(默认: "\t \u@\h:\d&gt; ")
+</span><span class='line'>  -l, --logfile FILENAME      将每个查询和查询的结构记录到文件
+</span><span class='line'>  --help                      帮助文档</span></code></pre></td></tr></table></div></figure>
+
+
+<p>一个本机的截图如下：
+<img src="/images/mysql/Mycli_usage.png"></p>
+
+<h1>3.配置</h1>
+
+<p>配置文件默认为：~/.myclirc，我们可以简单的看一下配置,都比较简单：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># vi: ft=dosini
+</span><span class='line'>[main]
+</span><span class='line'>
+</span><span class='line'># Enables context sensitive auto-completion. If this is disabled the all
+</span><span class='line'># possible completions will be listed.
+</span><span class='line'>smart_completion = True
+</span><span class='line'>
+</span><span class='line'># Multi-line mode allows breaking up the sql statements into multiple lines. If
+</span><span class='line'># this is set to True, then the end of the statements must have a semi-colon.
+</span><span class='line'># If this is set to False then sql statements can't be split into multiple
+</span><span class='line'># lines. End of line (return) is considered as the end of the statement.
+</span><span class='line'>multi_line = False
+</span><span class='line'>
+</span><span class='line'># log_file location.
+</span><span class='line'>log_file = ~/.mycli.log
+</span><span class='line'>
+</span><span class='line'># Default log level. Possible values: "CRITICAL", "ERROR", "WARNING", "INFO"
+</span><span class='line'># and "DEBUG".
+</span><span class='line'>log_level = INFO
+</span><span class='line'>
+</span><span class='line'># Timing of sql statments and table rendering.
+</span><span class='line'>timing = True
+</span><span class='line'>
+</span><span class='line'># Table format. Possible values: psql, plain, simple, grid, fancy_grid, pipe,
+</span><span class='line'># orgtbl, rst, mediawiki, html, latex, latex_booktabs.
+</span><span class='line'># Recommended: psql, fancy_grid and grid.
+</span><span class='line'>table_format = psql
+</span><span class='line'>
+</span><span class='line'># Syntax Style. Possible values: manni, igor, xcode, vim, autumn, vs, rrt,
+</span><span class='line'># native, perldoc, borland, tango, emacs, friendly, monokai, paraiso-dark,
+</span><span class='line'># colorful, murphy, bw, pastie, paraiso-light, trac, default, fruity
+</span><span class='line'>syntax_style = default
+</span><span class='line'>
+</span><span class='line'># Keybindings: Possible values: emacs, vi
+</span><span class='line'>key_bindings = emacs
+</span><span class='line'>
+</span><span class='line'># MySQL prompt
+</span><span class='line'># \t - Product type (Percona, MySQL, Mariadb)
+</span><span class='line'># \u - Username
+</span><span class='line'># \h - Hostname of the server
+</span><span class='line'># \d - Database name
+</span><span class='line'>prompt = '\t \u@\h:\d&gt; '</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.源码</h1>
+
+<p>Mycli是python开发的，原因是起基于的prompt_toolkit正是python开发的。</p>
+
+<p>prompt_toolkit的git地址：<a href="https://github.com/jonathanslenders/python-prompt-toolkit.git">https://github.com/jonathanslenders/python-prompt-toolkit.git</a></p>
+
+<p>prompt_toolkit使用著名的Pygments来做语法高亮。相信很多博客系统(包括我使用的octopress)也是使用这个来做语法高亮，突然发现世界这么小&hellip;</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/07/17/fen-ci/">分词</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-07-17T01:24:30+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>17</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>1:24 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近有需求需要使用crate搜索时候的分词功能,正好研究一下搜索中分词相关的基础知识
+.</p>
+
+<h1>1.什么是分词</h1>
+
+<h1>2.为什么要分词</h1>
+
+<h1>3.怎么做分词</h1>
+
+<p>参考：<a href="http://my.oschina.net/apdplat/blog/412921">http://my.oschina.net/apdplat/blog/412921</a></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-07-16T05:02:20+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:02 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>前段时间搜索处理个P3的故障,原因是用户输入超级长的搜索字段,导致crate服务器load飙高,进而对外服务失败.</p>
+
+<p>持续时间约10分钟.但是对我而言,最大的问题是这10分钟内,对crate服务器我什么都做不了.经过这次问题,准备好好看看crate以及背后ES的源码.</p>
+
+<p>虽然解决方案是限制用户输入(这一点和google以及百度做法是一样的,百度的查询限制在38个汉字以内).</p>
+
+<h1>1.like查询</h1>
+
+<p>有问题的字段是name字段,使用crate的简单的like查询.根据官方文档,crate的like查询支持两种通配符:</p>
+
+<pre><code>% : 0个或者多个字符
+_ : 单个字符
 </code></pre>
 
-<p>这里会首先简单介绍一些Tomcat的知识。后面会逐渐详细介绍。</p>
+<p>需要注意的注意,使用like查询可能导致慢查询.特别是当使用前置通配符开头的like查询.因为这种情况下crate需要去迭代所有行,而不能使用索引.
+如果向获取更好的性能,可以考虑使用全文索引.</p>
 
-<p>Tomcat是由Apache软件基金会下属的Jakarta项目开发的一个Servlet容器，按照Sun Microsystems提供的技术规范，实现了对Servlet和JavaServer Page(JSP)的支持，并提供了作为Web服务器的一些特有功能,如Tomcat管理和控制平台、安全域管理和Tomcat阀等。由于Tomcat本身也内含了一个HTTP服务器，它也可以被视作一个单独的Web服务器。</p>
+<p>like参考:<a href="https://crate.io/docs/en/latest/sql/queries.html#like">https://crate.io/docs/en/latest/sql/queries.html#like</a></p>
 
-<p>由于有了Sun的参与和支持，最新的Servlet和Jsp规范总能在Tomcat中得到体现。而进来因为Tomcat 技术先进、性能稳定，而且免费，因而深受Java 爱好者的喜爱并得到了部分软件开发商的认可，成为目前比较流行的Web 应用服务器。</p>
+<p>全文索引参考: <a href="https://crate.io/docs/en/latest/sql/fulltext.html">https://crate.io/docs/en/latest/sql/fulltext.html</a> <a href="https://crate.io/docs/en/latest/sql/ddl.html#fulltext-indices">https://crate.io/docs/en/latest/sql/ddl.html#fulltext-indices</a></p>
 
-<p>官方网站：<a href="http://tomcat.apache.org/">http://tomcat.apache.org/</a></p>
+<h1>2.crate符取异常日志</h1>
 
-<p>Tomcat wiki：<a href="http://wiki.apache.org/tomcat/FrontPage">http://wiki.apache.org/tomcat/FrontPage</a></p>
+<p>这里贴一下当时crate服务器的异常:</p>
 
-<h1>1.JSP和Servlet</h1>
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>org.elasticsearch.index.query.QueryParsingException: [merchant_sea] Failed to parse
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parseQuery(IndexQueryParserService.java:370)
+</span><span class='line'>        at org.elasticsearch.action.count.TransportCountAction.shardOperation(TransportCountAction.java:187)
+</span><span class='line'>        at org.elasticsearch.action.count.CrateTransportCountAction.shardOperation(CrateTransportCountAction.java:119)
+</span><span class='line'>        at org.elasticsearch.action.count.CrateTransportCountAction.shardOperation(CrateTransportCountAction.java:49)
+</span><span class='line'>        at org.elasticsearch.action.support.broadcast.TransportBroadcastOperationAction$AsyncBroadcastAction$1.run(TransportBroadcastOperationAction.java:171)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)
+</span><span class='line'>Caused by: org.apache.lucene.util.automaton.TooComplexToDeterminizeException: Determinizing automaton would result in more than 10000 states.
+</span><span class='line'>        at org.apache.lucene.util.automaton.Operations.determinize(Operations.java:743)
+</span><span class='line'>        at org.apache.lucene.util.automaton.RunAutomaton.&lt;init&gt;(RunAutomaton.java:138)
+</span><span class='line'>        at org.apache.lucene.util.automaton.ByteRunAutomaton.&lt;init&gt;(ByteRunAutomaton.java:32)
+</span><span class='line'>        at org.apache.lucene.util.automaton.CompiledAutomaton.&lt;init&gt;(CompiledAutomaton.java:203)
+</span><span class='line'>        at org.apache.lucene.search.AutomatonQuery.&lt;init&gt;(AutomatonQuery.java:84)
+</span><span class='line'>        at org.apache.lucene.search.AutomatonQuery.&lt;init&gt;(AutomatonQuery.java:65)
+</span><span class='line'>        at org.apache.lucene.search.WildcardQuery.&lt;init&gt;(WildcardQuery.java:57)
+</span><span class='line'>        at org.elasticsearch.index.query.WildcardQueryParser.parse(WildcardQueryParser.java:106)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.innerParse(IndexQueryParserService.java:382)
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parse(IndexQueryParserService.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parse(IndexQueryParserService.java:276)
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parseQuery(IndexQueryParserService.java:354)
+</span><span class='line'>        ... 7 more</span></code></pre></td></tr></table></div></figure>
 
-<p>Jsp（JavaServer Page）是在普通Html中嵌入了Java代码的一个脚本，在这一点上，它与其它的脚本语言（如Php）一样，但它与其它语言不同的是：其它脚本语言由服务器直接解释这个脚本，而Jsp则由Jsp容器（如Tomcat）首先将其转化为Servlet，然后再调用Javac将Servlet编译为Class文件。</p>
 
-<p>Servlet其实是一个特殊的Java类，Servlet类一般从HttpServlet类继承而来，在这个类中至少要实现doGet或者doPost函数，在这两个函数中处理来自客户的请求，然后将结果返回。</p>
+<h1>3.背后的原理</h1>
 
-<h1>2.Servlet容器</h1>
+<p>查询的第一步是query词的解析，这里使用的like查询，查询类型是通配符的查询(WildcardQuery)。WildcardQuery主要处理三种情况：</p>
 
-<p>负责处理客户请求、把请求传送给Servlet并把结果返回给客户。不同程序的容器实际实现可能有所变化，但容器与Servlet之间的接口是由Servlet API定义好的，这个接口定义了Servlet容器在Servlet上要调用的方法及传递给Servlet的对象类。</p>
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  /** 匹配字符串 */
+</span><span class='line'>  public static final char WILDCARD_STRING = '*';
+</span><span class='line'>
+</span><span class='line'>  /** 匹配单个字符 */
+</span><span class='line'>  public static final char WILDCARD_CHAR = '?';
+</span><span class='line'>
+</span><span class='line'>  /** 转义符 */
+</span><span class='line'>  public static final char WILDCARD_ESCAPE = '\\';</span></code></pre></td></tr></table></div></figure>
 
-<h1>3.Servlet生命周期</h1>
 
-<pre><code>1.Servlet容器创建Servlet的一个实例
-2.容器调用该实例的init()方法
-3.如果容器对该Servlet有请求，则调用此实例的service()方法
-4.容器在销毁本实例前调用它的destroy()方法
-5.销毁并标记该实例以供作为垃圾收集
-</code></pre>
+<p>WildcardQuery继承自AutomatonQuery，AutomatonQuery实现了有限状态机匹配的搜索(记得算法导论上有介绍，和KMP算法同时出现的)。</p>
 
-<h1>4.Tomcat简介</h1>
+<p>构造AutomatonQuery的时候有一个参数maxDeterminizedStates，意义是构造出来的状态机的最大状态个数。默认值是Operations.DEFAULT_MAX_DETERMINIZED_STATES:</p>
 
-<p>Tomcat中的Servlet容器称之为Catalina。</p>
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public AutomatonQuery(final Term term, Automaton automaton) {
+</span><span class='line'>    this(term, automaton, Operations.DEFAULT_MAX_DETERMINIZED_STATES);
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'>   * Create a new AutomatonQuery from an {@link Automaton}.
+</span><span class='line'>   * 
+</span><span class='line'>   * @param term Term containing field and possibly some pattern structure. The
+</span><span class='line'>   *        term text is ignored.
+</span><span class='line'>   * @param automaton Automaton to run, terms that are accepted are considered a
+</span><span class='line'>   *        match.
+</span><span class='line'>   * @param maxDeterminizedStates maximum number of states in the resulting
+</span><span class='line'>   *   automata.  If the automata would need more than this many states
+</span><span class='line'>   *   TooComplextToDeterminizeException is thrown.  Higher number require more
+</span><span class='line'>   *   space but can process more complex automata.
+</span><span class='line'>   */
+</span><span class='line'>  public AutomatonQuery(final Term term, Automaton automaton, int maxDeterminizedStates) {
+</span><span class='line'>    super(term.field());
+</span><span class='line'>    this.term = term;
+</span><span class='line'>    this.automaton = automaton;
+</span><span class='line'>    this.compiled = new CompiledAutomaton(automaton, null, true, maxDeterminizedStates);
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
 
-<p>Tomcat中的应用程序是一个WAR（Web Archive）文件。WAR是Sun提出的一种Web应用程序格式，与JAR类似，也是许多文件的一个压缩包。这个包中的文件按一定目录结构来组织：通常其根目录下包含有Html和Jsp文件或者包含这两种文件的目录，另外还会有一个WEB-INF目录，这个目录很重要。通常在WEB-INF目录下有一个web.xml文件和一个classes目录，web.xml是这个应用的配置文件，而classes目录下则包含编译好的Servlet类和Jsp或Servlet所依赖的其它类（如JavaBean）。</p>
 
-<p>在Tomcat中，应用程序的部署很简单，你只需将你的WAR放到Tomcat的webapp目录下，Tomcat会自动检测到这个文件，并将其解压。你在浏览器中访问这个应用的Jsp时，通常第一次会很慢，因为Tomcat要将Jsp转化为Servlet文件，然后编译。编译以后，访问将会很快。另外Tomcat也提供了一个应用：manager，访问这个应用需要用户名和密码，用户名和密码存储在一个xml文件中。通过这个应用，你可以在远程通过Web部署和撤销应用。</p>
+<p>Operations.DEFAULT_MAX_DETERMINIZED_STATES的真实值为10000</p>
 
-<h1>5.Tomcat各个版本</h1>
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>final public class Operations {
+</span><span class='line'>  /**
+</span><span class='line'>   * Default maximum number of states that {@link Operations#determinize} should create.
+</span><span class='line'>   */
+</span><span class='line'>  public static final int DEFAULT_MAX_DETERMINIZED_STATES = 10000;
+</span><span class='line'>  ...
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
-<p><a href="http://wiki.apache.org/tomcat/TomcatVersions">http://wiki.apache.org/tomcat/TomcatVersions</a></p>
-
-<h1>6.参考：</h1>
-
-<p><a href="http://zh.wikipedia.org/wiki/Apache_Tomcat">http://zh.wikipedia.org/wiki/Apache_Tomcat</a></p>
-
-<p><a href="http://www.ibm.com/developerworks/cn/java/j-lo-tomcat1/">http://www.ibm.com/developerworks/cn/java/j-lo-tomcat1/</a></p>
-
-<p><a href="http://gearever.iteye.com/category/223001">http://gearever.iteye.com/category/223001</a></p>
 </div>
   
   
@@ -2052,6 +1971,26 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
     
       <li class="post">
         <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/02/03/strace/">Strace</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/01/28/who-eat-jvms-memory/">Who Eats JVM's Memory</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a>
       </li>
     
   </ul>

@@ -9,7 +9,9 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer. 其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用, &hellip;">
+  <meta name="description" content="1.LSH简介
+2.普通Hash
+3.LSH 1.LSH简介 之前在项目中做数据聚合去重的逻辑的时候简单看过局部敏感Hash(Locality Sensitive Hashing,简称LSH)这个东东。今天整理一下个人的理解。 LSH可以理解为一种衡量文本相似度的算法， &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -44,7 +46,7 @@
   <header role="banner"><hgroup>
   <h1><a href="/">xiaobaoqiu Blog</a></h1>
   
-    <h2>Keep Runnnnnnnnnning...</h2>
+    <h2>Think More, Code Less</h2>
   
 </hgroup>
 
@@ -79,7 +81,7 @@
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2015/08/08/oomkiller/">Oomkiller</a></h1>
+      <h1 class="entry-title"><a href="/blog/2015/11/21/ju-bu-min-gan-hash/">局部敏感Hash</a></h1>
     
     
       <p class="meta">
@@ -88,24 +90,43 @@
 
 
 
-<time class='entry-date' datetime='2015-08-08T12:33:53+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>8</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>12:33 pm</span></time>
+<time class='entry-date' datetime='2015-11-21T12:05:25+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>21</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>12:05 pm</span></time>
         
       </p>
     
   </header>
 
 
-  <div class="entry-content"><p>最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer.</p>
+  <div class="entry-content"><ul>
+<li><a href="#1.LSH%E7%AE%80%E4%BB%8B">1.LSH简介</a></li>
+<li><a href="#2.%E6%99%AE%E9%80%9AHash">2.普通Hash</a></li>
+<li><a href="#3.LSH">3.LSH</a></li>
+</ul>
 
-<p>其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用,每个Tomcat至少要求了0.5G的内存,很多要求的是默认的2G的内存.</p>
 
-<p>这里主要简单介绍一下oomkiller是什么东西,原理是什么,以及对我们的影响.</p>
+<h2 id="1.LSH简介">1.LSH简介</h2>
 
-<h1>1.oomkiller简介</h1>
 
-<p>简单的说,Linux 内核有个机制叫OOM killer(Out-Of-Memory killer)，该机制会监控那些占用内存过大，尤其是瞬间很快消耗大量内存的进程(为什么后面会讲到)，为了防止内存耗尽而内核会把该进程杀掉,从而腾出内存留给系统用。</p>
+<p>之前在项目中做数据聚合去重的逻辑的时候简单看过局部敏感Hash(Locality Sensitive Hashing,简称LSH)这个东东。今天整理一下个人的理解。</p>
 
-<p>现象就是相关的日志文件(/var/log/messages)里面会看到下面类似的 Out of memory: Kill process 信息(日志里面把机器host去掉了),还包括一些如pid，process name，cpu mask，trace等信息:</p>
+<p>LSH可以理解为一种衡量文本相似度的算法，特点是散列前的相似点经过哈希之后，也能够在一定程度上相似，并且具有一定的概率保证。其有坚实的理论依据(98年左右理论就提出来了，99年有第一版实现)并且在高维数据空间中表现优异。简单的价格实验场景：</p>
+
+<ol>
+<li>近似检测(Near-duplicate detection): 通常运用在网页去重方面。在搜索中往往会遇到内容相似的重复页面，它们中大多是由于网站之间转载造成的。可以对页面计算LSH，通过查找相等或相近的LSH值找到Near-duplicate。</li>
+<li>图像、音频检索: 通常图像、音频文件都比较大，并且比较起来相对麻烦，我们可以事先对其计算LSH，用作信息指纹，这样可以给定一个文件的LSH值，快速找到与其相等或相近的图像和文件。</li>
+<li>聚类: 将LSH值作为样本特征，将相同或相近的LSH值的样本合并在一起作为一个类别。</li>
+<li>指纹匹配: 一个手指指纹通常由一些细节来表征，通过对比较两个手指指纹的细节的相似度就可以确定两个指纹是否相同或相似。</li>
+</ol>
+
+
+<p>LSH的发展历史可以参考： <a href="http://jacoxu.com/?p=496">http://jacoxu.com/?p=496</a></p>
+
+<h2 id="2.普通Hash">2.普通Hash</h2>
+
+
+<p>说到Hash，大家都很熟悉，是一种典型的Key-Value结构，最常见的算法莫过于MD5。其设计思想是使Key集合中的任意关键字能够尽可能均匀的变换到Value空间中，不同的Key对应不同的Value。通过建立Hash的方式我们能够得到O(1)的查找时间性能，其中关键在于选取一个hash function(md5就是一致hash function)。</p>
+
+<p>md5这种hash函数通常情况下，Key值只有轻微变化，Value值也会发生很大地变化。比如下面实验中用到的文本，仅仅是邮箱号少了个.，其md5完全不同：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -113,109 +134,33 @@
 <span class='line-number'>4</span>
 <span class='line-number'>5</span>
 <span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Aug  4 22:03:18  kernel: Out of memory: Kill process 21447 (java) score 81 or sacrifice child
-</span><span class='line'>Aug  4 22:03:18  kernel: Killed process 21447, UID 40001, (java) total-vm:4242176kB, anon-rss:711240kB, file-rss:1832kB
-</span><span class='line'>Aug  5 01:17:21  ntpd[1195]: synchronized to Xx.xx.xxx.xx, stratum 3
-</span><span class='line'>Aug  5 01:35:52  kernel: java invoked oom-killer: gfp_mask=0xd0, order=0, oom_adj=0, oom_score_adj=0
-</span><span class='line'>Aug  5 01:35:52  kernel: java cpuset=/ mems_allowed=0
-</span><span class='line'>Aug  5 01:35:52  kernel: Pid: 17391, comm: java Not tainted 2.6.32-358.23.2.el6.x86_64 #1</span></code></pre></td></tr></table></div></figure>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp/md5$ cat 1.dat 
+</span><span class='line'>xiaobaoqiu@qunar.com
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp/md5$ cat 2.dat 
+</span><span class='line'>xiaobaoqiu@qunarcom
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp/md5$ md5sum 1.dat 
+</span><span class='line'>ca201d44a9bb6f8e0ca761cdeb678948  1.dat
+</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp/md5$ md5sum 2.dat 
+</span><span class='line'>f585aa440eb3b8bbc46f1184e2944fb9  2.dat</span></code></pre></td></tr></table></div></figure>
 
 
-<h1>2.oomkiller原理</h1>
+<p>原始文本是极其相似的，但是hash之后这种相似性就丢失了。</p>
 
-<p>Linux 内核根据应用程序的要求分配内存，通常来说应用程序分配了内存但是并没有实际全部使用，为了提高性能，这部分没用的内存可以留作它用，这部分内存是属于每个进程的，内核直接回收利用的话比较麻烦，所以内核采用一种过度分配内存(over-commit memory)的办法来间接利用这部分 “空闲” 的内存，提高整体内存的使用效率。</p>
-
-<p>所谓的过度分配内存,可以理解为"打白条",进程A告诉系统我需要2G内存,系统只会答应不会拒绝,因为系统认为任何一个进程不可能每时每刻都全部占用其申请的内存.所以实际上系统并没有给进程A完整的2G内存,而是需要使用的时候才临时分配.这就好像银行现金肯定远远小于所以储户的总值,因为银行认为不可能所以储户同一时间把所以的钱都取出来.</p>
-
-<p>一般来说这样做没有问题，但当大多数应用程序都消耗完自己的内存的时候麻烦就来了，因为这些应用程序的内存需求加起来超出了物理内存(包括 swap)的容量，内核(OOM killer)必须杀掉一些进程才能腾出空间保障系统正常运行。</p>
-
-<p>用银行的例子来讲可能更容易懂一些，部分储户取钱的时候银行不怕，银行有足够的存款应付，当全国所以的储户(或者绝大多数储户)都取钱而且每个人都想把自己钱取完的时候银行的麻烦就来了，银行实际上是没有这么多钱给大家取的。</p>
-
-<h3>2.1 根据什么kill</h3>
-
-<p>内核检测到系统内存不足,然后挑选并杀掉某个进程的过程可以参考内核源代码 linux/mm/oom_kill.c，当系统内存不足的时候，oom_kill被触发，然后选择一个进程杀掉，如何判断和选择一个进程呢，总不能随机选吧?系统会根据进程使用内存的情况给进程打分,选择进程kill的时候主要根据这个分数,打分的机制很朴素:最占用内存的进程。</p>
-
-<p>每个进程的分数都由进程的oom_score记录:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$cat /proc/26893/oom_score
-</span><span class='line'>76
-</span><span class='line'>[baoqiu.xiao@Xxx ~]$ cat /proc/14969/oom_score
-</span><span class='line'>82</span></code></pre></td></tr></table></div></figure>
+<h2 id="3.LSH">3.LSH</h2>
 
 
-<p>另外一个重要的参数就是进程的oom_adj,表示该pid进程被oom killer杀掉的权重，介于 [-17,15]之间，越高的权重，意味着更可能被oom killer选中，-17表示禁止被kill掉。默认为0.</p>
+<p>局部敏感哈希的最大特点就在于保持数据的相似性。需要注意的是这里说的保持数据的相似度不是说保持100%的相似度，而是保持最大可能的相似度。换个角度来看，可以将LSH理解为数据降维的方法。</p>
 
-<p>一些其他的细节:</p>
+<p>数据对应的维度越高，信息量也就越大，相反，如果数据进行了降维，那么毫无疑问数据所反映的信息必然会有损失。哈希函数从本质上来看就是一直在扮演数据降维的角色。</p>
 
-<pre><code>1.子进程会继承父进程的oom_adj;
-2.OOM不适合于解决内存泄漏(Memory leak)的问题;
-3.有时free查看还有充足的内存，但还是会触发OOM，是因为该进程可能占用了特殊的内存地址空间;
-</code></pre>
+<p>LSH的基本思想是：将原始数据空间中的两个相邻数据点通过相同的映射或投影变换后，这两个数据点在新的数据空间中仍然相邻的概率很大，而不相邻的数据点被映射到同一个桶的概率很小。</p>
 
-<h3>2.2 如何关闭oomkiller</h3>
-
-<p>有几种方法关闭oomkiller机制:</p>
-
-<ul>
-<li>1.调整oom_adj
-将进程的oom_adj设置为17即禁止了该进程被kill.</li>
-</ul>
-
-
-<p>比如系统的ssh一般是禁止oom的:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@ ~]$ ps aux | grep sshd
-</span><span class='line'>root      1208  0.0  0.0  64116   296 ?        Ss   May28   1:47 /usr/sbin/sshd
-</span><span class='line'>[baoqiu.xiao@ ~]$ cat /proc/1208/oom_adj 
-</span><span class='line'>-17</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其他需要禁用,可以如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>pgrep -f "sshd" | while read PID; do echo -17 &gt; /proc/$PID/oom_adj;done</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其实在oom-killer的日志中我们是可以看到未-17的一些应用:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Aug  5 01:35:52 l-crm4.des.dev.cn0 kernel: [ pid ]   uid  tgid total_vm      rss cpu oom_adj oom_score_adj name
-</span><span class='line'>...
-</span><span class='line'>Aug  5 01:35:52 l-crm4.des.dev.cn0 kernel: [ 1187]     0  1187    16029       73   2     -17         -1000 sshd
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<ul>
-<li><p>2.修改内核参数
-sysctl 下有2个可配置选项：</p>
-
-<p>  vm.panic_on_oom = 0                 #内存不够时内核是否直接panic,0表示开启
-  vm.oom_kill_allocating_task = 1         #oom-killer是否选择当前正在申请内存的进程进行kill</p></li>
-</ul>
-
-
-<p>只要设置/etc/sysctl.conf文件中vm.panic_on_oom=1就表示关闭oom-killer(线上环境一般不推荐):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># sysctl -w vm.panic_on_oom=1
-</span><span class='line'>vm.panic_on_oom = 1   //1表示关闭，默认为0表示开启OOM
-</span><span class='line'># sysctl -p</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参考: <a href="http://lwn.net/Articles/317814/">http://lwn.net/Articles/317814/</a></p>
+<p>参考：
+<a href="https://en.wikipedia.org/wiki/Locality-sensitive_hashing">https://en.wikipedia.org/wiki/Locality-sensitive_hashing</a>
+<a href="http://www.cnblogs.com/maybe2030/p/4953039.html">http://www.cnblogs.com/maybe2030/p/4953039.html</a>
+<a href="http://blog.csdn.net/weiyuweizhi/article/details/8921973">http://blog.csdn.net/weiyuweizhi/article/details/8921973</a></p>
 </div>
   
   
@@ -228,7 +173,7 @@ sysctl 下有2个可配置选项：</p>
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2015/08/03/fan-she-de-xiao-lu/">反射的效率</a></h1>
+      <h1 class="entry-title"><a href="/blog/2015/11/19/memcachedxian-zhi-fang-wen-ip/">Memcached安全性</a></h1>
     
     
       <p class="meta">
@@ -237,26 +182,48 @@ sysctl 下有2个可配置选项：</p>
 
 
 
-<time class='entry-date' datetime='2015-08-03T20:54:57+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>8:54 pm</span></time>
+<time class='entry-date' datetime='2015-11-19T18:39:25+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>19</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:39 pm</span></time>
         
       </p>
     
   </header>
 
 
-  <div class="entry-content"><h1>1.toString实现</h1>
+  <div class="entry-content"><ul>
+<li><a href="#1.Memcached%20-l%E5%8F%82%E6%95%B0">1.Memcached -l参数</a></li>
+<li><a href="#2.%E4%BD%BF%E7%94%A8iptable">2.使用iptable</a></li>
+<li><a href="#2.%E4%B8%8D%E9%9C%80%E8%A6%81Root%E6%9D%83%E9%99%90">3.不需要Root权限</a></li>
+</ul>
 
-<p>测试不同的toString实现方式的效率，目前包括的case：</p>
 
-<pre><code>1.String的+连接生成；
-2.StringBuilder生成；
-3.StringBuffer生成；
-4.Guava的ToStringHelper生成；
-5.Apache.commons.lang3的lang3的ToStringBuilder生成;
-6.Apache.commons.lang3的ReflectionToStringBuilder生成;
-</code></pre>
+<h2 id="1.Memcached -l参数">1.Memcached -l参数</h2>
 
-<p>toString的对象包含各种类型的属性：</p>
+
+<p>最近整理了组内使用的Memcached。发现很多问题，其中一个问题就是开发机器测试机器可以直连线上的Memcached。这也是memcached公认的问题：memcached 是一种很简单、有效的协议，但也有其缺点，就是 memcached 自身没有 ACL 控制（或者相当弱）。</p>
+
+<p>Memcache服务器端都是直接通过客户端连接后直接操作，没有任何的验证过程，这样如果服务器是直接暴露在互联网上的话是比较危险，轻则数据泄露被其他无关人员查看，重则服务器被入侵。</p>
+
+<p>乌云也爆料过很多网站的memcached的安全性问题：
+<a href="http://www.wooyun.org/bugs/wooyun-2010-0790">http://www.wooyun.org/bugs/wooyun-2010-0790</a>
+<a href="http://www.wooyun.org/bugs/wooyun-2013-023891">http://www.wooyun.org/bugs/wooyun-2013-023891</a>
+<a href="http://www.wooyun.org/bugs/wooyun-2013-037301">http://www.wooyun.org/bugs/wooyun-2013-037301</a></p>
+
+<p>通过-l参数可以再已定成都上做到安全的限制：</p>
+
+<ol>
+<li>如果限定只要自己能够使用本机的Memcached，可以直接将-l参数绑定到回路地址127.0.0.1.</li>
+<li>如果是后台系统且有自己的私有IP，最好将-l参数绑定到私有IP上(比如192.168.0.200).</li>
+</ol>
+
+
+<p>如果Memcached非要挂在公网IP上，就需要做防火量限制，如下面说道的iptables。</p>
+
+<h2 id="2.使用iptable">2.使用iptable</h2>
+
+
+<p>ACL 最简单的设置方法就是在网络层，直接拒绝掉你的访问，通过iptable可以实现这个功能。</p>
+
+<p>假如我们的一台 memcached 的机器，想拒绝除了自身之外的访问，假如机器自己IP是：XX.XX.XX.184，那么我们可以以root身份用下面几条命令来达到我们的目的：</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -269,20 +236,147 @@ sysctl 下有2个可配置选项：</p>
 <span class='line-number'>9</span>
 <span class='line-number'>10</span>
 <span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>private int age;
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp -s 127.0.0.1 --dport 6666 -j ACCEPT
+</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp -s XX.XX.XX.184 --dport 6666 -j ACCEPT
+</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp --dport 6666 -j REJECT
 </span><span class='line'>
-</span><span class='line'>private String name;
+</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -L -n --line-number
+</span><span class='line'>Chain INPUT (policy ACCEPT)
+</span><span class='line'>num  target     prot opt source               destination         
+</span><span class='line'>1    ACCEPT     tcp  --  127.0.0.1            0.0.0.0/0           tcp dpt:6666 
+</span><span class='line'>2    ACCEPT     tcp  --  XX.XX.XX.184         0.0.0.0/0           tcp dpt:6666 
+</span><span class='line'>3    REJECT     tcp  --  0.0.0.0/0            0.0.0.0/0           tcp dpt:6666 reject-with icmp-port-unreachable 
 </span><span class='line'>
-</span><span class='line'>private String address;
+</span><span class='line'>Chain FORWARD (policy ACCEPT)
+</span><span class='line'>num  target     prot opt source               destination         
 </span><span class='line'>
-</span><span class='line'>private List&lt;String&gt; phone;
-</span><span class='line'>
-</span><span class='line'>private BigDecimal salary;
-</span><span class='line'>
-</span><span class='line'>private Map&lt;String, Object&gt; attrs;</span></code></pre></td></tr></table></div></figure>
+</span><span class='line'>Chain OUTPUT (policy ACCEPT)
+</span><span class='line'>num  target     prot opt source               destination</span></code></pre></td></tr></table></div></figure>
 
 
-<p>各个toString的实现版本，其中ReflectionToStringBuilder是我们项目中使用最多的，因为它最简单：</p>
+<p>这里使用的是iptables的filter功能，其filter是一种链式结构且有从前往后依次执行。满足某一条filter规则就不往下走了。因此基于这个原则，我们需要将最严格的规则放在最前面。</p>
+
+<p>删除某一条规则，其中的1就是iptables -L -n &ndash;line-number中的num号。如下会删除Chain INPUT中的编号为1的规则：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@... ~]sudo iptables -D INPUT 1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>可以使用iptables -F 清空所有规则.</p>
+
+<h2 id="3.不需要Root权限">3.不需要Root权限</h2>
+
+
+<p>启动Memcached不需要Root权限，这样能避免Memcached被入侵而造成更大的危害。</p>
+
+<p>参考：
+<a href="http://blog.couchbase.com/memcached-security">http://blog.couchbase.com/memcached-security</a>
+<a href="http://serverfault.com/questions/424324/how-to-secure-memcached">http://serverfault.com/questions/424324/how-to-secure-memcached</a></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/11/18/libphonenumber/">Libphonenumber</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-11-18T18:52:58+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>18</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:52 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.%E7%AE%80%E4%BB%8B">1.简介</a></li>
+<li><a href="#2.%E4%BD%BF%E7%94%A8Demo">2.使用Demo</a></li>
+<li><a href="#3.%E6%B3%A8%E6%84%8F%E7%82%B9">3.注意点</a></li>
+</ul>
+
+
+<h2 id="1.简介">1.简介</h2>
+
+
+<p>最近项目中做短信发送相关的工作.涉及到国内手机和国际手机.因此第一步需要解析电话获取国家码.</p>
+
+<p>使用的库是Google提供的著名开源库libphonenumber.有的App的手机号码归属地等功能就是使用这个实现的。支持Java， C++ 和 JavaScript。</p>
+
+<p>libphonenumber是一个手机号码工具类,提供了手机号码的格式化,解析,校验等功能.典型的比如:</p>
+
+<ol>
+<li>解析手机号码,获取国际码;</li>
+<li>根据国家代码和手机号,判断手机号是否有效;</li>
+<li>根据国家代码和手机号,判断手机运营商</li>
+<li>根据国家代码和手机号,手机归属地</li>
+</ol>
+
+
+<p>Git地址： <a href="https://github.com/googlei18n/libphonenumber">https://github.com/googlei18n/libphonenumber</a></p>
+
+<p>国家码参考：<a href="http://country-code.cl/">http://country-code.cl/</a></p>
+
+<h2 id="2.使用Demo">2.使用Demo</h2>
+
+
+<p>Maven引入</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>    &lt;!--手机号解析--&gt;
+</span><span class='line'>    &lt;dependency&gt;
+</span><span class='line'>        &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
+</span><span class='line'>        &lt;artifactId&gt;libphonenumber&lt;/artifactId&gt;
+</span><span class='line'>        &lt;version&gt;7.2.1&lt;/version&gt;
+</span><span class='line'>    &lt;/dependency&gt;
+</span><span class='line'>    &lt;!--手机归属地定位相关--&gt;
+</span><span class='line'>    &lt;dependency&gt;
+</span><span class='line'>        &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
+</span><span class='line'>        &lt;artifactId&gt;geocoder&lt;/artifactId&gt;
+</span><span class='line'>        &lt;version&gt;2.9&lt;/version&gt;
+</span><span class='line'>    &lt;/dependency&gt;
+</span><span class='line'>    &lt;!-- 手机运营商相关 --&gt;
+</span><span class='line'>    &lt;dependency&gt;
+</span><span class='line'>        &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
+</span><span class='line'>        &lt;artifactId&gt;carrier&lt;/artifactId&gt;
+</span><span class='line'>        &lt;version&gt;1.21&lt;/version&gt;
+</span><span class='line'>    &lt;/dependency&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>简单代码如下</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -368,927 +462,298 @@ sysctl 下有2个可配置选项：</p>
 <span class='line-number'>82</span>
 <span class='line-number'>83</span>
 <span class='line-number'>84</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * 使用字符串+
-</span><span class='line'> * @return
-</span><span class='line'> */
-</span><span class='line'>public String concatToString() {
-</span><span class='line'>    return "Person{" +
-</span><span class='line'>            "age=" + age +
-</span><span class='line'>            ", name='" + name + '\'' +
-</span><span class='line'>            ", address='" + address + '\'' +
-</span><span class='line'>            ", phone=" + phone +
-</span><span class='line'>            ", salary=" + salary +
-</span><span class='line'>            ", attrs=" + attrs +
-</span><span class='line'>            '}';
-</span><span class='line'>}
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+<span class='line-number'>111</span>
+<span class='line-number'>112</span>
+<span class='line-number'>113</span>
+<span class='line-number'>114</span>
+<span class='line-number'>115</span>
+<span class='line-number'>116</span>
+<span class='line-number'>117</span>
+<span class='line-number'>118</span>
+<span class='line-number'>119</span>
+<span class='line-number'>120</span>
+<span class='line-number'>121</span>
+<span class='line-number'>122</span>
+<span class='line-number'>123</span>
+<span class='line-number'>124</span>
+<span class='line-number'>125</span>
+<span class='line-number'>126</span>
+<span class='line-number'>127</span>
+<span class='line-number'>128</span>
+<span class='line-number'>129</span>
+<span class='line-number'>130</span>
+<span class='line-number'>131</span>
+<span class='line-number'>132</span>
+<span class='line-number'>133</span>
+<span class='line-number'>134</span>
+<span class='line-number'>135</span>
+<span class='line-number'>136</span>
+<span class='line-number'>137</span>
+<span class='line-number'>138</span>
+<span class='line-number'>139</span>
+<span class='line-number'>140</span>
+<span class='line-number'>141</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class LibphonenumberUsage {
 </span><span class='line'>
-</span><span class='line'>/**
-</span><span class='line'> * 使用StringBuilder
-</span><span class='line'> * @return
-</span><span class='line'> */
-</span><span class='line'>public String stringBuilderToString() {
-</span><span class='line'>    StringBuilder builder = new StringBuilder("Person{");
-</span><span class='line'>    builder.append("age=").append(age)
-</span><span class='line'>            .append(", name='").append(name).append("'")
-</span><span class='line'>            .append(", address='").append(address).append("'")
-</span><span class='line'>            .append(", phone=").append(phone)
-</span><span class='line'>            .append(", salary=").append(salary)
-</span><span class='line'>            .append(", attrs=").append(attrs)
-</span><span class='line'>            .append("}");
-</span><span class='line'>    return builder.toString();
-</span><span class='line'>}
+</span><span class='line'>    private static final PhoneNumberUtil phoneNumberUtil = PhoneNumberUtil.getInstance();
 </span><span class='line'>
-</span><span class='line'>/**
-</span><span class='line'> * 使用StringBuffer
-</span><span class='line'> * @return
-</span><span class='line'> */
-</span><span class='line'>public String stringBufferToString() {
-</span><span class='line'>    StringBuffer buffer = new StringBuffer("Person{");
-</span><span class='line'>    buffer.append("age=").append(age)
-</span><span class='line'>            .append(", name='").append(name).append("'")
-</span><span class='line'>            .append(", address='").append(address).append("'")
-</span><span class='line'>            .append(", phone=").append(phone)
-</span><span class='line'>            .append(", salary=").append(salary)
-</span><span class='line'>            .append(", attrs=").append(attrs)
-</span><span class='line'>            .append("}");
-</span><span class='line'>    return buffer.toString();
-</span><span class='line'>}
+</span><span class='line'>    private static PhoneNumberToCarrierMapper carrier = PhoneNumberToCarrierMapper.getInstance();
 </span><span class='line'>
-</span><span class='line'>/**
-</span><span class='line'> * Guava的Objects,即ToStringHelper
-</span><span class='line'> * @return
-</span><span class='line'> */
-</span><span class='line'>public String toStringHelperToString() {
-</span><span class='line'>    return Objects.toStringHelper(this)
-</span><span class='line'>            .add("age", age)
-</span><span class='line'>            .add("name", name)
-</span><span class='line'>            .add("address", address)
-</span><span class='line'>            .add("phone", phone)
-</span><span class='line'>            .add("salary", salary)
-</span><span class='line'>            .add("attrs", attrs)
-</span><span class='line'>            .toString();
-</span><span class='line'>}
+</span><span class='line'>    private static PhoneNumberOfflineGeocoder geocoder = PhoneNumberOfflineGeocoder.getInstance();
 </span><span class='line'>
-</span><span class='line'>/**
-</span><span class='line'> * apache.commons.lang3的ToStringBuilder
-</span><span class='line'> * @return
-</span><span class='line'> */
-</span><span class='line'>public String toStringBuilderToString() {
-</span><span class='line'>    return new ToStringBuilder(this)
-</span><span class='line'>            .append("age", age)
-</span><span class='line'>            .append("name", name)
-</span><span class='line'>            .append("address", address)
-</span><span class='line'>            .append("phone", phone)
-</span><span class='line'>            .append("salary", salary)
-</span><span class='line'>            .append("attrs", attrs)
-</span><span class='line'>            .toString();
-</span><span class='line'>}
+</span><span class='line'>    private static final String DEFAULT_COUNTRY = "CN";
 </span><span class='line'>
-</span><span class='line'>/**
-</span><span class='line'> * apache.commons.lang3的ReflectionToStringBuilder
-</span><span class='line'> * @return
-</span><span class='line'> */
-</span><span class='line'>public String reflectionToStringBuilderToString() {
-</span><span class='line'>    return ReflectionToStringBuilder.reflectionToString(this, ToStringStyle.SIMPLE_STYLE);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>OS是Ubuntu 14.04 LTS版本，Java版本是1.7.0_80。跑1000次，记录最大最小平均时间:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Concat Min(微秒)=25.385
-</span><span class='line'>Concat Max(微秒)=2218.851
-</span><span class='line'>Concat Avg(微秒)=56.728432999999995
+</span><span class='line'>    private static final String[] phoneCases = new String[] {
+</span><span class='line'>            "00861861****515",  //中国
+</span><span class='line'>            "008869****7718",   //台湾
+</span><span class='line'>            "00658****994",     //新加坡
+</span><span class='line'>            "1591****718",      //中国
+</span><span class='line'>            "00820****704546",  //Korea
+</span><span class='line'>            "1709****155"       //中国170
+</span><span class='line'>    };
 </span><span class='line'>
-</span><span class='line'>StringBuilder Min(微秒)=22.501
-</span><span class='line'>StringBuilder Max(微秒)=6934.066
-</span><span class='line'>StringBuilder Avg(微秒)=50.724183
+</span><span class='line'>    private static final String[] countryCodes = new String[]{
+</span><span class='line'>            "886",      //台湾
+</span><span class='line'>            "65",       //新加坡
+</span><span class='line'>            "86",       //中国
+</span><span class='line'>            "82",       //Korea
+</span><span class='line'>            "86"        //中国170
+</span><span class='line'>    };
+</span><span class='line'>    private static final String[] phones = new String[]{
+</span><span class='line'>            "972****718",        //台湾
+</span><span class='line'>            "82****94",         //新加坡
+</span><span class='line'>            "1591****718",      //中国
+</span><span class='line'>            "1074****46",       //Korea
+</span><span class='line'>            "1709****155"       //中国170
+</span><span class='line'>    };
 </span><span class='line'>
-</span><span class='line'>StringBuffer Min(微秒)=29.553
-</span><span class='line'>StringBuffer Max(微秒)=3159.808
-</span><span class='line'>StringBuffer Avg(微秒)=64.113464
-</span><span class='line'>
-</span><span class='line'>ToStringHelper Min(微秒)=44.893
-</span><span class='line'>ToStringHelper Max(微秒)=9503.836
-</span><span class='line'>ToStringHelper Avg(微秒)=112.351293
-</span><span class='line'>
-</span><span class='line'>ToStringBuilder Min(微秒)=62.806
-</span><span class='line'>ToStringBuilder Max(微秒)=20228.186
-</span><span class='line'>ToStringBuilder Avg(微秒)=194.728656
-</span><span class='line'>
-</span><span class='line'>ReflectionToStringBuilder Min(微秒)=37.057
-</span><span class='line'>ReflectionToStringBuilder Max(微秒)=11402.172
-</span><span class='line'>ReflectionToStringBuilder Avg(微秒)=219.219879</span></code></pre></td></tr></table></div></figure>
-
-
-<p>整理成表格，数据如下：</p>
-
-<table>
-<thead>
-<tr>
-<th style="text-align:center;">toString策略 </th>
-<th style="text-align:center;"> 平均(微秒) </th>
-<th style="text-align:center;"> 最大(微秒) </th>
-<th style="text-align:center;"> 最小(微秒)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align:center;">Concat </td>
-<td style="text-align:center;">56.728433  </td>
-<td style="text-align:center;">2218.851 </td>
-<td style="text-align:center;"> 25.385</td>
-</tr>
-<tr>
-<td style="text-align:center;">StringBuilder </td>
-<td style="text-align:center;">50.724183  </td>
-<td style="text-align:center;">6934.066 </td>
-<td style="text-align:center;"> 22.501</td>
-</tr>
-<tr>
-<td style="text-align:center;">StringBuffer </td>
-<td style="text-align:center;">64.113464  </td>
-<td style="text-align:center;">3159.808 </td>
-<td style="text-align:center;"> 29.553</td>
-</tr>
-<tr>
-<td style="text-align:center;">ToStringHelper </td>
-<td style="text-align:center;">112.351293  </td>
-<td style="text-align:center;">9503.836 </td>
-<td style="text-align:center;"> 44.893</td>
-</tr>
-<tr>
-<td style="text-align:center;">ToStringBuilder </td>
-<td style="text-align:center;">194.728656  </td>
-<td style="text-align:center;">20228.186 </td>
-<td style="text-align:center;"> 62.806</td>
-</tr>
-<tr>
-<td style="text-align:center;">ReflectionToStringBuilder </td>
-<td style="text-align:center;">219.219879  </td>
-<td style="text-align:center;">11402.172 </td>
-<td style="text-align:center;"> 37.057</td>
-</tr>
-</tbody>
-</table>
-
-
-<p>通过上面的数据，concat和StringBuilder及StringBuffer的速度差不多。其他集中语法糖普遍慢一些，我们最常用的ReflectionToStringBuilder实际上是最慢的一个版本。</p>
-
-<h3>1.1 实现原理</h3>
-
-<p>简单分析一下各个toString方式的实现原理。</p>
-
-<ul>
-<li>1.Concat</li>
-</ul>
-
-
-<p>没什么说的，使用的是字符串的拼接。</p>
-
-<ul>
-<li>2.StringBuilder</li>
-</ul>
-
-
-<p>内部使用char数组，每次append都会先检查数组空间释放足够，不够的话先申请一块临时数组，大小是原来的两倍大小，再用Arrays.copyOf将数据拷贝。</p>
-
-<ul>
-<li>3.StringBuffer</li>
-</ul>
-
-
-<p>和StringBuilder一样，也是继承自AbstractStringBuilder类，唯一区别是为了保证线程安全，变更数据的方法都加上了synchronized关键字。</p>
-
-<ul>
-<li>4.ToStringHelper</li>
-</ul>
-
-
-<p>Guava的ToStringHelper内部实现是一个简单链表，每个链表节点包含name，value以及下一个节点的指针。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>private static final class ValueHolder {
-</span><span class='line'>        String name;
-</span><span class='line'>        Object value;
-</span><span class='line'>        Objects.ToStringHelper.ValueHolder next;
-</span><span class='line'>
-</span><span class='line'>        private ValueHolder() {
-</span><span class='line'>        }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>ToStringHelper类持有链表头节点和尾节点。每次调用add都是在链表尾部加一个节点，toString() 的时候遍历整个链表讲内容加到一个StringBuilder中。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static final class ToStringHelper {
-</span><span class='line'>    private final String className;
-</span><span class='line'>    private Objects.ToStringHelper.ValueHolder holderHead;
-</span><span class='line'>    private Objects.ToStringHelper.ValueHolder holderTail;
-</span><span class='line'>
-</span><span class='line'>    public Objects.ToStringHelper add(String name, long value) {
-</span><span class='line'>        return this.addHolder(name, String.valueOf(value));
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    private Objects.ToStringHelper addHolder(String name, @Nullable Object value) {
-</span><span class='line'>        Objects.ToStringHelper.ValueHolder valueHolder = this.addHolder();
-</span><span class='line'>        valueHolder.value = value;
-</span><span class='line'>        valueHolder.name = (String)Preconditions.checkNotNull(name);
-</span><span class='line'>        return this;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    private Objects.ToStringHelper.ValueHolder addHolder() {
-</span><span class='line'>        Objects.ToStringHelper.ValueHolder valueHolder = new Objects.ToStringHelper.ValueHolder();
-</span><span class='line'>        this.holderTail = this.holderTail.next = valueHolder;
-</span><span class='line'>        return valueHolder;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<ul>
-<li>5.ToStringBuilder</li>
-</ul>
-
-
-<p>ToStringBuilder内部使用一个StringBuffer，默认大小为512.另外一个style设定来toString的样式，每次执行append都跳转到对应的ToStringStyle的append函数实现上，并将当前的StringBuffer带过去(StringBuffer来存储数据，ToStringStyle来保证格式)：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class ToStringBuilder implements Builder&lt;String&gt; {
-</span><span class='line'>    private static volatile ToStringStyle defaultStyle;
-</span><span class='line'>    private final StringBuffer buffer;
-</span><span class='line'>    private final Object object;
-</span><span class='line'>    private final ToStringStyle style;
-</span><span class='line'>
+</span><span class='line'>    public static final Map&lt;String, String&gt; CHINESE_CARRIER_MAPPER = Maps.newHashMap();
 </span><span class='line'>    static {
-</span><span class='line'>    defaultStyle = ToStringStyle.DEFAULT_STYLE;
+</span><span class='line'>        CHINESE_CARRIER_MAPPER.put("China Mobile", "中国移动");
+</span><span class='line'>        CHINESE_CARRIER_MAPPER.put("China Unicom", "中国联通");
+</span><span class='line'>        CHINESE_CARRIER_MAPPER.put("China Telecom", "中国电信");
 </span><span class='line'>    }
 </span><span class='line'>
-</span><span class='line'>    public ToStringBuilder append(String fieldName, int value) {
-</span><span class='line'>        this.style.append(this.buffer, fieldName, value);
-</span><span class='line'>        return this;
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>ToStringStyle的append实现，每个append都很简单，就是往StringBuffer中append数据：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public void append(StringBuffer buffer, String fieldName, int value) {
-</span><span class='line'>    this.appendFieldStart(buffer, fieldName);
-</span><span class='line'>    this.appendDetail(buffer, fieldName, value);
-</span><span class='line'>    this.appendFieldEnd(buffer, fieldName);
-</span><span class='line'>}
+</span><span class='line'>    public static void main(String[] args) {
+</span><span class='line'>//        parsePhone();
 </span><span class='line'>
-</span><span class='line'>protected void appendDetail(StringBuffer buffer, String fieldName, int value) {
-</span><span class='line'>    buffer.append(value);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<ul>
-<li>6.ReflectionToStringBuilder</li>
-</ul>
-
-
-<p>ReflectionToStringBuilder实际上是继承自ToStringBuilder，每次都构建一个ReflectionToStringBuilder对象，toString的实现是使用反射完成，首先反射当前类的所以属性，再逐级往上获取父类并反射获取其属性,每拿到一个属性，调用一次ToStringBuilder的append方法：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static &lt;T&gt; String toString(
-</span><span class='line'>        final T object, final ToStringStyle style, final boolean outputTransients,
-</span><span class='line'>        final boolean outputStatics, final Class&lt;? super T&gt; reflectUpToClass) {
-</span><span class='line'>    return new ReflectionToStringBuilder(object, style, null, reflectUpToClass, outputTransients, outputStatics)
-</span><span class='line'>            .toString();
+</span><span class='line'>//        validPhone();
+</span><span class='line'>
+</span><span class='line'>//        phoneCarrierCase();
+</span><span class='line'>
+</span><span class='line'>        phoneGeoCase();
 </span><span class='line'>    }
 </span><span class='line'>
-</span><span class='line'>    public String toString() {
-</span><span class='line'>        if (this.getObject() == null) {
-</span><span class='line'>            return this.getStyle().getNullText();
+</span><span class='line'>    /**
+</span><span class='line'>     * 电话解析case
+</span><span class='line'>     */
+</span><span class='line'>    private static void parsePhone() {
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>        for(String phone : phoneCases) {
+</span><span class='line'>            Phonenumber.PhoneNumber pn = doParse(phone);
+</span><span class='line'>            System.out.println(phone + " --&gt; " + pn.getCountryCode() + ", " + pn.getNationalNumber());
 </span><span class='line'>        }
-</span><span class='line'>        Class&lt;?&gt; clazz = this.getObject().getClass();
-</span><span class='line'>        this.appendFieldsIn(clazz);
-</span><span class='line'>        while (clazz.getSuperclass() != null && clazz != this.getUpToClass()) {
-</span><span class='line'>            clazz = clazz.getSuperclass();
-</span><span class='line'>            this.appendFieldsIn(clazz);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 解析逻辑
+</span><span class='line'>     */
+</span><span class='line'>    private static final Phonenumber.PhoneNumber doParse(String phone) {
+</span><span class='line'>        try {
+</span><span class='line'>            return phoneNumberUtil.parse(phone, DEFAULT_COUNTRY);
+</span><span class='line'>        } catch (NumberParseException e) {
+</span><span class='line'>            throw new NumberFormatException("invalid phone number: " + phone);
 </span><span class='line'>        }
-</span><span class='line'>        return super.toString();
 </span><span class='line'>    }
 </span><span class='line'>
-</span><span class='line'>    protected void appendFieldsIn(final Class&lt;?&gt; clazz) {
-</span><span class='line'>        if (clazz.isArray()) {
-</span><span class='line'>            this.reflectionAppendArray(this.getObject());
-</span><span class='line'>            return;
+</span><span class='line'>    /**
+</span><span class='line'>     * 电话解析case
+</span><span class='line'>     */
+</span><span class='line'>    private static void validPhone() {
+</span><span class='line'>        for (int i = 0; i &lt; countryCodes.length; i++) {
+</span><span class='line'>            boolean valid = doValid(countryCodes[i], phones[i]);
+</span><span class='line'>            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + valid);
 </span><span class='line'>        }
-</span><span class='line'>        final Field[] fields = clazz.getDeclaredFields();
-</span><span class='line'>        AccessibleObject.setAccessible(fields, true);
-</span><span class='line'>        for (final Field field : fields) {
-</span><span class='line'>            final String fieldName = field.getName();
-</span><span class='line'>            if (this.accept(field)) {
-</span><span class='line'>                try {
-</span><span class='line'>                    // Warning: Field.get(Object) creates wrappers objects
-</span><span class='line'>                    // for primitive types.
-</span><span class='line'>                    final Object fieldValue = this.getValue(field);
-</span><span class='line'>                    this.append(fieldName, fieldValue);
-</span><span class='line'>                } catch (final IllegalAccessException ex) {
-</span><span class='line'>                    //this can't happen. Would get a Security exception
-</span><span class='line'>                    // instead
-</span><span class='line'>                    //throw a runtime exception in case the impossible
-</span><span class='line'>                    // happens.
-</span><span class='line'>                    throw new InternalError("Unexpected IllegalAccessException: " + ex.getMessage());
-</span><span class='line'>                }
-</span><span class='line'>            }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 手机校验逻辑
+</span><span class='line'>     */
+</span><span class='line'>    private static boolean doValid(String countryCode, String phoneNumber){
+</span><span class='line'>        int ccode = Integer.parseInt(countryCode);
+</span><span class='line'>        long phone = Long.parseLong(phoneNumber);
+</span><span class='line'>
+</span><span class='line'>        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
+</span><span class='line'>        pn.setCountryCode(ccode);
+</span><span class='line'>        pn.setNationalNumber(phone);
+</span><span class='line'>
+</span><span class='line'>        return phoneNumberUtil.isValidNumber(pn);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private static void phoneCarrierCase() {
+</span><span class='line'>        for (int i = 0; i &lt; countryCodes.length; i++) {
+</span><span class='line'>            String carrier = doCarrier(countryCodes[i], phones[i]);
+</span><span class='line'>            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + (CHINESE_CARRIER_MAPPER.containsKey(carrier)?CHINESE_CARRIER_MAPPER.get(carrier):carrier));
 </span><span class='line'>        }
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.beanCopy</h1>
-
-<p>beanCopy由很多种方式，Spring和Apache都有实现版本，这里测试各个版本的性能.包括：</p>
-
-<pre><code>1.原始的get/set
-2.Spring的BeanUtils
-3.cglib的BeanCopier
-4.apache的BeanUtils
-5.apache的PropertyUtils
-</code></pre>
-
-<p>原因是前段时间项目上很简单的接口时间很慢，最后同事跟到的问题是使用Spring的beanCopy方式，因为接口涉及上百个bean的属性拷贝，因此比较明显的反应了各种beancopy实现方式的差异；我们最常用的应该是Spring版本的BeanUtils。apache的BeanUtils的设计有点反人类(第一个参数是dest，第二个参数是source)。</p>
-
-<p>各个包的版本：</p>
-
-<pre><code>1.Spring : 3.2.1
-2.cglib : 3.1
-3.commons-beanutils : 1.9.2
-</code></pre>
-
-<p>各种方式的实现很简单：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class GetSetCopy {
-</span><span class='line'>    public static HotelVo copy(HotelEntity entity) {
-</span><span class='line'>        HotelVo vo = new HotelVo();
-</span><span class='line'>        vo.setId(entity.getId());
-</span><span class='line'>        vo.setName(entity.getName());
-</span><span class='line'>        vo.setAddress(entity.getAddress());
-</span><span class='line'>        vo.setPhone(entity.getPhone());
-</span><span class='line'>        vo.setCreateTime(entity.getCreateTime());
-</span><span class='line'>        vo.setUpdateTime(entity.getUpdateTime());
-</span><span class='line'>        vo.setPrice(entity.getPrice());
-</span><span class='line'>        vo.setKp(entity.getKp());
-</span><span class='line'>
-</span><span class='line'>        return vo;
 </span><span class='line'>    }
-</span><span class='line'>}
 </span><span class='line'>
-</span><span class='line'>public class ApacheBeanUtilsCopy {
-</span><span class='line'>    public static HotelVo copy(HotelEntity entity) throws Exception {
-</span><span class='line'>        HotelVo vo = new HotelVo();
-</span><span class='line'>        BeanUtils.copyProperties(vo, entity);
-</span><span class='line'>        return vo;
+</span><span class='line'>    /**
+</span><span class='line'>     * 手机运营商
+</span><span class='line'>     */
+</span><span class='line'>    private static String doCarrier(String countryCode, String phoneNumber){
+</span><span class='line'>        int ccode = Integer.parseInt(countryCode);
+</span><span class='line'>        long phone = Long.parseLong(phoneNumber);
+</span><span class='line'>
+</span><span class='line'>        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
+</span><span class='line'>        pn.setCountryCode(ccode);
+</span><span class='line'>        pn.setNationalNumber(phone);
+</span><span class='line'>
+</span><span class='line'>        //返回结果只有英文，自己转成成中文
+</span><span class='line'>        return carrier.getNameForNumber(pn, Locale.ENGLISH);
 </span><span class='line'>    }
-</span><span class='line'>}
 </span><span class='line'>
-</span><span class='line'>public class ApachePropertyUtilsCopy {
-</span><span class='line'>    public static HotelVo copy(HotelEntity entity) throws Exception {
-</span><span class='line'>        HotelVo vo = new HotelVo();
-</span><span class='line'>        PropertyUtils.copyProperties(vo, entity);
-</span><span class='line'>        return vo;
+</span><span class='line'>    private static void phoneGeoCase() {
+</span><span class='line'>        for (int i = 0; i &lt; countryCodes.length; i++) {
+</span><span class='line'>            String geo = doGeo(countryCodes[i], phones[i]);
+</span><span class='line'>            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + geo);
+</span><span class='line'>        }
 </span><span class='line'>    }
-</span><span class='line'>}
 </span><span class='line'>
-</span><span class='line'>public class CglibBeanCopy {
-</span><span class='line'>    public static HotelVo copy(HotelEntity entity) {
-</span><span class='line'>        HotelVo vo = new HotelVo();
-</span><span class='line'>        BeanCopier copier = BeanCopier.create(entity.getClass(), HotelVo.class, false);
-</span><span class='line'>        copier.copy(entity, vo, null);
-</span><span class='line'>        return vo;
-</span><span class='line'>    }
-</span><span class='line'>}
+</span><span class='line'>    /**
+</span><span class='line'>     * 手机归属地
+</span><span class='line'>     */
+</span><span class='line'>    public static String doGeo(String countryCode, String phoneNumber){
+</span><span class='line'>        int ccode = Integer.parseInt(countryCode);
+</span><span class='line'>        long phone = Long.parseLong(phoneNumber);
 </span><span class='line'>
-</span><span class='line'>public class SpringBeanUtilsCopy {
-</span><span class='line'>    public static HotelVo copy(HotelEntity entity) {
-</span><span class='line'>        HotelVo vo = new HotelVo();
-</span><span class='line'>        BeanUtils.copyProperties(entity, vo);
-</span><span class='line'>        return vo;
+</span><span class='line'>        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
+</span><span class='line'>        pn.setCountryCode(ccode);
+</span><span class='line'>        pn.setNationalNumber(phone);
+</span><span class='line'>
+</span><span class='line'>        return geocoder.getDescriptionForNumber(pn, Locale.CHINESE);
 </span><span class='line'>    }
 </span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<p>测试的一个结果，每个copy运行10000次(各个Copy的第一次copy都很慢，跑10000次基本可以抹平这些差异)：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>GetSetCopy Min(微秒)=1.466
-</span><span class='line'>GetSetCopy Max(微秒)=804.236
-</span><span class='line'>GetSetCopy Avg(微秒)=1.7923529
-</span><span class='line'>
-</span><span class='line'>Spring-BeanUtils Min(微秒)=3.339
-</span><span class='line'>Spring-BeanUtils Max(微秒)=99795.719
-</span><span class='line'>Spring-BeanUtils Avg(微秒)=28.2915534
-</span><span class='line'>
-</span><span class='line'>Apache-BeanUtils Min(微秒)=9.812
-</span><span class='line'>Apache-BeanUtils Max(微秒)=92416.696
-</span><span class='line'>Apache-BeanUtils Avg(微秒)=79.0868131
-</span><span class='line'>
-</span><span class='line'>Apache-PropertyUtils Min(微秒)=7.083
-</span><span class='line'>Apache-PropertyUtils Max(微秒)=6405.457
-</span><span class='line'>Apache-PropertyUtils Avg(微秒)=22.114272
-</span><span class='line'>
-</span><span class='line'>Cglib-BeanCopy Min(微秒)=7.707
-</span><span class='line'>Cglib-BeanCopy Max(微秒)=156932.173
-</span><span class='line'>Cglib-BeanCopy Avg(微秒)=33.135989</span></code></pre></td></tr></table></div></figure>
 
 
-<table>
-<thead>
-<tr>
-<th style="text-align:center;">copy策略 </th>
-<th style="text-align:center;"> 平均(微秒) </th>
-<th style="text-align:center;"> 最大(微秒) </th>
-<th style="text-align:center;"> 最小(微秒)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align:center;">GetSet </td>
-<td style="text-align:center;">1.7923529  </td>
-<td style="text-align:center;">804.236 </td>
-<td style="text-align:center;"> 1.466</td>
-</tr>
-<tr>
-<td style="text-align:center;">Spring-BeanUtils </td>
-<td style="text-align:center;">28.2915534  </td>
-<td style="text-align:center;">99795.719</td>
-<td style="text-align:center;"> 3.339</td>
-</tr>
-<tr>
-<td style="text-align:center;">Apache-BeanUtils </td>
-<td style="text-align:center;">79.0868131 </td>
-<td style="text-align:center;">6405.457 </td>
-<td style="text-align:center;"> 9.812</td>
-</tr>
-<tr>
-<td style="text-align:center;">Apache-PropertyUtils </td>
-<td style="text-align:center;">22.114272  </td>
-<td style="text-align:center;">9503.836 </td>
-<td style="text-align:center;"> 7.083</td>
-</tr>
-<tr>
-<td style="text-align:center;">Cglib-BeanCopy </td>
-<td style="text-align:center;">33.135989  </td>
-<td style="text-align:center;">156932.173</td>
-<td style="text-align:center;"> 7.707</td>
-</tr>
-</tbody>
-</table>
+<h2 id="3.注意点">3.注意点</h2>
 
 
-<p>原始的get/set是最快的，而且是快一个数量级。Apache-BeanUtils是最慢的。Spring-BeanUtils的性能还是比其他几个强一些（这是个错觉，其实Cglib-BeanCopy比Spring-BeanUtils快，见下面的分析）。</p>
+<ol>
+<li><p>电话解析的时候需要加上00前缀才能解析成功，比如008615912345678能解析，但是8615912345678不能解析成功；</p></li>
+<li><p>libphonenumber的基础信息库也是不断更新，比如libphonenumber的7.0.2版本不能解析170号段的电话，7.0.3以后就支持了；</p></li>
+</ol>
 
-<h3>2.1 实现原理</h3>
+</div>
+  
+  
 
-<p>简单分析一下各个bean copy方式的实现原理。</p>
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/09/09/lunecezheng-ti-jia-gou/">Lucene整体架构</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-09-09T22:19:51+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>9</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>10:19 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.%E6%BA%90%E7%A0%81%E7%BB%93%E6%9E%84">1.源码结构</a></li>
+<li><a href="#2.Lucene%E4%BD%BF%E7%94%A8Demo">2.Lucene使用Demo</a>
 
 <ul>
-<li>1.原始的get/set</li>
+<li><a href="#2.1%20%E4%B8%BB%E8%A6%81%E7%B1%BB">2.1 主要类</a></li>
+</ul>
+</li>
+<li><a href="#3.%E5%BB%BA%E7%AB%8B%E7%B4%A2%E5%BC%95%E6%B5%81%E7%A8%8B">3.建立索引流程</a></li>
+<li><a href="#4.%E6%90%9C%E7%B4%A2%E6%B5%81%E7%A8%8B">4.搜索流程</a></li>
 </ul>
 
 
-<p>没什么好说的，最原始。</p>
+<p>根据上篇文章,我们大致知道Lucene创建索引和搜索的一个过程:</p>
 
-<ul>
-<li>2.Spring的BeanUtils</li>
-</ul>
+<p><img src="/images/lucene/Lucene_index_and_search.jpg"></p>
+
+<p>这里主要分析一下Lucene的代码结构,包括理由Lucene API实现一个简单建立索引和搜索的小例子.</p>
+
+<p>由于我们的服务器上crate是基于Lucene 4.10.3版本.所以我这里采用的Lucene版本也是4.10版本,小版本是4.10.4,是Lucene 4的最后一个版本,大约2014年9月推出,还比较新鲜.目前已经到了5.3版本.</p>
+
+<h2 id="1.源码结构">1.源码结构</h2>
 
 
-<p>Spring的BeanUtils可以使用String [] ignoreProperties 指定忽略某些属性的复制，当我们需要手动处理一些特定属性的时候挺有用。</p>
+<p>首先看一下Lucene的源码结构,Lucene-core主要代码包结构如下:</p>
 
-<p>copyProperties的原理很我们想想的一样：</p>
+<p><img src="/images/lucene/Lucene_source_struct.png"></p>
 
-<pre><code>1.获取target类的属性列表；
-2.循环遍历target属性，对每个属性，如果由write方法并且不在ignoreProperties里面，调用soure对应属性的read方法获取属性值，再调用target的write方法；
+<p>每个包下面都有package.html文件介绍包的作用.各个包的作用如下:</p>
+
+<pre><code>1.analysis
+分词模块,包含将文本转化为可索引化/可搜索化的词元(convert text into indexable/searchable tokens)的API和实现.包括org.apache.lucene.analysis.Analyzer和其相关类.
+2.codecs
+包含自定义底层索引的编码和索引结构的模块,还包括索引的压缩,索引版本管理等.
+3.document
+定义了被索引和搜索内容的用户层面的逻辑定义,就是我们熟悉的Document,各种类型的Filed及其属性定义等.同事也提供了一下org.apache.lucene.document.Document和org.apache.lucene.index.IndexableField相关的工具类.
+4.index
+包含了索引维护(创建,更新,删除)和访问(读)的逻辑.包括我们熟悉的IndexReader,IndexWriter等.
+5.search
+索引的搜索.包括相似度的定义(similarities包),权重计算,文档评分计算,布尔模型,搜索结果搜集等逻辑.
+6.store
+索引底层二进制数据的读写,包括索引文件的Buffered的流的实现等,还包括一些限流策略的实现(RateLimiter)等.
+7.util
+工具类,如排序器,数学工具类,优先级队列等工具的实现等.
 </code></pre>
 
-<p>细节：</p>
+<p>包基本上和本文开头的图对应起来,其中的QueryParser再Lucene4中是一个单独的jar包:</p>
 
-<pre><code>1.缓存
-获取target类的属性列表的时候有缓存，见CachedIntrospectionResults类。这也再一定成都上解释了为什么第一次调用会慢一些。
-2.Accessible
-注意，source的read和target的write方法可以不是Accessible的，即可以是private等修饰的方法；
-3.浅拷贝
-注意其拷贝是浅拷贝。
-</code></pre>
+<p><img src="/images/lucene/Lucene_code_package_usage.jpg"></p>
 
-<p>大致的代码(精简了一些)：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>private static void copyProperties(Object source, Object target, Class&lt;?&gt; editable, String[] ignoreProperties) throws BeansException {
-</span><span class='line'>
-</span><span class='line'>        PropertyDescriptor[] targetPds = getPropertyDescriptors(actualEditable);    //获取target的属性描述符，有缓存
-</span><span class='line'>        List ignoreList = ignoreProperties != null?Arrays.asList(ignoreProperties):null;
-</span><span class='line'>        PropertyDescriptor[] arr$ = targetPds;
-</span><span class='line'>        int len$ = targetPds.length;
-</span><span class='line'>
-</span><span class='line'>        for(int i$ = 0; i$ &lt; len$; ++i$) {
-</span><span class='line'>            PropertyDescriptor targetPd = arr$[i$];
-</span><span class='line'>            if(targetPd.getWriteMethod() != null && (ignoreProperties == null || !ignoreList.contains(targetPd.getName()))) {   //有write方法并且不在ignoreProperties中
-</span><span class='line'>                PropertyDescriptor sourcePd = getPropertyDescriptor(source.getClass(), targetPd.getName());
-</span><span class='line'>                if(sourcePd != null && sourcePd.getReadMethod() != null) {
-</span><span class='line'>                    try {
-</span><span class='line'>                        Method ex = sourcePd.getReadMethod();   //获取source的read方法
-</span><span class='line'>                        if(!Modifier.isPublic(ex.getDeclaringClass().getModifiers())) {
-</span><span class='line'>                            ex.setAccessible(true);
-</span><span class='line'>                        }
-</span><span class='line'>
-</span><span class='line'>                        Object value = ex.invoke(source, new Object[0]);    //调用source的read方法获取属性对应的value
-</span><span class='line'>                        Method writeMethod = targetPd.getWriteMethod();
-</span><span class='line'>                        if(!Modifier.isPublic(writeMethod.getDeclaringClass().getModifiers())) {
-</span><span class='line'>                            writeMethod.setAccessible(true);
-</span><span class='line'>                        }
-</span><span class='line'>
-</span><span class='line'>                        writeMethod.invoke(target, new Object[]{value});    //调用target的write方法
-</span><span class='line'>                    } catch (Throwable var15) {
-</span><span class='line'>                        throw new FatalBeanException("Could not copy properties from source to target", var15);
-</span><span class='line'>                    }
-</span><span class='line'>                }
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+<h2 id="2.Lucene使用Demo">2.Lucene使用Demo</h2>
 
 
-<ul>
-<li>3.cglib的BeanCopier</li>
-</ul>
-
-
-<p>BeanCopier是CGLIB包中的一个工具类，使用基于动态代理机制的方式进行Bean Copy。因为使用生成的子类中的方法进行属性复制，所以会比使用反射机制的复制在效率上会高出很多。前面一直想写一片代理方面的Blog，一直没完成，尽量他会补上，到时候会分析CGLIB的原理。</p>
-
-<p>我们这里的测试结果显示BeanCopier还不如Spring的BeanUtils，原因说BeanCopier.create的创建效率会比较低，所以在使用过程中建议将 BeanCopier.create 创建的对象声明为 static，避免使用中每次都去创建新的 BeanCopier 对象。我测试中发现，如果我们只显示的调用一次create方法，发现起速度明显快于Spring的BeanUtils(起最小值甚至小于get/set方式的最小值)：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>GetSetCopy Min(微秒)=1.46
-</span><span class='line'>GetSetCopy Max(微秒)=2149.855
-</span><span class='line'>GetSetCopy Avg(微秒)=2.0715596
-</span><span class='line'>
-</span><span class='line'>Spring-BeanUtils Min(微秒)=3.669
-</span><span class='line'>Spring-BeanUtils Max(微秒)=101262.127
-</span><span class='line'>Spring-BeanUtils Avg(微秒)=29.613658
-</span><span class='line'>
-</span><span class='line'>Apache-BeanUtils Min(微秒)=10.174
-</span><span class='line'>Apache-BeanUtils Max(微秒)=80342.749
-</span><span class='line'>Apache-BeanUtils Avg(微秒)=82.383995
-</span><span class='line'>
-</span><span class='line'>Apache-PropertyUtils Min(微秒)=5.468
-</span><span class='line'>Apache-PropertyUtils Max(微秒)=17185.561
-</span><span class='line'>Apache-PropertyUtils Avg(微秒)=26.5104518
-</span><span class='line'>
-</span><span class='line'>Cglib-BeanCopy Min(微秒)=0.745
-</span><span class='line'>Cglib-BeanCopy Max(微秒)=130832.581
-</span><span class='line'>Cglib-BeanCopy Avg(微秒)=14.6252958</span></code></pre></td></tr></table></div></figure>
-
-
-<ul>
-<li>4.apache的BeanUtils</li>
-</ul>
-
-
-<p>主要代码大致如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException {
-</span><span class='line'>    BeanUtilsBean.getInstance().copyProperties(dest, orig);
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException {
-</span><span class='line'>        int i;
-</span><span class='line'>        String name;
-</span><span class='line'>        Object e;
-</span><span class='line'>        if(orig instanceof DynaBean) {  //DynaBean ？？
-</span><span class='line'>            DynaProperty[] origDescriptors = ((DynaBean)orig).getDynaClass().getDynaProperties(); 
-</span><span class='line'>
-</span><span class='line'>            for(i = 0; i &lt; origDescriptors.length; ++i) {
-</span><span class='line'>                name = origDescriptors[i].getName();
-</span><span class='line'>                if(this.getPropertyUtils().isReadable(orig, name) && this.getPropertyUtils().isWriteable(dest, name)) {
-</span><span class='line'>                    e = ((DynaBean)orig).get(name);
-</span><span class='line'>                    this.copyProperty(dest, name, e);
-</span><span class='line'>                }
-</span><span class='line'>            }
-</span><span class='line'>        } else if(orig instanceof Map) {    //原始数据是一个Map，即支持从一个Map到target属性的拷贝
-</span><span class='line'>            Map var8 = (Map)orig;
-</span><span class='line'>            Iterator var10 = var8.entrySet().iterator();
-</span><span class='line'>
-</span><span class='line'>            while(var10.hasNext()) {
-</span><span class='line'>                Entry var11 = (Entry)var10.next();
-</span><span class='line'>                String var12 = (String)var11.getKey();
-</span><span class='line'>                if(this.getPropertyUtils().isWriteable(dest, var12)) {
-</span><span class='line'>                    this.copyProperty(dest, var12, var11.getValue());
-</span><span class='line'>                }
-</span><span class='line'>            }
-</span><span class='line'>        } else { 
-</span><span class='line'>            PropertyDescriptor[] var9 = this.getPropertyUtils().getPropertyDescriptors(orig);   //获取target的属性描述符，有缓存
-</span><span class='line'>
-</span><span class='line'>            for(i = 0; i &lt; var9.length; ++i) {
-</span><span class='line'>                name = var9[i].getName();
-</span><span class='line'>                //要求source的read方法是Accessible，target的write方法是Accessible
-</span><span class='line'>                if(!"class".equals(name) && this.getPropertyUtils().isReadable(orig, name) && this.getPropertyUtils().isWriteable(dest, name)) {
-</span><span class='line'>                    try {
-</span><span class='line'>                        e = this.getPropertyUtils().getSimpleProperty(orig, name);  //获取source对应属性的value
-</span><span class='line'>                        this.copyProperty(dest, name, e);   //设置target对应属性
-</span><span class='line'>                    } catch (NoSuchMethodException var7) {
-</span><span class='line'>                        ;
-</span><span class='line'>                    }
-</span><span class='line'>                }
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>细节：</p>
-
-<pre><code>1.BeanUtilsBean实例
-BeanUtilsBean需要第一次new实例，因此第一次调用会慢一些。
-2.缓存
-获取target类的属性列表的时候有缓存，见BeanIntrospectionData类。这也再一定成都上解释了为什么第一次调用会慢一些。
-3.Accessible
-注意，source的read和target的write方法要求都是Accessible的；
-4.浅拷贝
-其拷贝是浅拷贝。
-</code></pre>
-
-<ul>
-<li>5.apache的PropertyUtils
-PropertyUtils的实现和BeanUtils的实现基本一致。</li>
-</ul>
-
+<p>首先上一个Lucene的简单的Demo,基本上是参考官网提供的Demo,自己手动修改了点,作用就是索引一个目录下的文本文件,在此基础上提供搜索服务.其中Indexer用于创建索引,Searcher作为搜索入口,接受用户输入的Query词并执行搜索.</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -1367,1973 +832,689 @@ PropertyUtils的实现和BeanUtils的实现基本一致。</li>
 <span class='line-number'>75</span>
 <span class='line-number'>76</span>
 <span class='line-number'>77</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException {
-</span><span class='line'>    PropertyUtilsBean.getInstance().copyProperties(dest, orig);
-</span><span class='line'>}
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+<span class='line-number'>111</span>
+<span class='line-number'>112</span>
+<span class='line-number'>113</span>
+<span class='line-number'>114</span>
+<span class='line-number'>115</span>
+<span class='line-number'>116</span>
+<span class='line-number'>117</span>
+<span class='line-number'>118</span>
+<span class='line-number'>119</span>
+<span class='line-number'>120</span>
+<span class='line-number'>121</span>
+<span class='line-number'>122</span>
+<span class='line-number'>123</span>
+<span class='line-number'>124</span>
+<span class='line-number'>125</span>
+<span class='line-number'>126</span>
+<span class='line-number'>127</span>
+<span class='line-number'>128</span>
+<span class='line-number'>129</span>
+<span class='line-number'>130</span>
+<span class='line-number'>131</span>
+<span class='line-number'>132</span>
+<span class='line-number'>133</span>
+<span class='line-number'>134</span>
+<span class='line-number'>135</span>
+<span class='line-number'>136</span>
+<span class='line-number'>137</span>
+<span class='line-number'>138</span>
+<span class='line-number'>139</span>
+<span class='line-number'>140</span>
+<span class='line-number'>141</span>
+<span class='line-number'>142</span>
+<span class='line-number'>143</span>
+<span class='line-number'>144</span>
+<span class='line-number'>145</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 创建索引
+</span><span class='line'> *
+</span><span class='line'> * @author: xiaobaoqiu  Date: 15-9-8 Time: 下午4:04
+</span><span class='line'> */
+</span><span class='line'>public final class Indexer {
 </span><span class='line'>
-</span><span class='line'>public void copyProperties(Object dest, Object orig) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException {
-</span><span class='line'>        int i;
-</span><span class='line'>        String name;
-</span><span class='line'>        Object e;
-</span><span class='line'>        if(orig instanceof DynaBean) {
-</span><span class='line'>            DynaProperty[] origDescriptors = ((DynaBean)orig).getDynaClass().getDynaProperties();
+</span><span class='line'>    public static void main(String[] args) {
+</span><span class='line'>        indexDocs(CommonConfig.SOURCE_FILE_DIR, CommonConfig.INDEX_FILE_DIR, true);
+</span><span class='line'>    }
 </span><span class='line'>
-</span><span class='line'>            for(i = 0; i &lt; origDescriptors.length; ++i) {
-</span><span class='line'>                name = origDescriptors[i].getName();
-</span><span class='line'>                if(this.isReadable(orig, name) && this.isWriteable(dest, name)) {
-</span><span class='line'>                    try {
-</span><span class='line'>                        e = ((DynaBean)orig).get(name);
-</span><span class='line'>                        if(dest instanceof DynaBean) {
-</span><span class='line'>                            ((DynaBean)dest).set(name, e);
-</span><span class='line'>                        } else {
-</span><span class='line'>                            this.setSimpleProperty(dest, name, e);
-</span><span class='line'>                        }
-</span><span class='line'>                    } catch (NoSuchMethodException var9) {
-</span><span class='line'>                        if(this.log.isDebugEnabled()) {
-</span><span class='line'>                            this.log.debug("Error writing to \'" + name + "\' on class \'" + dest.getClass() + "\'", var9);
-</span><span class='line'>                        }
-</span><span class='line'>                    }
-</span><span class='line'>                }
+</span><span class='line'>    /**
+</span><span class='line'>     * 构建磁盘索引
+</span><span class='line'>     *
+</span><span class='line'>     * @param dirPath 原始文件
+</span><span class='line'>     * @param indexPath 索引文件存放路径
+</span><span class='line'>     * @param create    创建or更新
+</span><span class='line'>     */
+</span><span class='line'>    public static void indexDocs(String dirPath, String indexPath, boolean create) {
+</span><span class='line'>        try {
+</span><span class='line'>            Directory dir = FSDirectory.open(new File(indexPath));
+</span><span class='line'>            Analyzer analyzer = new StandardAnalyzer(Version.LUCENE_4_10_0);
+</span><span class='line'>            IndexWriterConfig iwc = new IndexWriterConfig(Version.LUCENE_4_10_0, analyzer);
+</span><span class='line'>
+</span><span class='line'>            if (create) {
+</span><span class='line'>                iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
+</span><span class='line'>            } else {
+</span><span class='line'>                iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
 </span><span class='line'>            }
-</span><span class='line'>        } else if(orig instanceof Map) {    //sorcce是一个Map
-</span><span class='line'>            Iterator var10 = ((Map)orig).entrySet().iterator();
 </span><span class='line'>
-</span><span class='line'>            while(true) {
-</span><span class='line'>                Entry var12;
-</span><span class='line'>                do {
-</span><span class='line'>                    if(!var10.hasNext()) {
-</span><span class='line'>                        return;
-</span><span class='line'>                    }
+</span><span class='line'>            IndexWriter writer = new IndexWriter(dir, iwc);
+</span><span class='line'>            doIndexDocs(writer, new File(dirPath));
 </span><span class='line'>
-</span><span class='line'>                    var12 = (Entry)var10.next();
-</span><span class='line'>                    name = (String)var12.getKey();
-</span><span class='line'>                } while(!this.isWriteable(dest, name)); //要求target对应属性是Accessible的
+</span><span class='line'>            System.out.println("Build index finished...");
+</span><span class='line'>            writer.close();
+</span><span class='line'>        }catch (IOException ioe) {
+</span><span class='line'>            //do something...
+</span><span class='line'>        }
+</span><span class='line'>    }
 </span><span class='line'>
-</span><span class='line'>                try {
-</span><span class='line'>                    if(dest instanceof DynaBean) {
-</span><span class='line'>                        ((DynaBean)dest).set(name, var12.getValue());
-</span><span class='line'>                    } else {
-</span><span class='line'>                        this.setSimpleProperty(dest, name, var12.getValue());
-</span><span class='line'>                    }
-</span><span class='line'>                } catch (NoSuchMethodException var8) {
-</span><span class='line'>                    if(this.log.isDebugEnabled()) {
-</span><span class='line'>                        this.log.debug("Error writing to \'" + name + "\' on class \'" + dest.getClass() + "\'", var8);
-</span><span class='line'>                    }
+</span><span class='line'>    static void doIndexDocs(IndexWriter writer, File file) throws IOException {
+</span><span class='line'>        if (!file.canRead()) {
+</span><span class='line'>            System.out.println("文件不可读:" + file.getAbsolutePath());
+</span><span class='line'>            return;
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        //文件夹则索引文件夹下的索引文件
+</span><span class='line'>        if (file.isDirectory()) {
+</span><span class='line'>            String[] files = file.list();
+</span><span class='line'>            if (files != null) {
+</span><span class='line'>                for (int i = 0; i &lt; files.length; i++) {
+</span><span class='line'>                    doIndexDocs(writer, new File(file, files[i]));
 </span><span class='line'>                }
 </span><span class='line'>            }
 </span><span class='line'>        } else {
-</span><span class='line'>            PropertyDescriptor[] var11 = this.getPropertyDescriptors(orig); //获取target对象属性的描述符，有缓存
-</span><span class='line'>
-</span><span class='line'>            for(i = 0; i &lt; var11.length; ++i) {
-</span><span class='line'>                name = var11[i].getName();
-</span><span class='line'>                if(this.isReadable(orig, name) && this.isWriteable(dest, name)) {   //要求source的read方法是Accessible，target的write方法是Accessible
-</span><span class='line'>                    try {
-</span><span class='line'>                        e = this.getSimpleProperty(orig, name); //获取source对应属性的值
-</span><span class='line'>                        if(dest instanceof DynaBean) {
-</span><span class='line'>                            ((DynaBean)dest).set(name, e);
-</span><span class='line'>                        } else {
-</span><span class='line'>                            this.setSimpleProperty(dest, name, e);  //设置target对应属性的值
-</span><span class='line'>                        }
-</span><span class='line'>                    } catch (NoSuchMethodException var7) {
-</span><span class='line'>                        if(this.log.isDebugEnabled()) {
-</span><span class='line'>                            this.log.debug("Error writing to \'" + name + "\' on class \'" + dest.getClass() + "\'", var7);
-</span><span class='line'>                        }
-</span><span class='line'>                    }
-</span><span class='line'>                }
-</span><span class='line'>            }
+</span><span class='line'>            doIndexFile(writer, file);
 </span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.问题</h1>
-
-<p>碰到一个小问题，因为涉及到同一个方法的多次调用，发现第一次调用的时间远大于后面的调用：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>GetSetCopy-1(微秒) : 1114.744
-</span><span class='line'>GetSetCopy-2(微秒) : 2.087
-</span><span class='line'>GetSetCopy-3(微秒) : 1.684
-</span><span class='line'>GetSetCopy-4(微秒) : 1.694
-</span><span class='line'>GetSetCopy-5(微秒) : 1.828
-</span><span class='line'>GetSetCopy-6(微秒) : 1.742
-</span><span class='line'>GetSetCopy-7(微秒) : 1.705
-</span><span class='line'>GetSetCopy-8(微秒) : 1.68
-</span><span class='line'>GetSetCopy-9(微秒) : 1.669
-</span><span class='line'>GetSetCopy-10(微秒) : 1.693</span></code></pre></td></tr></table></div></figure>
-
-
-<p>怀疑：</p>
-
-<pre><code>1.GetSetCopy类的初始化；
-2.拷贝的目标对象类(这里即HotelVo)初始化；
-3.方法调用的缓存；
-</code></pre>
-
-<p>尝试发现如果调用前先显示的new一个GetSetCopy对象和一个HotelVo对象，可以将第一次的时间下降到50微妙左右。如果再外面显示的调用一次copy方法，则循环内的第一次copy会降到和其他次的拷贝时间一样。</p>
-
-<h3>3.1 原理</h3>
-
-<p>待补充，会涉及到JVM一些JIT的优化等问题，自己也很期待到底什么原因&hellip;</p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/08/01/mycli/">Mycli</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-08-01T10:37:00+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>1</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>10:37 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>相信很多同学都喜欢使用命令行和Mysql交互而不喜欢各种图形化的客户端，我也是其中之一。</p>
-
-<p>使用命令行交互的一个缺点就是没有自动补全等功能，很多时候忘记字段叫什么，不得不去看一下见表语句。</p>
-
-<p>现在Mycli帮我们搞定这个问题了。Mycli是一个自带自动补全和语法高亮的Mysql客户端，也适用于MariaDB和Percona。赶紧使用Mycli替换你所以的alias吧。</p>
-
-<p>Mycli官网：<a href="http://mycli.net/">http://mycli.net/</a></p>
-
-<h1>1.安装</h1>
-
-<p>Linux下可以使用Python的包管理器pip安装，首先你得有pip，我使用的是Ubuntu：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install python-pip</span></code></pre></td></tr></table></div></figure>
-
-
-<p>之后就可以安装Mycli了，可能需要sudo权限，因为它会往python的lib目录下加一些包</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>pip install mycli</span></code></pre></td></tr></table></div></figure>
-
-
-<p>高端的Mac同学使用brew就可以了。</p>
-
-<p>感觉Windows被抛弃，更详细的安装见：<a href="http://mycli.net/install">http://mycli.net/install</a></p>
-
-<p>源代码github地址：<a href="https://github.com/dbcli/mycli">https://github.com/dbcli/mycli</a></p>
-
-<p>使用pg数据库的同学可以使用类似的工具：pgcli</p>
-
-<h1>2.使用</h1>
-
-<p>使用上没啥特别，看看Mycli的手册就可以了，这里将英文简单翻译一下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Sublime/Sublime2$ mycli --help
-</span><span class='line'>Usage: mycli [OPTIONS] [DATABASE]
-</span><span class='line'>
-</span><span class='line'>Options:
-</span><span class='line'>  -h, --host TEXT             数据库host
-</span><span class='line'>  -P, --port TEXT             数据库端口. Honors $MYSQL_TCP_PORT
-</span><span class='line'>  -u, --user TEXT             用户名
-</span><span class='line'>  -S, --socket TEXT       链接数据库使用的socket文件
-</span><span class='line'>  -p, --password          密码
-</span><span class='line'>  --pass TEXT                 密码
-</span><span class='line'>  -v, --version               版本
-</span><span class='line'>  -D, --database TEXT         数据库名字
-</span><span class='line'>  -R, --prompt TEXT           提示格式(默认: "\t \u@\h:\d&gt; ")
-</span><span class='line'>  -l, --logfile FILENAME      将每个查询和查询的结构记录到文件
-</span><span class='line'>  --help                      帮助文档</span></code></pre></td></tr></table></div></figure>
-
-
-<p>一个本机的截图如下：
-<img src="/images/mysql/Mycli_usage.png"></p>
-
-<h1>3.配置</h1>
-
-<p>配置文件默认为：~/.myclirc，我们可以简单的看一下配置,都比较简单：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># vi: ft=dosini
-</span><span class='line'>[main]
-</span><span class='line'>
-</span><span class='line'># Enables context sensitive auto-completion. If this is disabled the all
-</span><span class='line'># possible completions will be listed.
-</span><span class='line'>smart_completion = True
-</span><span class='line'>
-</span><span class='line'># Multi-line mode allows breaking up the sql statements into multiple lines. If
-</span><span class='line'># this is set to True, then the end of the statements must have a semi-colon.
-</span><span class='line'># If this is set to False then sql statements can't be split into multiple
-</span><span class='line'># lines. End of line (return) is considered as the end of the statement.
-</span><span class='line'>multi_line = False
-</span><span class='line'>
-</span><span class='line'># log_file location.
-</span><span class='line'>log_file = ~/.mycli.log
-</span><span class='line'>
-</span><span class='line'># Default log level. Possible values: "CRITICAL", "ERROR", "WARNING", "INFO"
-</span><span class='line'># and "DEBUG".
-</span><span class='line'>log_level = INFO
-</span><span class='line'>
-</span><span class='line'># Timing of sql statments and table rendering.
-</span><span class='line'>timing = True
-</span><span class='line'>
-</span><span class='line'># Table format. Possible values: psql, plain, simple, grid, fancy_grid, pipe,
-</span><span class='line'># orgtbl, rst, mediawiki, html, latex, latex_booktabs.
-</span><span class='line'># Recommended: psql, fancy_grid and grid.
-</span><span class='line'>table_format = psql
-</span><span class='line'>
-</span><span class='line'># Syntax Style. Possible values: manni, igor, xcode, vim, autumn, vs, rrt,
-</span><span class='line'># native, perldoc, borland, tango, emacs, friendly, monokai, paraiso-dark,
-</span><span class='line'># colorful, murphy, bw, pastie, paraiso-light, trac, default, fruity
-</span><span class='line'>syntax_style = default
-</span><span class='line'>
-</span><span class='line'># Keybindings: Possible values: emacs, vi
-</span><span class='line'>key_bindings = emacs
-</span><span class='line'>
-</span><span class='line'># MySQL prompt
-</span><span class='line'># \t - Product type (Percona, MySQL, Mariadb)
-</span><span class='line'># \u - Username
-</span><span class='line'># \h - Hostname of the server
-</span><span class='line'># \d - Database name
-</span><span class='line'>prompt = '\t \u@\h:\d&gt; '</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.源码</h1>
-
-<p>Mycli是python开发的，原因是起基于的prompt_toolkit正是python开发的。</p>
-
-<p>prompt_toolkit的git地址：<a href="https://github.com/jonathanslenders/python-prompt-toolkit.git">https://github.com/jonathanslenders/python-prompt-toolkit.git</a></p>
-
-<p>prompt_toolkit使用著名的Pygments来做语法高亮。相信很多博客系统(包括我使用的octopress)也是使用这个来做语法高亮，突然发现世界这么小&hellip;</p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/07/17/fen-ci/">分词</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-07-17T01:24:30+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>17</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>1:24 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近有需求需要使用crate搜索时候的分词功能,正好研究一下搜索中分词相关的基础知识
-.</p>
-
-<h1>1.什么是分词</h1>
-
-<h1>2.为什么要分词</h1>
-
-<h1>3.怎么做分词</h1>
-
-<p>参考：<a href="http://my.oschina.net/apdplat/blog/412921">http://my.oschina.net/apdplat/blog/412921</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-07-16T05:02:20+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:02 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>前段时间搜索处理个P3的故障,原因是用户输入超级长的搜索字段,导致crate服务器load飙高,进而对外服务失败.</p>
-
-<p>持续时间约10分钟.但是对我而言,最大的问题是这10分钟内,对crate服务器我什么都做不了.经过这次问题,准备好好看看crate以及背后ES的源码.</p>
-
-<p>虽然解决方案是限制用户输入(这一点和google以及百度做法是一样的,百度的查询限制在38个汉字以内).</p>
-
-<h1>1.like查询</h1>
-
-<p>有问题的字段是name字段,使用crate的简单的like查询.根据官方文档,crate的like查询支持两种通配符:</p>
-
-<pre><code>% : 0个或者多个字符
-_ : 单个字符
-</code></pre>
-
-<p>需要注意的注意,使用like查询可能导致慢查询.特别是当使用前置通配符开头的like查询.因为这种情况下crate需要去迭代所有行,而不能使用索引.
-如果向获取更好的性能,可以考虑使用全文索引.</p>
-
-<p>like参考:<a href="https://crate.io/docs/en/latest/sql/queries.html#like">https://crate.io/docs/en/latest/sql/queries.html#like</a></p>
-
-<p>全文索引参考: <a href="https://crate.io/docs/en/latest/sql/fulltext.html">https://crate.io/docs/en/latest/sql/fulltext.html</a> <a href="https://crate.io/docs/en/latest/sql/ddl.html#fulltext-indices">https://crate.io/docs/en/latest/sql/ddl.html#fulltext-indices</a></p>
-
-<h1>2.crate符取异常日志</h1>
-
-<p>这里贴一下当时crate服务器的异常:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>org.elasticsearch.index.query.QueryParsingException: [merchant_sea] Failed to parse
-</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parseQuery(IndexQueryParserService.java:370)
-</span><span class='line'>        at org.elasticsearch.action.count.TransportCountAction.shardOperation(TransportCountAction.java:187)
-</span><span class='line'>        at org.elasticsearch.action.count.CrateTransportCountAction.shardOperation(CrateTransportCountAction.java:119)
-</span><span class='line'>        at org.elasticsearch.action.count.CrateTransportCountAction.shardOperation(CrateTransportCountAction.java:49)
-</span><span class='line'>        at org.elasticsearch.action.support.broadcast.TransportBroadcastOperationAction$AsyncBroadcastAction$1.run(TransportBroadcastOperationAction.java:171)
-</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
-</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
-</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)
-</span><span class='line'>Caused by: org.apache.lucene.util.automaton.TooComplexToDeterminizeException: Determinizing automaton would result in more than 10000 states.
-</span><span class='line'>        at org.apache.lucene.util.automaton.Operations.determinize(Operations.java:743)
-</span><span class='line'>        at org.apache.lucene.util.automaton.RunAutomaton.&lt;init&gt;(RunAutomaton.java:138)
-</span><span class='line'>        at org.apache.lucene.util.automaton.ByteRunAutomaton.&lt;init&gt;(ByteRunAutomaton.java:32)
-</span><span class='line'>        at org.apache.lucene.util.automaton.CompiledAutomaton.&lt;init&gt;(CompiledAutomaton.java:203)
-</span><span class='line'>        at org.apache.lucene.search.AutomatonQuery.&lt;init&gt;(AutomatonQuery.java:84)
-</span><span class='line'>        at org.apache.lucene.search.AutomatonQuery.&lt;init&gt;(AutomatonQuery.java:65)
-</span><span class='line'>        at org.apache.lucene.search.WildcardQuery.&lt;init&gt;(WildcardQuery.java:57)
-</span><span class='line'>        at org.elasticsearch.index.query.WildcardQueryParser.parse(WildcardQueryParser.java:106)
-</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
-</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
-</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
-</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
-</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
-</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.innerParse(IndexQueryParserService.java:382)
-</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parse(IndexQueryParserService.java:281)
-</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parse(IndexQueryParserService.java:276)
-</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parseQuery(IndexQueryParserService.java:354)
-</span><span class='line'>        ... 7 more</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.背后的原理</h1>
-
-<p>查询的第一步是query词的解析，这里使用的like查询，查询类型是通配符的查询(WildcardQuery)。WildcardQuery主要处理三种情况：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  /** 匹配字符串 */
-</span><span class='line'>  public static final char WILDCARD_STRING = '*';
-</span><span class='line'>
-</span><span class='line'>  /** 匹配单个字符 */
-</span><span class='line'>  public static final char WILDCARD_CHAR = '?';
-</span><span class='line'>
-</span><span class='line'>  /** 转义符 */
-</span><span class='line'>  public static final char WILDCARD_ESCAPE = '\\';</span></code></pre></td></tr></table></div></figure>
-
-
-<p>WildcardQuery继承自AutomatonQuery，AutomatonQuery实现了有限状态机匹配的搜索(记得算法导论上有介绍，和KMP算法同时出现的)。</p>
-
-<p>构造AutomatonQuery的时候有一个参数maxDeterminizedStates，意义是构造出来的状态机的最大状态个数。默认值是Operations.DEFAULT_MAX_DETERMINIZED_STATES:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public AutomatonQuery(final Term term, Automaton automaton) {
-</span><span class='line'>    this(term, automaton, Operations.DEFAULT_MAX_DETERMINIZED_STATES);
-</span><span class='line'>  }
-</span><span class='line'>
-</span><span class='line'>/**
-</span><span class='line'>   * Create a new AutomatonQuery from an {@link Automaton}.
-</span><span class='line'>   * 
-</span><span class='line'>   * @param term Term containing field and possibly some pattern structure. The
-</span><span class='line'>   *        term text is ignored.
-</span><span class='line'>   * @param automaton Automaton to run, terms that are accepted are considered a
-</span><span class='line'>   *        match.
-</span><span class='line'>   * @param maxDeterminizedStates maximum number of states in the resulting
-</span><span class='line'>   *   automata.  If the automata would need more than this many states
-</span><span class='line'>   *   TooComplextToDeterminizeException is thrown.  Higher number require more
-</span><span class='line'>   *   space but can process more complex automata.
-</span><span class='line'>   */
-</span><span class='line'>  public AutomatonQuery(final Term term, Automaton automaton, int maxDeterminizedStates) {
-</span><span class='line'>    super(term.field());
-</span><span class='line'>    this.term = term;
-</span><span class='line'>    this.automaton = automaton;
-</span><span class='line'>    this.compiled = new CompiledAutomaton(automaton, null, true, maxDeterminizedStates);
-</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Operations.DEFAULT_MAX_DETERMINIZED_STATES的真实值为10000</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>final public class Operations {
-</span><span class='line'>  /**
-</span><span class='line'>   * Default maximum number of states that {@link Operations#determinize} should create.
-</span><span class='line'>   */
-</span><span class='line'>  public static final int DEFAULT_MAX_DETERMINIZED_STATES = 10000;
-</span><span class='line'>  ...
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-07-16T04:25:57+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:25 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>经常需要查看当前服务器哪些用户在登录,以及他们都在干什么.</p>
-
-<p>下面总结一些命令,其中last应该是最常用的命令.</p>
-
-<h1>1.w</h1>
-
-<p>w - Show who is logged on and what they are doing.</p>
-
-<p>主要字段:</p>
-
-<pre><code>LOGIN@: 什么时间登录的
-PCPU: 当前进程所用时间
-WHAT: 用户当前正在使用的命令
-</code></pre>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ w
-</span><span class='line'> 20:32:42 up  9:59, 15 users,  load average: 1.80, 1.26, 1.17
-</span><span class='line'>USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
-</span><span class='line'>xiaobaoq tty7     :0               10:34    9:58m 22:26   0.48s init --user
-</span><span class='line'>xiaobaoq pts/1    :0               10:35    2:22m  0.12s  0.12s /bin/bash
-</span><span class='line'>xiaobaoq pts/2    :0               11:12   44:10   0.26s  0.19s ssh cn6
-</span><span class='line'>xiaobaoq pts/7    :0               11:12    9:02m  0.15s  0.09s ssh cn6
-</span><span class='line'>xiaobaoq pts/8    :0               11:28    5:56m  0.09s  0.03s ssh cn5
-</span><span class='line'>xiaobaoq pts/12   :0               13:09    3:03m  0.30s  0.24s ssh cn0
-</span><span class='line'>xiaobaoq pts/13   :0               13:09    3:14m  0.13s  0.07s mysql -h...
-</span><span class='line'>xiaobaoq pts/14   :0               13:09    3:00m  1.23s  1.17s ssh cn0
-</span><span class='line'>xiaobaoq pts/18   :0               13:09    3:03m  3.42s  3.35s ssh cn0
-</span><span class='line'>xiaobaoq pts/20   :0               13:14    3:01m  0.45s  0.39s mysql -h...
-</span><span class='line'>xiaobaoq pts/22   :0               13:26    7:01m  0.13s  0.07s ssh cn0
-</span><span class='line'>xiaobaoq pts/23   :0               14:02   40:34   0.17s  0.17s /bin/bash
-</span><span class='line'>xiaobaoq pts/24   :0               14:03    2.00s  0.23s  0.00s w
-</span><span class='line'>xiaobaoq pts/25   :0               14:36    2:02   0.24s  0.18s ssh cn5
-</span><span class='line'>xiaobaoq pts/26   :0               17:41    2:47m  0.09s  0.09s /bin/bash</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.who</h1>
-
-<p>who - show who is logged on</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who
-</span><span class='line'>xiaobaoqiu tty7         2015-07-15 10:34 (:0)
-</span><span class='line'>xiaobaoqiu pts/1        2015-07-15 10:35 (:0)
-</span><span class='line'>xiaobaoqiu pts/2        2015-07-15 11:12 (:0)
-</span><span class='line'>xiaobaoqiu pts/7        2015-07-15 11:12 (:0)
-</span><span class='line'>xiaobaoqiu pts/8        2015-07-15 11:28 (:0)
-</span><span class='line'>xiaobaoqiu pts/12       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/13       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/14       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/18       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/20       2015-07-15 13:14 (:0)
-</span><span class='line'>xiaobaoqiu pts/22       2015-07-15 13:26 (:0)
-</span><span class='line'>xiaobaoqiu pts/23       2015-07-15 14:02 (:0)
-</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)
-</span><span class='line'>xiaobaoqiu pts/25       2015-07-15 14:36 (:0)
-</span><span class='line'>xiaobaoqiu pts/26       2015-07-15 17:41 (:0)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.users</h1>
-
-<p>users - print the user names of users currently logged in to the current host</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ users
-</span><span class='line'>xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.whoami</h1>
-
-<p>whoami - print effective userid</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ whoami
-</span><span class='line'>xiaobaoqiu
-</span><span class='line'>
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who am i
-</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)
-</span><span class='line'>
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who mom likes
-</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>5.id</h1>
-
-<p>id - print real and effective user and group IDs</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ id
-</span><span class='line'>uid=1000(xiaobaoqiu) gid=1000(xiaobaoqiu) 组=1000(xiaobaoqiu),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),108(lpadmin),124(sambashare)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>6.last</h1>
-
-<p>last, lastb - show listing of last logged in users</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ last
-</span><span class='line'>xiaobaoq pts/26       :0               Wed Jul 15 17:41   still logged in   
-</span><span class='line'>xiaobaoq pts/25       :0               Wed Jul 15 14:36   still logged in   
-</span><span class='line'>xiaobaoq pts/24       :0               Wed Jul 15 14:03   still logged in   
-</span><span class='line'>xiaobaoq pts/23       :0               Wed Jul 15 14:02   still logged in   
-</span><span class='line'>xiaobaoq pts/22       :0               Wed Jul 15 13:26   still logged in   
-</span><span class='line'>xiaobaoq pts/20       :0               Wed Jul 15 13:14   still logged in   
-</span><span class='line'>xiaobaoq pts/20       :0               Wed Jul 15 13:14 - 13:14  (00:00)    
-</span><span class='line'>xiaobaoq pts/18       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/14       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/13       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/12       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/8        :0               Wed Jul 15 11:28   still logged in   
-</span><span class='line'>xiaobaoq pts/7        :0               Wed Jul 15 11:12   still logged in   
-</span><span class='line'>xiaobaoq pts/2        :0               Wed Jul 15 11:12   still logged in   
-</span><span class='line'>xiaobaoq pts/1        :0               Wed Jul 15 10:35   still logged in</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/07/07/linuxjin-zhi-zhuan-huan/">Linux进制转换</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-07-07T03:27:54+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>7</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>3:27 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>经常涉及到进制的转换,比如线上处理问题时候经常需要转换线程id到16进制.</p>
-
-<h1>1.进制转换</h1>
-
-<h3>2.1.shell运算</h3>
-
-<p> Shell 运算把一个数字从给定的进制转换位十进制.如果数字以运算展开式的形式提供,那么假定它带有十进制符号,除非 它前面带有 0（这种情况假定是八进制）或 0x（这种情况假定是十六进制）</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((010))
-</span><span class='line'>8
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((0x10))
-</span><span class='line'>16</span></code></pre></td></tr></table></div></figure>
-
-
-<p>也可以指定 2 到 64 之间的任意进制,超过64进制则不支持.格式如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$((BASE#NUMBER))</span></code></pre></td></tr></table></div></figure>
-
-
-<p>使用举例如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((2#10))
-</span><span class='line'>2
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((5#10))
-</span><span class='line'>5
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((8#10))
-</span><span class='line'>8
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((10#10))
-</span><span class='line'>10
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((16#10))
-</span><span class='line'>16
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((64#10))
-</span><span class='line'>64
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo $((100#10))
-</span><span class='line'>bash: 100#10: 无效的算数进制 （错误符号是 "100#10"）</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.2.bc</h3>
-
-<p>bc是一种任意精度运算语言,大多数 UNIX/Linux 安装程序都提供.因为它允许您指定输出进制,所以当您需要以十进制以外的进制输出时,这是一种很好的技术.</p>
-
-<p>bc 的特殊变量 ibase 和 obase 分别包含用于输入和输出的进制的值.缺省情况下,都被设置为 10.要执行进制转换,需要改变其中的一个或两个值,然后提供一个数字.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo 'obase=16; 10' | bc
-</span><span class='line'>A
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo 'obase=16; ibase=10; 10' | bc
-</span><span class='line'>A
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ echo 'obase=10; ibase=16; 10' | bc
-</span><span class='line'>16</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.3.printf</h3>
-
-<p>格式化参数和C语言的格式一致:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ printf "%X\n" 100
-</span><span class='line'>64
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ printf "%d\n" 0x10
-</span><span class='line'>16</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.自定义shell</h1>
-
-<p>自己写一个shell,处理多个输入,任意进制到任意进制的转换.通过这个脚本,学习了一下shell处理option的方式.</p>
-
-<p>原理很简单,就是利用上面说道的bc命令.shell脚本如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
-</span><span class='line'>while getopts :i:o: opt 
-</span><span class='line'>do
-</span><span class='line'>        case "$opt" in
-</span><span class='line'>        i) #输入的参数的进制
-</span><span class='line'>           #echo "Found the -i option,with vale $OPTARG"
-</span><span class='line'>           ibase=$OPTARG
-</span><span class='line'>           ;;
-</span><span class='line'>        o) #输出参数进制
-</span><span class='line'>           #echo "Found the -o option,with vale $OPTARG"
-</span><span class='line'>           obase=$OPTARG
-</span><span class='line'>           ;;
-</span><span class='line'>        *) #当有不认识的选项的时候arg为?
-</span><span class='line'>           echo "unkonw argument, Usage : "
-</span><span class='line'>           echo "$1 -i 10 -o 16 1 2 3 4 5 6 ..."
-</span><span class='line'>           exit 1
-</span><span class='line'>        esac
-</span><span class='line'>done
-</span><span class='line'>
-</span><span class='line'>#跳过opt参数
-</span><span class='line'>shift $[$OPTIND - 1]
-</span><span class='line'>
-</span><span class='line'>#参数检验
-</span><span class='line'>if [ ! $ibase ]; then
-</span><span class='line'>    echo "Usage : $0 -i 10 -o 16 1 2 3 4 5 6 ..."
-</span><span class='line'>    exit 1
-</span><span class='line'>fi
-</span><span class='line'>
-</span><span class='line'>if [ ! $obase ]; then
-</span><span class='line'>    echo "Usage : $0 -i 10 -o 16 1 2 3 4 5 6 ..."
-</span><span class='line'>    exit 1
-</span><span class='line'>fi
-</span><span class='line'>
-</span><span class='line'>echo "输入进制:$ibase"
-</span><span class='line'>echo "输出进制:$obase"
-</span><span class='line'>
-</span><span class='line'>#执行进制转换
-</span><span class='line'>for i in $@
-</span><span class='line'>do
-</span><span class='line'>    echo "obase=$obase; ibase=$ibase; $i" |bc
-</span><span class='line'>done</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.bc</h3>
-
-<h3>2.bc</h3>
-
-<p>简单使用如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/myshell$ ./trans -i 10 -o 16 100
-</span><span class='line'>输入进制:10
-</span><span class='line'>输出进制:16
-</span><span class='line'>64</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-07-02T17:24:16+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>2</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>5:24 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>昨天CodeReview的时候看到同时使用RateLimiter这个类用作QPS访问限制.学习一下这个类.</p>
-
-<p>RateLimiter是Guava的concurrent包下的一个用于限制访问频率的类.</p>
-
-<h1>1.限流</h1>
-
-<p>每个API接口都是有访问上限的,当访问频率或者并发量超过其承受范围时候,我们就必须考虑限流来保证接口的可用性或者降级可用性.即接口也需要安装上保险丝,以防止非预期的请求对系统压力过大而引起的系统瘫痪.</p>
-
-<p>通常的策略就是拒绝多余的访问,或者让多余的访问排队等待服务,或者引流.</p>
-
-<p>如果要准确的控制QPS,简单的做法是维护一个单位时间内的Counter,如判断单位时间已经过去,则将Counter重置零.此做法被认为没有很好的处理单位时间的边界,比如在前一秒的最后一毫秒里和下一秒的第一毫秒都触发了最大的请求数,将目光移动一下,就看到在两毫秒内发生了两倍的QPS.</p>
-
-<p><img src="/images/guava/simple_RateLimiter.png"></p>
-
-<h1>2.限流算法</h1>
-
-<p>常用的更平滑的限流算法有两种:漏桶算法和令牌桶算法.</p>
-
-<p>很多传统的服务提供商如华为中兴都有类似的专利,参考:
-<a href="http://www.google.com/patents/CN1536815A?cl=zh">http://www.google.com/patents/CN1536815A?cl=zh</a></p>
-
-<h3>2.1 漏桶算法</h3>
-
-<p>漏桶(Leaky Bucket)算法思路很简单,水(请求)先进入到漏桶里,漏桶以一定的速度出水(接口有响应速率),当水流入速度过大会直接溢出(访问频率超过接口响应速率),然后就拒绝请求,可以看出漏桶算法能强行限制数据的传输速率.示意图如下:</p>
-
-<p><img src="/images/guava/rate-limit1.png"></p>
-
-<p>可见这里有两个变量,一个是桶的大小,支持流量突发增多时可以存多少的水(burst),另一个是水桶漏洞的大小(rate)，伪代码如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>double rate;               // leak rate in calls/s
-</span><span class='line'>double burst;              // bucket size in calls
-</span><span class='line'>
-</span><span class='line'>long refreshTime;          // time for last water refresh
-</span><span class='line'>double water;              // water count at refreshTime
-</span><span class='line'>
-</span><span class='line'>refreshWater() {
-</span><span class='line'>    long  now = getTimeOfDay();
-</span><span class='line'>    
-</span><span class='line'>    //水随着时间流逝,不断流走,最多就流干到0.
-</span><span class='line'>    water = max(0, water- (now - refreshTime)*rate); 
-</span><span class='line'>    refreshTime = now;
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>bool permissionGranted() {
-</span><span class='line'>    refreshWater();
-</span><span class='line'>    if (water &lt; burst) { // 水桶还没满,继续加1
-</span><span class='line'>        water ++;
-</span><span class='line'>        return true;
-</span><span class='line'>    } else {
-</span><span class='line'>        return false;
 </span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>因为漏桶的漏出速率是固定的参数,所以,即使网络中不存在资源冲突(没有发生拥塞),漏桶算法也不能使流突发(burst)到端口速率.因此,漏桶算法对于存在突发特性的流量来说缺乏效率.</p>
-
-<h3>2.2 令牌桶算法</h3>
-
-<p>令牌桶算法(Token Bucket)和 Leaky Bucket 效果一样但方向相反的算法,更加容易理解.随着时间流逝,系统会按恒定1/QPS时间间隔(如果QPS=100,则间隔是10ms)往桶里加入Token(想象和漏洞漏水相反,有个水龙头在不断的加水),如果桶已经满了就不再加了.新请求来临时,会各自拿走一个Token,如果没有Token可拿了就阻塞或者拒绝服务.</p>
-
-<p><img src="/images/guava/token_bucket.JPG"></p>
-
-<p>令牌桶的另外一个好处是可以方便的改变速度. 一旦需要提高速率,则按需提高放入桶中的令牌的速率.
-一般会定时(比如100毫秒)往桶中增加一定数量的令牌, 有些变种算法则实时的计算应该增加的令牌的数量.</p>
-
-<h1>3.RateLimiter简介</h1>
-
-<p>Google开源工具包Guava提供了限流工具类RateLimiter,该类基于令牌桶算法(Token Bucket)来完成限流,非常易于使用.RateLimiter经常用于限制对一些物理资源或者逻辑资源的访问速率.它支持两种获取permits接口,一种是如果拿不到立刻返回false,一种会阻塞等待一段时间看能不能拿到.</p>
-
-<p>RateLimiter和Java中的信号量(java.util.concurrent.Semaphore)类似,Semaphore通常用于限制并发量.</p>
-
-<p>源码注释中的一个例子,比如我们有很多任务需要执行,但是我们不希望每秒超过两个任务执行,那么我们就可以使用RateLimiter:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>final RateLimiter rateLimiter = RateLimiter.create(2.0);
-</span><span class='line'>void submitTasks(List&lt;Runnable&gt; tasks, Executor executor) {
-</span><span class='line'>    for (Runnable task : tasks) {
-</span><span class='line'>        rateLimiter.acquire(); // may wait
-</span><span class='line'>        executor.execute(task);
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>另外一个例子,假如我们会产生一个数据流,然后我们想以每秒5kb的速度发送出去.我们可以每获取一个令牌(permit)就发送一个byte的数据,这样我们就可以通过一个每秒5000个令牌的RateLimiter来实现:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>final RateLimiter rateLimiter = RateLimiter.create(5000.0);
-</span><span class='line'>void submitPacket(byte[] packet) {
-</span><span class='line'>    rateLimiter.acquire(packet.length);
-</span><span class='line'>    networkService.send(packet);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>另外,我们也可以使用非阻塞的形式达到降级运行的目的,即使用非阻塞的tryAcquire()方法:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>if(limiter.tryAcquire()) { //未请求到limiter则立即返回false
-</span><span class='line'>    doSomething();
-</span><span class='line'>}else{
-</span><span class='line'>    doSomethingElse();
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.RateLimiter主要接口</h1>
-
-<p>RateLimiter其实是一个abstract类,但是它提供了几个static方法用于创建RateLimiter:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'>* 创建一个稳定输出令牌的RateLimiter，保证了平均每秒不超过permitsPerSecond个请求
-</span><span class='line'>* 当请求到来的速度超过了permitsPerSecond，保证每秒只处理permitsPerSecond个请求
-</span><span class='line'>* 当这个RateLimiter使用不足(即请求到来速度小于permitsPerSecond)，会囤积最多permitsPerSecond个请求
-</span><span class='line'>*/
-</span><span class='line'>public static RateLimiter create(double permitsPerSecond);
 </span><span class='line'>
-</span><span class='line'>/**
-</span><span class='line'>* 创建一个稳定输出令牌的RateLimiter，保证了平均每秒不超过permitsPerSecond个请求
-</span><span class='line'>* 还包含一个热身期(warmup period),热身期内，RateLimiter会平滑的将其释放令牌的速率加大，直到起达到最大速率
-</span><span class='line'>* 同样，如果RateLimiter在热身期没有足够的请求(unused),则起速率会逐渐降低到冷却状态
-</span><span class='line'>* 
-</span><span class='line'>* 设计这个的意图是为了满足那种资源提供方需要热身时间，而不是每次访问都能提供稳定速率的服务的情况(比如带缓存服务，需要定期刷新缓存的)
-</span><span class='line'>* 参数warmupPeriod和unit决定了其从冷却状态到达最大速率的时间
-</span><span class='line'>*/
-</span><span class='line'>public static RateLimiter create(double permitsPerSecond, long warmupPeriod, TimeUnit unit);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>提供了两个获取令牌的方法,不带参数表示获取一个令牌.如果没有令牌则一直等待,返回等待的时间(单位为秒),没有被限流则直接返回0.0:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public double acquire();
-</span><span class='line'>
-</span><span class='line'>public double acquire(int permits);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>尝试获取令牌,分为待超时时间和不带超时时间两种:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public boolean tryAcquire();
-</span><span class='line'>//尝试获取一个令牌,立即返回
-</span><span class='line'>public boolean tryAcquire(int permits);
-</span><span class='line'>public boolean tryAcquire(long timeout, TimeUnit unit);
-</span><span class='line'>//尝试获取permits个令牌,带超时时间
-</span><span class='line'>public boolean tryAcquire(int permits, long timeout, TimeUnit unit);</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>5.RateLimiter设计</h1>
-
-<p>考虑一下RateLimiter是如何设计的,并且为什么要这样设计.</p>
-
-<p>RateLimiter的主要功能就是提供一个稳定的速率,实现方式就是通过限制请求流入的速度,比如计算请求等待合适的时间阈值.</p>
-
-<p>实现QPS速率的最简单的方式就是记住上一次请求的最后授权时间,然后保证1/QPS秒内不允许请求进入.比如QPS=5,如果我们保证最后一个被授权请求之后的200ms的时间内没有请求被授权,那么我们就达到了预期的速率.如果一个请求现在过来但是最后一个被授权请求是在100ms之前,那么我们就要求当前这个请求等待100ms.按照这个思路,请求15个新令牌(许可证)就需要3秒.</p>
-
-<p>有一点很重要:上面这个设计思路的RateLimiter记忆非常的浅,它的脑容量非常的小,只记得上一次被授权的请求的时间.如果RateLimiter的一个被授权请求q之前很长一段时间没有被使用会怎么样?这个RateLimiter会立马忘记过去这一段时间的利用不足,而只记得刚刚的请求q.</p>
-
-<p>过去一段时间的利用不足意味着有过剩的资源是可以利用的.这种情况下,RateLimiter应该加把劲(speed up for a while)将这些过剩的资源利用起来.比如在向网络中发生数据的场景(限流),过去一段时间的利用不足可能意味着网卡缓冲区是空的,这种场景下,我们是可以加速发送来将这些过程的资源利用起来.</p>
-
-<p>另一方面,过去一段时间的利用不足可能意味着处理请求的服务器对即将到来的请求是准备不足的(less ready for future requests),比如因为很长一段时间没有请求当前服务器的cache是陈旧的,进而导致即将到来的请求会触发一个昂贵的操作(比如重新刷新全量的缓存).</p>
-
-<p>为了处理这种情况,RateLimiter中增加了一个维度的信息,就是过去一段时间的利用不足(past underutilization),代码中使用storedPermits变量表示.当没有利用不足这个变量为0,最大能达到maxStoredPermits(maxStoredPermits表示完全没有利用).因此,请求的令牌可能从两个地方来:</p>
-
-<pre><code>1.过去剩余的令牌(stored permits, 可能没有)
-2.现有的令牌(fresh permits,当前这段时间还没用完的令牌)
-</code></pre>
-
-<p>我们将通过一个例子来解释它是如何工作的:</p>
-
-<p>对一个每秒产生一个令牌的RateLimiter,每有一个没有使用令牌的一秒,我们就将storedPermits加1,如果RateLimiter在10秒都没有使用,则storedPermits变成10.0.这个时候,一个请求到来并请求三个令牌(acquire(3)),我们将从storedPermits中的令牌为其服务,storedPermits变为7.0.这个请求之后立马又有一个请求到来并请求10个令牌,我们将从storedPermits剩余的7个令牌给这个请求,剩下还需要三个令牌,我们将从RateLimiter新产生的令牌中获取.我们已经知道,RateLimiter每秒新产生1个令牌,就是说上面这个请求还需要的3个请求就要求其等待3秒.</p>
-
-<p>想象一个RateLimiter每秒产生一个令牌,现在完全没有使用(处于初始状态),限制一个昂贵的请求acquire(100)过来.如果我们选择让这个请求等待100秒再允许其执行,这显然很荒谬.我们为什么什么也不做而只是傻傻的等待100秒,一个更好的做法是允许这个请求立即执行(和acquire(1)没有区别),然后将随后到来的请求推迟到正确的时间点.这种策略,我们允许这个昂贵的任务立即执行,并将随后到来的请求推迟100秒.这种策略就是让任务的执行和等待同时进行.</p>
-
-<p>一个重要的结论:RateLimiter不会记最后一个请求,而是即下一个请求允许执行的时间.这也可以很直白的告诉我们到达下一个调度时间点的时间间隔.然后定一个一段时间未使用的Ratelimiter也很简单:下一个调度时间点已经过去,这个时间点和现在时间的差就是Ratelimiter多久没有被使用,我们会将这一段时间翻译成storedPermits.所有,如果每秒钟产生一个令牌(rate==1),并且正好每秒来一个请求,那么storedPermits就不会增长.</p>
-
-<h1>6.RateLimiter主要源码</h1>
-
-<p>RateLimiter定义了两个create函数用于构建不同形式的RateLimiter:</p>
-
-<pre><code>1.public static RateLimiter create(double permitsPerSecond)
-用于创建SmoothBursty类型的RateLimiter
-2.public static RateLimiter create(double permitsPerSecond, long warmupPeriod, TimeUnit unit)
-用于创建
-</code></pre>
-
-<p>源码下面以acquire为例子,分析一下RateLimiter如何实现限流:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public double acquire() {
-</span><span class='line'>    return acquire(1);
-</span><span class='line'>}
-</span><span class='line'>public double acquire(int permits) {
-</span><span class='line'>    long microsToWait = reserve(permits);
-</span><span class='line'>    stopwatch.sleepMicrosUninterruptibly(microsToWait);
-</span><span class='line'>    return 1.0 * microsToWait / SECONDS.toMicros(1L);
-</span><span class='line'>}
-</span><span class='line'>final long reserve(int permits) {
-</span><span class='line'>    checkPermits(permits);
-</span><span class='line'>    synchronized (mutex()) {    //应对并发情况需要同步
-</span><span class='line'>      return reserveAndGetWaitLength(permits, stopwatch.readMicros());
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>final long reserveAndGetWaitLength(int permits, long nowMicros) {
-</span><span class='line'>    long momentAvailable = reserveEarliestAvailable(permits, nowMicros);
-</span><span class='line'>    return max(momentAvailable - nowMicros, 0);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>下面方法来自RateLimiter的具体实现类SmoothRateLimiter:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>final long reserveEarliestAvailable(int requiredPermits, long nowMicros) {
-</span><span class='line'>    resync(nowMicros);  //补充令牌
-</span><span class='line'>    long returnValue = nextFreeTicketMicros;
-</span><span class='line'>    //这次请求消耗的令牌数目
-</span><span class='line'>    double storedPermitsToSpend = min(requiredPermits, this.storedPermits);
-</span><span class='line'>    double freshPermits = requiredPermits - storedPermitsToSpend;
-</span><span class='line'>
-</span><span class='line'>    long waitMicros = storedPermitsToWaitTime(this.storedPermits, storedPermitsToSpend)
-</span><span class='line'>        + (long) (freshPermits * stableIntervalMicros);
-</span><span class='line'>
-</span><span class='line'>    this.nextFreeTicketMicros = nextFreeTicketMicros + waitMicros;
-</span><span class='line'>    this.storedPermits -= storedPermitsToSpend;
-</span><span class='line'>    return returnValue;
-</span><span class='line'>}
-</span><span class='line'>private void resync(long nowMicros) {
-</span><span class='line'>    // if nextFreeTicket is in the past, resync to now
-</span><span class='line'>    if (nowMicros &gt; nextFreeTicketMicros) {
-</span><span class='line'>        storedPermits = min(maxPermits,
-</span><span class='line'>        storedPermits + (nowMicros - nextFreeTicketMicros) / stableIntervalMicros);
-</span><span class='line'>        nextFreeTicketMicros = nowMicros;
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>另外，对于storedPermits的使用，RateLimiter存在两种策略，二者区别主要体现在使用storedPermits时候需要等待的时间。这个逻辑由storedPermitsToWaitTime函数实现：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * Translates a specified portion of our currently stored permits which we want to
-</span><span class='line'> * spend/acquire, into a throttling time. Conceptually, this evaluates the integral
-</span><span class='line'> * of the underlying function we use, for the range of
-</span><span class='line'> * [(storedPermits - permitsToTake), storedPermits].
-</span><span class='line'> *
-</span><span class='line'> * &lt;p&gt;This always holds: {@code 0 &lt;= permitsToTake &lt;= storedPermits}
-</span><span class='line'> */
-</span><span class='line'>abstract long storedPermitsToWaitTime(double storedPermits, double permitsToTake);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>存在两种策略就是为了应对我们上面讲到的，存在资源使用不足大致分为两种情况：
-    (1).资源确实使用不足，这些剩余的资源我们私海可以使用的；
-    (2).提供资源的服务过去还没准备好，比如服务刚启动等；</p>
-
-<p>为此，RateLimiter实际上由两种实现策略，其实现分别见SmoothBursty和SmoothWarmingUp。二者主要的区别就是storedPermitsToWaitTime实现以及maxPermits数量的计算。</p>
-
-<h3>6.1 SmoothBursty</h3>
-
-<p>SmoothBursty使用storedPermits不需要额外等待时间。并且默认maxBurstSeconds未1，因此maxPermits为permitsPerSecond，即最多可以存储1秒的剩余令牌，比如QPS=5，则maxPermits=5.</p>
-
-<p>下面这个RateLimiter的入口就是用来创建SmoothBursty类型的RateLimiter，</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static RateLimiter create(double permitsPerSecond)</span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'>     * This implements a "bursty" RateLimiter, where storedPermits are translated to
-</span><span class='line'>     * zero throttling. The maximum number of permits that can be saved (when the RateLimiter is
-</span><span class='line'>     * unused) is defined in terms of time, in this sense: if a RateLimiter is 2qps, and this
-</span><span class='line'>     * time is specified as 10 seconds, we can save up to 2 * 10 = 20 permits.
+</span><span class='line'>    /**
+</span><span class='line'>     * 索引一个文件
+</span><span class='line'>     *
+</span><span class='line'>     * @param writer
+</span><span class='line'>     * @param file
 </span><span class='line'>     */
-</span><span class='line'>    static final class SmoothBursty extends SmoothRateLimiter {
-</span><span class='line'>        /** The work (permits) of how many seconds can be saved up if this RateLimiter is unused? */
-</span><span class='line'>        final double maxBurstSeconds;
-</span><span class='line'>
-</span><span class='line'>        SmoothBursty(SleepingStopwatch stopwatch, double maxBurstSeconds) {
-</span><span class='line'>            super(stopwatch);
-</span><span class='line'>            this.maxBurstSeconds = maxBurstSeconds;
+</span><span class='line'>    private static void doIndexFile(IndexWriter writer, File file) throws IOException{
+</span><span class='line'>        //单个文件
+</span><span class='line'>        FileInputStream fis;
+</span><span class='line'>        try {
+</span><span class='line'>            fis = new FileInputStream(file);
+</span><span class='line'>        } catch (FileNotFoundException fnfe) {
+</span><span class='line'>            //do nothing
+</span><span class='line'>            return;
 </span><span class='line'>        }
 </span><span class='line'>
-</span><span class='line'>        void doSetRate(double permitsPerSecond, double stableIntervalMicros) {
-</span><span class='line'>            double oldMaxPermits = this.maxPermits;
-</span><span class='line'>            maxPermits = maxBurstSeconds * permitsPerSecond;
-</span><span class='line'>            System.out.println("maxPermits=" + maxPermits);
-</span><span class='line'>            if (oldMaxPermits == Double.POSITIVE_INFINITY) {
-</span><span class='line'>                // if we don't special-case this, we would get storedPermits == NaN, below
-</span><span class='line'>                storedPermits = maxPermits;
+</span><span class='line'>        try {
+</span><span class='line'>            // 创建一个新的空的Document
+</span><span class='line'>            Document doc = new Document();
+</span><span class='line'>
+</span><span class='line'>            //文件路径字段
+</span><span class='line'>            doc.add(new StringField(CommonConfig.PATH_FIELD_NAME, file.getPath(), Field.Store.YES));
+</span><span class='line'>            //文件最后修改时间字段
+</span><span class='line'>            doc.add(new LongField(CommonConfig.MODIFIED_FIELD_NAME, file.lastModified(), Field.Store.NO));
+</span><span class='line'>            //文件内容,不存储原始串
+</span><span class='line'>            doc.add(new TextField(CommonConfig.CONTENTS_FIELD_NAME, new BufferedReader(new InputStreamReader(fis, StandardCharsets.UTF_8))));
+</span><span class='line'>
+</span><span class='line'>            //新建索引 or 更新索引
+</span><span class='line'>            if (writer.getConfig().getOpenMode() == IndexWriterConfig.OpenMode.CREATE) {
+</span><span class='line'>                writer.addDocument(doc);
 </span><span class='line'>            } else {
-</span><span class='line'>                storedPermits = (oldMaxPermits == 0.0)
-</span><span class='line'>                        ? 0.0 // initial state
-</span><span class='line'>                        : storedPermits * maxPermits / oldMaxPermits;
+</span><span class='line'>                writer.updateDocument(new Term("path", file.getPath()), doc);
 </span><span class='line'>            }
+</span><span class='line'>        } finally {
+</span><span class='line'>            fis.close();
 </span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        long storedPermitsToWaitTime(double storedPermits, double permitsToTake) {
-</span><span class='line'>            return 0L;
-</span><span class='line'>        }
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>一个简单的使用示意图及解释，下面私海一个QPS=4的SmoothBursty:</p>
-
-<pre><code>(1).t=0,这时候storedPermits=0，请求1个令牌，等待时间=0；
-(2).t=1,这时候storedPermits=3，请求3个令牌，等待时间=0；
-(3).t=2,这时候storedPermits=4，请求10个令牌，等待时间=0，超前使用了2个令牌；
-(4).t=3,这时候storedPermits=0，请求1个令牌，等待时间=0.5；
-</code></pre>
-
-<p>代码的输出：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>maxPermits=4.0, storedPermits=7.2E-4, stableIntervalMicros=250000.0, nextFreeTicketMicros=1472
-</span><span class='line'>acquire(1), sleepSecond=0.0
-</span><span class='line'>
-</span><span class='line'>maxPermits=4.0, storedPermits=3.012212, stableIntervalMicros=250000.0, nextFreeTicketMicros=1004345
-</span><span class='line'>acquire(3), sleepSecond=0.0
-</span><span class='line'>
-</span><span class='line'>maxPermits=4.0, storedPermits=4.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=2004668
-</span><span class='line'>acquire(10), sleepSecond=0.0
-</span><span class='line'>
-</span><span class='line'>maxPermits=4.0, storedPermits=0.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=3504668
-</span><span class='line'>acquire(1), sleepSecond=0.499591</span></code></pre></td></tr></table></div></figure>
-
-
-<p><img src="/images/guava/BurstyRateLimiter.png"></p>
-
-<h3>6.2 SmoothWarmingUp</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>static final class SmoothWarmingUp extends SmoothRateLimiter {
-</span><span class='line'>        private final long warmupPeriodMicros;
-</span><span class='line'>        /**
-</span><span class='line'>         * The slope of the line from the stable interval (when permits == 0), to the cold interval
-</span><span class='line'>         * (when permits == maxPermits)
-</span><span class='line'>         */
-</span><span class='line'>        private double slope;
-</span><span class='line'>        private double halfPermits;
-</span><span class='line'>
-</span><span class='line'>        SmoothWarmingUp(SleepingStopwatch stopwatch, long warmupPeriod, TimeUnit timeUnit) {
-</span><span class='line'>            super(stopwatch);
-</span><span class='line'>            this.warmupPeriodMicros = timeUnit.toMicros(warmupPeriod);
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        @Override
-</span><span class='line'>        void doSetRate(double permitsPerSecond, double stableIntervalMicros) {
-</span><span class='line'>            double oldMaxPermits = maxPermits;
-</span><span class='line'>            maxPermits = warmupPeriodMicros / stableIntervalMicros;
-</span><span class='line'>            halfPermits = maxPermits / 2.0;
-</span><span class='line'>            // Stable interval is x, cold is 3x, so on average it's 2x. Double the time -&gt; halve the rate
-</span><span class='line'>            double coldIntervalMicros = stableIntervalMicros * 3.0;
-</span><span class='line'>            slope = (coldIntervalMicros - stableIntervalMicros) / halfPermits;
-</span><span class='line'>            if (oldMaxPermits == Double.POSITIVE_INFINITY) {
-</span><span class='line'>                // if we don't special-case this, we would get storedPermits == NaN, below
-</span><span class='line'>                storedPermits = 0.0;
-</span><span class='line'>            } else {
-</span><span class='line'>                storedPermits = (oldMaxPermits == 0.0)
-</span><span class='line'>                        ? maxPermits // initial state is cold
-</span><span class='line'>                        : storedPermits * maxPermits / oldMaxPermits;
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        @Override
-</span><span class='line'>        long storedPermitsToWaitTime(double storedPermits, double permitsToTake) {
-</span><span class='line'>            double availablePermitsAboveHalf = storedPermits - halfPermits;
-</span><span class='line'>            long micros = 0;
-</span><span class='line'>            // measuring the integral on the right part of the function (the climbing line)
-</span><span class='line'>            if (availablePermitsAboveHalf &gt; 0.0) {
-</span><span class='line'>                double permitsAboveHalfToTake = min(availablePermitsAboveHalf, permitsToTake);
-</span><span class='line'>                micros = (long) (permitsAboveHalfToTake * (permitsToTime(availablePermitsAboveHalf)
-</span><span class='line'>                        + permitsToTime(availablePermitsAboveHalf - permitsAboveHalfToTake)) / 2.0);
-</span><span class='line'>                permitsToTake -= permitsAboveHalfToTake;
-</span><span class='line'>            }
-</span><span class='line'>            // measuring the integral on the left part of the function (the horizontal line)
-</span><span class='line'>            micros += (stableIntervalMicros * permitsToTake);
-</span><span class='line'>            return micros;
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        private double permitsToTime(double permits) {
-</span><span class='line'>            return stableIntervalMicros + permits * slope;
-</span><span class='line'>        }
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>maxPermits等于热身(warmup)期间能产生的令牌数，比如QPS=4，warmup为2秒，则maxPermits=8.halfPermits为maxPermits的一半.</p>
-
-<p>参考注释中的神图：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> *          ^ throttling
-</span><span class='line'> *          |
-</span><span class='line'> * 3*stable +                  /
-</span><span class='line'> * interval |                 /.
-</span><span class='line'> *  (cold)  |                / .
-</span><span class='line'> *          |               /  .   &lt;-- "warmup period" is the area of the trapezoid between
-</span><span class='line'> * 2*stable +              /   .       halfPermits and maxPermits
-</span><span class='line'> * interval |             /    .
-</span><span class='line'> *          |            /     .
-</span><span class='line'> *          |           /      .
-</span><span class='line'> *   stable +----------/  WARM . }
-</span><span class='line'> * interval |          .   UP  . } &lt;-- this rectangle (from 0 to maxPermits, and
-</span><span class='line'> *          |          . PERIOD. }     height == stableInterval) defines the cooldown period,
-</span><span class='line'> *          |          .       . }     and we want cooldownPeriod == warmupPeriod
-</span><span class='line'> *          |---------------------------------&gt; storedPermits
-</span><span class='line'> *              (halfPermits) (maxPermits)
-</span><span class='line'> *</span></code></pre></td></tr></table></div></figure>
-
-
-<p>下面是我们QPS=4，warmup为2秒时候对应的图。
-<img src="/images/guava/SmoothWarmingUp.png"></p>
-
-<p>maxPermits=8，halfPermits=4，和SmoothBursty相同的请求序列：</p>
-
-<pre><code>(1).t=0,这时候storedPermits=8，请求1个令牌，使用1个storedPermits消耗时间=1×(0.75+0.625)/2=0.6875秒；
-(2).t=1,这时候storedPermits=8，请求3个令牌，使用3个storedPermits消耗时间=3×(0.75+0.375)/2=1.6875秒(注意已经超过1秒了，意味着下次产生新Permit时间为2.6875)；
-(3).t=2,这时候storedPermits=5，请求10个令牌，使用5个storedPermits消耗时间=1×(0.375+0.25)/2+4*0.25=1.3125秒，再加上额外请求的5个新产生的Permit需要消耗=5*0.25=1.25秒，即总共需要耗时2.5625秒，则下一次产生新的Permit时间为2.6875+2.5625=5.25，注意当前请求私海2.6875才返回的，之前一直阻塞；
-(4).t=3,因为前一个请求阻塞到2.6875，实际这个请求3.6875才到达RateLimiter，请求1个令牌，storedPermits=0，下一次产生新Permit时间为5.25，因此总共需要等待5.25-3.6875=1.5625秒；
-</code></pre>
-
-<p>实际执行结果：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>warmupPeriodMicros=2000000
-</span><span class='line'>stableIntervalMicros=250000.0, maxPermits=8.0, halfPermits=4.0, coldIntervalMicros=750000.0, slope=125000.0, storedPermits=8.0
-</span><span class='line'>
-</span><span class='line'>maxPermits=8.0, storedPermits=8.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=1524
-</span><span class='line'>acquire(1), sleepSecond=0.0
-</span><span class='line'>
-</span><span class='line'>maxPermits=8.0, storedPermits=8.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=1001946
-</span><span class='line'>acquire(3), sleepSecond=0.0
-</span><span class='line'>
-</span><span class='line'>maxPermits=8.0, storedPermits=5.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=2689446
-</span><span class='line'>acquire(10), sleepSecond=0.687186
-</span><span class='line'>
-</span><span class='line'>maxPermits=8.0, storedPermits=0.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=5251946
-</span><span class='line'>acquire(1), sleepSecond=1.559174</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>7.其他限流器</h1>
-
-<p>ASP.NET版本的一个比较成熟限流器:WebApiThrottle
-参考：<a href="http://www.cnblogs.com/mushroom/archive/2015/07/21/4659200.html">http://www.cnblogs.com/mushroom/archive/2015/07/21/4659200.html</a></p>
-
-<p>参考:
-<a href="https://github.com/springside/springside4/wiki/Rate-Limiter">https://github.com/springside/springside4/wiki/Rate-Limiter</a></p>
-
-<p><a href="https://en.wikipedia.org/wiki/Token_bucket">https://en.wikipedia.org/wiki/Token_bucket</a></p>
-
-<p><a href="https://en.wikipedia.org/wiki/Leaky_bucket">https://en.wikipedia.org/wiki/Leaky_bucket</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/06/30/linuxwen-jian-ge-shi/">Linux文件编码</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-06-30T03:07:46+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>30</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>3:07 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>在多系统直接传输文件经常碰到文件编码的问题.</p>
-
-<h1>1.查看编码</h1>
-
-<p>查看文件的编码有很多种方式</p>
-
-<h3>1.1 file</h3>
-
-<p>file命令输出了文件的格式和编码.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ file _config.yml
-</span><span class='line'>_config.yml: UTF-8 Unicode text</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>1.2 vi</h3>
-
-<p>vi打开文件之后,输入:set fileencoding就可以获得文件编码:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>fileencoding=utf-8</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.转换编码</h1>
-
-<h3>2.1 vi</h3>
-
-<p>使用vi也可以变更文件编码</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>:set fileencoding=utf8</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.2 iconv</h3>
-
-<p>使用iconv命令,iconv几个主要参数(man):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>输入/输出格式规范：
-</span><span class='line'>-f, --from-code=名称 原始文本编码
-</span><span class='line'>-t, --to-code=名称 输出编码
-</span><span class='line'>
-</span><span class='line'>信息：
-</span><span class='line'>-l, --list 列举所有已知的字符集
-</span><span class='line'>
-</span><span class='line'>输出控制：
-</span><span class='line'>-c 从输出中忽略无效的字符
-</span><span class='line'>-o, --output=FILE 输出到文件
-</span><span class='line'>-s, --silent 关闭警告
-</span><span class='line'>--verbose 打印进度信息</span></code></pre></td></tr></table></div></figure>
-
-
-<p>使用例子,文件infile从GB18030编码转换至UTF-8编码并写入到文件outfile中:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ cat infile 
-</span><span class='line'>���
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ iconv -f GB18030 -t utf-8 infile -o outfile
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ cat outfile 
-</span><span class='line'>测试</span></code></pre></td></tr></table></div></figure>
-
-
-<p>也可以从管道输入,比如直接访问www.google.com.hk,不出意外会是乱码(使用的big5中文编码),可以转换成utf8</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp$ curl -l 'www.google.com.hk' | iconv -f big5 -t gbk</span></code></pre></td></tr></table></div></figure>
-
-
-<p>iconv基于GPL公开源代码,是GNU项目的一部分.目前，libiconv已经包含在C运行时刻库libc.so中。因此，Linux平台上使用iconv库函数的程序，需要包含&lt;iconv.h>文件.</p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/06/23/linux-swap/">Linux Swap</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-06-23T19:35:55+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>7:35 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近一台机器出现swap报警,从监控图上也看到swap的使用一直存在.</p>
-
-<p>服务器上只有一个Tomcat应用和一些定时任务.</p>
-
-<h1>1.什么是swap</h1>
-
-<p>inux操作系统将物理内存分为多个小的内存块，称之为页(pages). 当应用请求的物理内存不够分配时，操作系统会将一段时间之内不用的内存页交换至swap分区，从而为应用释放内存空间。</p>
-
-<p>Swap对于系统过来说非常重要：</p>
-
-<pre><code>1.首先，当主内存不够用时，操作系统可以swap out一部分内存页，迅速为当前急需内存的应用或者进程分配内存；
-2.其次，某些内存页只在应用初始化阶段用到，之后可能就不再使用了，操作系统可以将这些内存页swap out，从而为应用或者磁盘cache腾出更多的内存空间;
-</code></pre>
-
-<h1>2.swap会带来哪些问题</h1>
-
-<p>我们知道，计算机磁盘I/O通常是系统的瓶颈所在。主内存的读写速度是纳秒级别，而磁盘读写速度是毫秒级别，两者相差3、4个数量级。然而，即使是当前广泛使用的SSD，读写速度相比主内存或者CPU cache也相差2、3个数量级。系统发生swap交换越多，那么系统自然也越慢。</p>
-
-<p>特别对于web服务器来说，都是面对用户的交互式应用，因此响应速度尤其重要。如果系统经常因为swap交换而变得响应迟钝，那么用户体验效果可想而知。</p>
-
-<p>总结成一句话：swap分区要有，在关键时刻不至于让你的应用因为内存不够用而被操作系统OOM KILLER干掉；但是不到关键时刻不要进行swap交换，因为这些操作会影响系统的响应速度。</p>
-
-<p>关于swap的swap in和swap out可以从vmstat命令查看(si表示swap in, so表示swap out).参考:
-<a href="http://xiaobaoqiu.github.io/blog/2015/01/26/vmstatgong-ju/">http://xiaobaoqiu.github.io/blog/2015/01/26/vmstatgong-ju/</a></p>
-
-<h1>3.查看swap占用</h1>
-
-<p>free命令, 参考:
-<a href="http://xiaobaoqiu.github.io/blog/2014/09/04/linux-memory-usage/">http://xiaobaoqiu.github.io/blog/2014/09/04/linux-memory-usage/</a></p>
-
-<h1>4.找到swap占用元凶</h1>
-
-<p>Linux系统中有一个文件smaps文件，记录了当前进程所对应的内存映像信息，路径为/proc/$pid/smaps.以本机的一个线程为例子:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo cat /proc/3555/smaps | head -16
-</span><span class='line'>00400000-00401000 r-xp 00000000 08:13 3444936                            /usr/local/jdk1.7.0_72/bin/java
-</span><span class='line'>Size:                  4 kB
-</span><span class='line'>Rss:                   4 kB
-</span><span class='line'>Pss:                   4 kB
-</span><span class='line'>Shared_Clean:          0 kB
-</span><span class='line'>Shared_Dirty:          0 kB
-</span><span class='line'>Private_Clean:         4 kB
-</span><span class='line'>Private_Dirty:         0 kB
-</span><span class='line'>Referenced:            4 kB
-</span><span class='line'>Anonymous:             0 kB
-</span><span class='line'>AnonHugePages:         0 kB
-</span><span class='line'>Swap:                  0 kB
-</span><span class='line'>KernelPageSize:        4 kB
-</span><span class='line'>MMUPageSize:           4 kB
-</span><span class='line'>Locked:                0 kB
-</span><span class='line'>VmFlags: rd ex mr mw me dw</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中Swap表示这个线程占有Swap的情况.</p>
-
-<p>查看swap的占有情况的脚本,按照占用swap的占用多少从高到底排序:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
-</span><span class='line'>
-</span><span class='line'>function getswap {
-</span><span class='line'>SUM=0
-</span><span class='line'>OVERALL=0
-</span><span class='line'>for DIR in `find /proc/ -maxdepth 1 -type d | egrep "^/proc/[0-9]"` ; do
-</span><span class='line'>PID=`echo $DIR | cut -d / -f 3`
-</span><span class='line'>PROGNAME=`ps -p $PID -o comm --no-headers`
-</span><span class='line'>for SWAP in `grep Swap $DIR/smaps 2&gt;/dev/null| awk '{ print $2 }'`
-</span><span class='line'>do
-</span><span class='line'>let SUM=$SUM+$SWAP
-</span><span class='line'>done
-</span><span class='line'>echo "PID=$PID    Swap used(KB): $SUM    ($PROGNAME )"
-</span><span class='line'>let OVERALL=$OVERALL+$SUM
-</span><span class='line'>SUM=0
-</span><span class='line'>
-</span><span class='line'>done
-</span><span class='line'>echo "Overall swap used: $OVERALL"
+</span><span class='line'>    }
 </span><span class='line'>}
 </span><span class='line'>
-</span><span class='line'>getswap|sort -k4nr</span></code></pre></td></tr></table></div></figure>
+</span><span class='line'>/**
+</span><span class='line'> * 查询索引
+</span><span class='line'> * 接受用户输入作为Query词
+</span><span class='line'> *
+</span><span class='line'> * @author: xiaobaoqiu  Date: 15-9-8 Time: 下午4:09
+</span><span class='line'> */
+</span><span class='line'>public final class Searcher {
+</span><span class='line'>
+</span><span class='line'>    public static void main(String[] args) throws Exception {
+</span><span class='line'>        search(CommonConfig.INDEX_FILE_DIR, CommonConfig.CONTENTS_FIELD_NAME);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public static void search(String indexPath, String field) throws Exception {
+</span><span class='line'>        IndexReader reader = DirectoryReader.open(FSDirectory.open(new File(indexPath)));
+</span><span class='line'>        IndexSearcher searcher = new IndexSearcher(reader);
+</span><span class='line'>        Analyzer analyzer = new StandardAnalyzer(Version.LUCENE_4_10_0);
+</span><span class='line'>        QueryParser parser = new QueryParser(Version.LUCENE_4_10_0, field, analyzer);
+</span><span class='line'>
+</span><span class='line'>        //接受用户输入
+</span><span class='line'>        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+</span><span class='line'>        String queryString = null;
+</span><span class='line'>        while (StringUtils.isNotEmpty(queryString = in.readLine())) {
+</span><span class='line'>            Query query = parser.parse(queryString.trim());
+</span><span class='line'>
+</span><span class='line'>            doSearch(searcher, query);
+</span><span class='line'>        }
+</span><span class='line'>        reader.close();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public static void doSearch(IndexSearcher searcher, Query query) throws IOException {
+</span><span class='line'>        // 搜索 CommonConfig.SEARCH_MAX_ITEM_COUNT 个数据
+</span><span class='line'>        TopDocs results = searcher.search(query, CommonConfig.SEARCH_MAX_ITEM_COUNT);
+</span><span class='line'>        ScoreDoc[] hits = results.scoreDocs;
+</span><span class='line'>        int numTotalHits = results.totalHits;
+</span><span class='line'>        System.out.println(numTotalHits + " total matching documents");
+</span><span class='line'>
+</span><span class='line'>        if (ArrayUtils.isEmpty(hits)) return;
+</span><span class='line'>
+</span><span class='line'>        for (ScoreDoc hit : hits) {
+</span><span class='line'>            System.out.println();
+</span><span class='line'>            Document hitDoc = searcher.doc(hit.doc);
+</span><span class='line'>            System.out.println(CommonConfig.PATH_FIELD_NAME + " = " + hitDoc.get(CommonConfig.PATH_FIELD_NAME) +
+</span><span class='line'>                    "\n" + CommonConfig.MODIFIED_FIELD_NAME + " = " + hitDoc.get(CommonConfig.MODIFIED_FIELD_NAME) +
+</span><span class='line'>                    "\n" + CommonConfig.CONTENTS_FIELD_NAME + " = " + hitDoc.get(CommonConfig.CONTENTS_FIELD_NAME));
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<p>然后运行:</p>
+<p>输入的文件及生成的索引:</p>
+
+<p><img src="/images/lucene/Lucene_demo_input_output.png"></p>
+
+<p>建立索引的基本过程如下:</p>
+
+<pre><code>1.FSDirectory定义索引文件存放目录
+2.选择分词使用的Analyzer.
+3.选择索引文件版本信息Version,将其和Analyzer组成IndexWriterConfig.
+4.利用IndexWriterConfig生成一个IndexWriter,用于索引文件的变更;
+5.根据原始文件生成一些列的Document,每个文档中包含多个Field,设置每个Field是否分词,释放存储等属性;
+6.使用IndexWriter将文档写入索引文件.
+</code></pre>
+
+<p>搜索的基本过程如下:</p>
+
+<pre><code>1.根据索引文件的目录生成一个IndexReader,将索引文件读到内存中.
+2.生成一个IndexSearcher用于搜索;
+3.选择一个分词器;
+4.定义用户输入Query的解析器QueryParser;
+5.接受用户输入,执行搜索过程,得到搜索结果用TopDocs表示,其中包含了命中文档的数目以及命中文档的id集合;
+6.根据文档id获取对应的文档,从文档中获取各个Field信息;
+</code></pre>
+
+<h4 id="2.1 主要类">2.1 主要类</h4>
+
+
+<p>首先介绍一下其中涉及到的主要的类:</p>
+
+<ul>
+<li><p>FSDirectory
+Lucene文件操作都是通过Directory实现，其中有一个比较特殊的方法sync，用来保证任何对文件的写都能够得到永久保存。Lucene使用这个来保证正确提交索引数据变更，也能够防止机器或者操作系统级别的错误影响(corrupting)索引数据.</p></li>
+<li><p>Analyzer,StandardAnalyzer</p></li>
+<li>Version</li>
+<li>IndexWriterConfig</li>
+<li>IndexWriter</li>
+<li>Document</li>
+<li>StringField,LongField,TextField</li>
+<li>IndexReader,DirectoryReader</li>
+<li>IndexSearcher</li>
+<li>QueryParser</li>
+<li>Query</li>
+<li>TopDocs</li>
+<li>ScoreDoc</li>
+</ul>
+
+
+<h2 id="3.建立索引流程">3.建立索引流程</h2>
+
+
+
+
+<h2 id="4.搜索流程">4.搜索流程</h2>
+
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/09/03/luceneru-men/">Lucene入门</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-09-03T14:13:54+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>2:13 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>Crate再项目中扮演越来越重要的角色.但是很多时候我对Crate,包括其下层的ElasticSearch以及Lucene都是一知半解,甚至可以说是完全不懂.因为没看过源代码.所以这段时间会集中学习一下Lucene和ElasticSearch的源码.</p>
+
+<p>从Lucene开始.会包含以下内容:</p>
+
+<pre><code>1.Lucene简介;
+2.Lunece整体架构;
+3.Lucene的存储;
+4.Lucene的搜索;
+5.Lucene其他功能,如高亮等;
+</code></pre>
+
+<p>这里从Lucene简介开始.第一次使用Lucene已经是两年前入职的时候,写了个简单的爬虫,抓取999网的疾病信息并提供一个简单的搜索入口.这里主要弄懂以下几个问题:</p>
+
+<pre><code>1.信息检索
+2.Lucene是什么;
+3.Lucene建立索引的大致过程;
+4.Lucene搜索的大致过程;
+</code></pre>
+
+<p>Lucene官网: <a href="http://lucene.apache.org/">http://lucene.apache.org/</a></p>
+
+<p>在Lucene基础上衍生出很多搜索框架,下面是这些框架的对比:<a href="http://stackoverflow.com/questions/2271600/elasticsearch-sphinx-lucene-solr-xapian-which-fits-for-which-usage">http://stackoverflow.com/questions/2271600/elasticsearch-sphinx-lucene-solr-xapian-which-fits-for-which-usage</a></p>
+
+<h2>1.信息检索</h2>
+
+<p>信息检索简单讲就是从一堆数据中找到你需要的数据,数据的来源可能是文本或者网络,甚至别人说的话或者声波等等.比如:</p>
+
+<ul>
+<li>从一个Excel表格中找到你的名字;</li>
+<li>从学生成绩标表中找到不及格的学生;</li>
+<li>从图书馆里面找Java编程相关的书籍;</li>
+<li>从网络搜索Lucene相关知识;</li>
+<li>老师点名时候喊到;</li>
+</ul>
+
+
+<p>人类信息检索也是一个不断发展的过程,下面这个例子简单的诠释了信息检索的改善过程:</p>
+
+<ol>
+<li>一个书生想从书屋(假设1000本书)里找一本书他能做的就是,从第一本书开始一本一本的往后找,直到找到他要的那本书.如果很不幸,书屋里面每这本书,那么他就必须翻遍所以的书,很可能他找一遍需要10个小时;</li>
+<li>经历过几次这样痛苦的找书经历之后,书生开始想招了,将书分类(假设10个分类),文学类在第一个书架子,史学类再第二个书架子&hellip;从此以后,他找书比以前方便多了.找一本书最多只需要翻一个架子,时间缩短到1个小时;但是带来的成本是:必须将书正确的放在其正确的架子上;</li>
+<li>每次翻遍一个架子,书生觉得还是比较麻烦,于是他给每本书加了一个编号,将书按照编号排列好,并将所以的书名和编号的对应关系记录到一个单独的册子上.下次他找书只需要在册子上找就可以了(只需要看册子上的1000个书名),找到书名对应的编号,然后就能快速的找到书,时间只需要10分钟.成本是书必须按照需要排列;</li>
+<li>10分钟还是有点长,书生于是决定再改善,结合2和3的改进措施.书按照各种类型放在不同的架子,每个架子的书单独编号,比如文学1,文学2&hellip;.册子上也按照书种类进行分开登记.这样找一本书只需要看一个分类下的书名(100个),只需要1分钟.</li>
+</ol>
+
+
+<p>我们生活中的数据分为:结构化数据和非结构化数据.结构化数据指具有固定格式或有限长度的数据,如数据库或者Excel表等.非结构化数据指不定长或无固定格式的数据,如邮件,word文档等.</p>
+
+<p>计算机的产生对信息检索产生了质的变化,帮我们做了很多简单却耗时的工作.在计算机检索的世界里面我们已知了很多技术:</p>
+
+<pre><code>1.对链表的搜索,我们采用从头到位逐项比较,O(N)的时间复杂度;
+2.对于有序数组,我们可以采用二分搜索(其实就是二叉树,通常称之为二叉查找树),能够达到O(logN),底数是2;
+3.多叉数的查找比二叉树更快,参考Tire树,B树等数据结构,O(logN),底数大于2;
+4.Hash表的查找理论上是O(1)的时间复杂度;
+</code></pre>
+
+<p>除了顺序查找,其他几种检索都非常的快,但是这种快都是有维护成本的,比如二分搜索需要保证数据有序,因此新来的数据的插入成本会很高,包括删除数据的成本也会很高.但是其带来的检索效率的提升是非常大的.针对结构化数据,我们往往很简单的实现数据的快速搜索,比如数据库就是使用B树来达到快速搜索的目的.</p>
+
+<p>但是现实中99%以上的原始数据都是混乱无须的非结构化数据.当数据量很大的时候,检索成为一个极其困难的问题(量变导致质变),即使对于计算很快的计算机而言.比如一个简单的字符串查找,假设在1页书的内容(约1000字)中查找一个单词可能需要1毫秒,那么在一本书的内容中(约50W词)中查找一个名字可能需要0.5秒,在1W本书(约50亿个单词)中查找这个单词需要5000秒,也就是接近1个半小时;假设每分钟要找一次呢?不敢想象.</p>
+
+<p>在当今网络及其发达的今天,已经很多的公司的数据量超过了1W本书的信息量.这时候无序信息的全文检索显得极其重要.因此也催生了诸如Google,Yahoo和Baidu这些搜索巨头.</p>
+
+<p>索引是全文搜索的基础,也是现代搜索引擎的核心,建立索引的过程就是把源数据处理成非常方便查询的索引文件的过程.你可以把索引想象成这样一种数据结构,他能够使你快速的随机访问存储在索引中的关键词,进而找到该关键词所关联的文档.</p>
+
+<p>还是以书的例子来说,假设书前三页的内容:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>sudo ~/check_swap.sh</span></code></pre></td></tr></table></div></figure>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>//page1:
+</span><span class='line'>如何使用Lucene完善搜索
+</span><span class='line'>
+</span><span class='line'>//page2
+</span><span class='line'>Lucene数据如何存储
+</span><span class='line'>
+</span><span class='line'>//page3
+</span><span class='line'>Lucene如何实现搜索
+</span><span class='line'>
+</span><span class='line'>//page4
+</span><span class='line'>作者:肖宝秋</span></code></pre></td></tr></table></div></figure>
 
 
-<h1>5.清除被占用的swap</h1>
+<p>我们首先使用分词软件见这四页的内容分词,得到以下结果:</p>
 
-<p>在我们明确知道哪些进程吃swap以后，接下来的问题就是我们如何释放这些swap，释放swap的意思就是把交换到swap中的数据swap in到物理内存页中。</p>
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>//page1:
+</span><span class='line'>如何, 使用, Lucene, 完善, 搜索
+</span><span class='line'>
+</span><span class='line'>//page2
+</span><span class='line'>Lucene, 数据, 如何, 存储
+</span><span class='line'>
+</span><span class='line'>//page3
+</span><span class='line'>Lucene, 如何, 实现, 搜索
+</span><span class='line'>作者, 肖宝秋</span></code></pre></td></tr></table></div></figure>
 
-<pre><code>1.重启吃swap的服务，比如重启一下我们的java进程;
-2.swapoff + swapon
-这个方法的好处是，不用重启服务，但是需要确保现在有足够的物理内存可以容下从swap中释放出来的数据。下面给出了swapoff和swapon的具体做法，注意看swapoff后和swapon后，free的输出有什么异同;
 
-sudo /sbin/swapoff -a
-sudo /sbin/swapon -a
+<p>建立词&ndash;>文档的映射关系:</p>
 
-swapoff后，free的输出里，swap分区的大小变为0，占用变为0,也就是说swap分区中的数据已经释放到物理内存中，同时swap分区被禁用。swapon后，free的输出里，swap分区的容量又恢复了
-，也就是说swap分区重新被启用了。当然我们可以把这两个命令写到一起：
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>如何 --&gt; page1, page2, page3
+</span><span class='line'>使用 --&gt; page1
+</span><span class='line'>Lucene --&gt; page1, page2, page3
+</span><span class='line'>完善 --&gt; page1
+</span><span class='line'>搜索 --&gt; page1, page3
+</span><span class='line'>数据 --&gt; page2
+</span><span class='line'>存储 --&gt; page2
+</span><span class='line'>实现 --&gt; page3
+</span><span class='line'>作者 --&gt; page4
+</span><span class='line'>肖宝秋 --&gt; page4</span></code></pre></td></tr></table></div></figure>
 
-sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
+
+<p>现在搜索"Lucene"的时候,我知道在page1,page2,page3中出现了.搜索"作者"的时候,我知道在page4出现了.</p>
+
+<p>另外一个支撑现代搜索理论的既定现实是:词的数量是有限的,而且非常有限.比如常用的中文词就几万个.</p>
+
+<h2>2.Lucene是什么</h2>
+
+<p>简单讲,Lucene是一个高效的,基于Java的全文检索工具包,它不是一个完整的搜索应用程序,而是为你的应用程序提供索引和搜索功能.Lucene是Apache家族中的一个开源项目.也是目前最为流行的基于 Java 开源全文检索工具包.</p>
+
+<p>Lucene 能够为文本类型的数据建立索引,所以你只要能把你要索引的数据格式转化的文本的,Lucene 就能对你的文档进行索引和搜索.比如你要对一些 HTML 文档,PDF 文档进行索引的话你只需要把 HTML 文档和 PDF 文档转化成文本格式的,然后将转化后的内容交给Lucene进行索引,然后把创建好的索引文件保存到磁盘或者内存中,最后根据用户输入的查询条件在索引文件上进行查询.不指定要索引的文档的格式也使Lucene能够几乎适用于所有的搜索应用程序.</p>
+
+<p>下图展示搜索应用程序和Lucene之间的关系,也描述了Lucene的两个核心过程:建立索引和通过索引检索</p>
+
+<p><img src="/images/lucene/lucene_and_application.jpg"></p>
+
+<h4>2.1 Lucene优点</h4>
+
+<p>Lucene作为一个全文搜索引擎,其具有如下突出的优点:</p>
+
+<ul>
+<li>1.索引文件格式独立于应用平台.Lucene定义了一套以八字节为基础的索引文件格式,使得兼容系统和不同平台的应用能够共享建立的索引文件.</li>
+<li>2.在传统全文检索引擎的倒序索引的基础上实现了分块索引,能够针对新的文件建立小文件索引,提升索引速度.然后通过与原有的索引的合并,达到优化的目的.</li>
+<li>3.优秀的面向对象的系统架构,使得对于Lucene扩展的学习难度降低,方便加入新功能.</li>
+<li>4.设计了独立于语言和文件格式的文本分析接口,索引器通过接受token流完成索引文件的创立,用户扩展新的语言和文件格式,只需要实现文本分析的接口.</li>
+<li>5.已经默认实现了一套强大的查询引擎,用户无须自己编写代码即可使系统获得强大的查询能力,Lucene的查询实现中默认实现了布尔操作、模糊查询、分组查询.</li>
+</ul>
+
+
+<p>参考: <a href="http://lucene.apache.org/core/index.html">http://lucene.apache.org/core/index.html</a></p>
+
+<h4>2.2 倒排索引</h4>
+
+<p>现代搜索引擎基本都是基于倒排索引(反向索引).因为搜索问题本质就是求解"哪文档包含搜索词"这个问题.</p>
+
+<p>简单讲一下什么是倒排索引,简单讲就是字符串到文件的映射关系.假设我的文档集合里面有100篇文档,为了方便表示,我们为文档编号从1到100,得到下面的结构:</p>
+
+<p><img src="/images/lucene/inverted_index.jpg"></p>
+
+<p>左边保存的是一系列字符串,称为词典.每个字符串都指向包含此字符串的文档(Document)链表,此文档链表称为倒排表.</p>
+
+<p>有了索引,便使保存的信息和要搜索的信息一致,可以大大加快搜索的速度.比如说,我们要寻找既包含字符串“lucene”又包含字符串“solr”的文档,我们只需要以下几步:</p>
+
+<ol>
+<li>取出包含字符串lucene的文档链表.</li>
+<li>取出包含字符串solr的文档链表.</li>
+<li>通过合并链表,找出既包含lucene又包含solr的文件.</li>
+</ol>
+
+
+<p><img src="/images/lucene/inverted_index_merge.jpg"></p>
+
+<h2>3.Lucene建立索引</h2>
+
+<p>Lucene的建立索引包括以下几个过程:</p>
+
+<h4>3.1.原始文档</h4>
+
+<p>一些要索引的原文档(Document).包括Html文档,PDF文档,MC Word文档等.而Lucene是只能处理文本文档.</p>
+
+<p>庆幸的是现在很多工具帮我们处理这些问题.如Apache的Tika, 官网:<a href="http://tika.apache.org/">http://tika.apache.org/</a></p>
+
+<h4>3.2.分词</h4>
+
+<p>确定输入的文本之后首先将文本传递给分词组件,分词组件(Tokenizer)会做以下几件事情(此过程称为Tokenize):</p>
+
+<pre><code>1. 将文档分成一个一个单独的单词;
+2. 去除标点符号;
+3. 去除停词(Stop word);
 </code></pre>
+
+<p>停词(Stop word)就是一种语言中最普通的一些单词,由于没有特别的意义,因而大多数情况下不能成为搜索的关键词,因而创建索引时,这种词会被去掉而减少索引的大小.英语中挺词(Stop word)如:the,a,this,is等.对于每一种语言的分词组件(Tokenizer),都有一个停词(stop word)集合.经过分词(Tokenizer)后得到的结果称为词元(Token).</p>
+
+<h4>3.3 语言处理</h4>
+
+<p>分词之后将词元传递给语言处理模块,语言处理组件(linguistic processor)主要是对得到的词元(Token)做一些同语言相关的处理.</p>
+
+<p>比如对于英语,语言处理组件(Linguistic Processor)一般做以下几点:</p>
+
+<pre><code>1. 变为小写(Lowercase).
+2. 将单词缩减为词根形式,如cars到car等.这种操作称为:stemming.
+3. 将单词转变为词根形式,如“drove”到“drive”等.这种操作称为:lemmatization.
+</code></pre>
+
+<p>语言处理组件(linguistic processor)的结果称为词(Term).</p>
+
+<h4>3.4 索引</h4>
+
+<p>语言处理之后将词给索引模块,索引模块主要做以下几个事情:</p>
+
+<pre><code>1. 利用得到的词(Term)创建一个字典.
+即Term1--&gt;doc1, Term2--&gt;doc1这种映射关系
+2. 对字典按字母顺序进行排序.
+3. 合并相同的词(Term)成为文档倒排链表.
+</code></pre>
+
+<p>倒排链表的格式如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Term1,Document Frequency  --&gt; Doc1,Frequency1 ; Doc2,Frequency2</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Document Frequency 即文档频次,表示总共有多少文件包含此词(Term),即链表中文档数目.
+Frequency 即词频率,表示此文件中包含了几个此词(Term).</p>
+
+<p>下面是一个建立索引的例子,输入文本如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>文件一:Students should be allowed to go out with their friends, but not allowed to drink beer.
+</span><span class='line'>文件二:My friend Jerry went to school to see his students but found them drunk which is not allowed.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>经过分词(Tokenizer)后得到的结果称为词元(Token):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Students,allowed,go,their,friends,allowed,drink,beer,My,friend,Jerry,went,school,see,his,students,found,them,drunk,allowed</span></code></pre></td></tr></table></div></figure>
+
+
+<p>经过语言处理,得到的词(Term)如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>student,allow,go,their,friend,allow,drink,beer,my,friend,jerry,go,school,see,his,student,find,them,drink,allow</span></code></pre></td></tr></table></div></figure>
+
+
+<p>最后得到的倒排索引表如下:</p>
+
+<p><img src="/images/lucene/posting_list.jpg"></p>
+
+<p>所以对词allow来讲,总共有两篇文档包含此词(Term),从而词(Term)后面的文档链表总共有两项,第一项表示包含allow的第一篇文档,即1号文档,此文档中,allow出现了2次,第二项表示包含allow的第二个文档,是2号文档,此文档中,allow出现了1次.</p>
+
+<h2>4.Lucene搜索</h2>
+
+<p>有了倒排索引,我们就可以做搜索了,但是事实上Lucene的搜索过程也不简单.</p>
+
+<p>简单来讲,搜索解决的问题是:找到和搜索词相关性最好的文档.细分的这个问题:</p>
+
+<pre><code>1.找到相关文档;
+2.评价搜索词和文档的相关性;
+</code></pre>
+
+<p>Lucene的搜索包括以下几个过程.</p>
+
+<h4>3.1.用户输入</h4>
+
+<p>查询语句同我们普通的语言一样,也是有一定语法的.查询语句的语法根据全文检索系统的实现而不同.最基本的有比如:AND, OR, NOT等.举个例子,用户输入语句:lucene AND learned NOT hadoop.说明用户想找一个包含lucene和learned然而不包括hadoop的文档.</p>
+
+<p>目前看来,Google和Baidu都不支出这种语法:</p>
+
+<p><img src="/images/lucene/Google_Search.png"></p>
+
+<p><img src="/images/lucene/Baidu_Search.png"></p>
+
+<h4>3.2.词法分析,语法分析,语言处理</h4>
+
+<p>由于查询语句有语法,因而也要进行语法分析,语法分析及语言处理.</p>
+
+<ul>
+<li><p>词法分析主要用来切词,识别单词和关键字.通常建立索引的切词组件和对搜索词的切词组件一致.</p></li>
+<li><p>语法分析主要是根据查询语句的语法规则来形成一棵语法树.比如例子:lucene AND learned NOT hadoop形成的语法树如下:</p>
+
+<p>  <img src="/images/lucene/Token_tree.jpg"></p></li>
+<li><p>语言处理同索引过程中的语言处理几乎相同.如learned变成learn等.经过第三步,我们得到一棵经过语言处理的语法树.</p>
+
+<p> <img src="/images/lucene/Term_Tree.jpg"></p></li>
+</ul>
+
+
+<h4>3.3 搜索索引</h4>
+
+<p>此步骤有分几小步:</p>
+
+<ul>
+<li>在反向索引表中,分别找出包含lucene,learn,hadoop的文档链表.</li>
+<li>对包含lucene,learn的链表进行合并操作,得到既包含lucene又包含learn的文档链表.</li>
+<li>将此链表与hadoop的文档链表进行差操作,去除包含hadoop的文档,从而得到既包含lucene又包含learn而且不包含hadoop的文档链表.此文档链表就是我们要找的文档.</li>
+</ul>
+
+
+<h4>3.4 结果文档排序</h4>
+
+<p>虽然在上一步,我们得到了想要的文档,然而对于查询结果应该按照与查询语句的相关性进行排序,越相关者越靠前.</p>
+
+<p>通常会把查询语句看作一片短小的文档,对文档与文档之间的相关性(relevance)进行打分(scoring),分数高的相关性好,就应该排在前面.</p>
+
+<p>对于文档之间的关系,不同的Term重要性不同,比如对于本篇文档,search, Lucene, full-text就相对重要一些,this, a , what可能相对不重要一些.所以如果两篇文档都包含search, Lucene,fulltext,这两篇文档的相关性好一些,然而就算一篇文档包含this, a, what,另一篇文档不包含this, a, what,也不能影响两篇文档的相关性.</p>
+
+<p>找出词(Term)对文档的重要性的过程称为计算词的权重(Term weight)的过程.计算词的权重(term weight)有两个参数,第一个是词(Term),第二个是文档(Document).词的权重(Term weight)表示此词(Term)在此文档中的重要程度,越重要的词(Term)有越大的权重(Term weight),因而在计算文档之间的相关性中将发挥更大的作用.</p>
+
+<p>下面分析这两个过程:</p>
+
+<ul>
+<li>计算权重(Term weight).</li>
+</ul>
+
+
+<p>影响一个词(Term)在一篇文档中的重要性主要有两个因素:</p>
+
+<pre><code>1.Term Frequency (tf):即此Term在此文档中出现了多少次. tf越大说明越重要.
+2.Document Frequency (df):即有多少文档包含次Term. df越大说明越不重要.
+</code></pre>
+
+<p>很容易理解,词(Term)在文档中出现的次数越多,说明此词(Term)对该文档越重要,如“搜索”这个词,在本文档中出现的次数很多,说明本文档主要就是讲这方面的事的.然而在一篇英语文档中,this出现的次数更多,就说明越重要吗？不是的,这是由第二个因素进行调整,第二个因素说明,有越多的文档包含此词(Term), 说明此词(Term)太普通,不足以区分这些文档,因而重要性越低.</p>
+
+<p>简单公式如下:</p>
+
+<p><img src="/images/lucene/Term_Weight.png"></p>
+
+<ul>
+<li>根据Term之间的关系得到文档相关性.</li>
+</ul>
+
+
+<p>我们把文档看作一系列词(Term),每一个词(Term)都有一个权重(Term weight),不同的词(Term)根据自己在文档中的权重来影响文档相关性的打分计算.</p>
+
+<p>于是我们把所有此文档中词(term)的权重(term weight) 看作一个向量.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Document = {term1, term2, …… ,term N}
+</span><span class='line'>Document Vector = {weight1, weight2, …… ,weight N}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>同样我们把查询语句看作一个简单的文档,也用向量来表示.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Query = {term1, term 2, …… , term N}
+</span><span class='line'>Query Vector = {weight1, weight2, …… , weight N}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们把所有搜索出的文档向量及查询向量放到一个N维空间中,每个词(term)是一维:</p>
+
+<p><img src="/images/lucene/document_relative_vsm.jpg"></p>
+
+<p>我们认为两个向量之间的夹角越小,相关性越大.所以我们计算夹角的余弦值作为相关性的打分,夹角越小,余弦值越大,打分越高,相关性越大.</p>
+
+<p>需要注意的是,查询语句一般是很短的,包含的词(Term)是很少的,因而查询向量的维数很小,而文档很长,包含词(Term)很多,文档向量维数很大, 但是需要放到相同的向量空间,因此要保证二者维数是相同的.处理方式很简单,维数不同时,取二者的并集,如果不含某个词(Term)时,则权重(Term Weight)为0.</p>
+
+<p>相关性打分公式如下:</p>
+
+<p><img src="/images/lucene/documet_relative_caculate.png"></p>
+
+<p>举个例子,查询语句有11个Term,共有三篇文档搜索出来.其中各自的权重(Term weight),如下:</p>
+
+<p><img src="/images/lucene/document_score.png"></p>
+
+<p>于是计算,三篇文档同查询语句的相关性打分分别为:</p>
+
+<p><img src="/images/lucene/score_example.png"></p>
+
+<p>于是文档二相关性最高,先返回,其次是文档一,最后是文档三.到此为止,我们可以找到我们最想要的文档了.</p>
 </div>
   
   
@@ -3377,6 +1558,26 @@ sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
     
       <li class="post">
         <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/02/03/strace/">Strace</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/01/28/who-eat-jvms-memory/">Who Eats JVM's Memory</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a>
       </li>
     
   </ul>
