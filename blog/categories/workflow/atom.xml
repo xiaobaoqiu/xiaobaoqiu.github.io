@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Workflow | xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/blog/categories/workflow/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2016-11-08T10:36:57+08:00</updated>
+  <updated>2016-12-29T19:08:19+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,362 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Activiti事件处理]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2016/12/29/activitishi-jian-chu-li/"/>
+    <updated>2016-12-29T18:39:59+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2016/12/29/activitishi-jian-chu-li</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.%E4%BA%8B%E4%BB%B6%E5%A4%84%E7%90%86">1.事件处理</a></li>
+</ul>
+
+
+<h2 id="1.事件处理">1.事件处理</h2>
+
+
+<p>Activiti 内部充斥着各种各样的事件，详见：org.activiti.engine.delegate.event.ActivitiEventType的定义。</p>
+
+<p>在 Activiti 5.15 以前，处理事件需要在流程设计的时候显示的加入各种Listener，比如：</p>
+
+<pre><code>        &lt;userTask id="leaderVerifyTask" activiti:taskType="2"&gt;
+            &lt;extensionElements&gt;
+                &lt;activiti:taskListener event="create" delegateExpression="${taskCreateListener}"/&gt;
+                &lt;activiti:taskListener event="assignment" delegateExpression="${taskAssignmentListener}"/&gt;
+                &lt;activiti:taskListener event="complete" delegateExpression="${taskCompleteListener}"/&gt;
+            &lt;/extensionElements&gt;
+        &lt;/userTask&gt;
+</code></pre>
+
+<p>Spring会注入 taskCreateListener 这个bean来作为 leaderVerifyTask 这个任务的创建事件响应逻辑。
+这种方式的问题在于，流程设计的时候需要知道 代码中具体的类或者bean的名称，因此无法做到将流程的设计交与开发人员之外的人来做。</p>
+
+<p> 在 Activiti 5.15 中加入了全局的事件监听器 ActivitiEventListener，我们只需要实现一个自己的全局的事件处理器，然后自定义各种事件的处理器。</p>
+
+<pre><code class="`"> /**
+ * 流程服务的全局 Listener
+ *
+ * @author xiaobaoqiu  Date: 16-12-19 Time: 下午7:16
+ */
+public class GlobalProcessEventListener implements ActivitiEventListener {
+
+    /**
+     * 各类 Event 的处理器
+     * 其中事件类型参见 ActivitiEventType 定义
+     *
+     * @see org.activiti.engine.delegate.event.ActivitiEventType
+     */
+    private Map&lt;ActivitiEventType, ProcessEventHandler&gt; handlers = new HashMap&lt;&gt;();
+
+    @Override
+    public void onEvent(ActivitiEvent event) {
+        ProcessEventHandler handler = handlers.get(event.getType());
+        if (handler != null) {
+            handler.handle(event);
+        }
+    }
+
+    @Override
+    public boolean isFailOnException() {
+        return false;
+    }
+
+    public Map&lt;ActivitiEventType, ProcessEventHandler&gt; getHandlers() {
+        return handlers;
+    }
+
+    public void setHandlers(Map&lt;ActivitiEventType, ProcessEventHandler&gt; handlers) {
+        this.handlers = handlers;
+    }
+}
+
+/**
+ * 流程事件处理
+ *
+ * @author xiaobaoqiu  Date: 16-12-21 Time: 下午1:33
+ */
+public interface ProcessEventHandler {
+
+    void handle(ActivitiEvent event);
+}
+</code></pre>
+
+<p>ActivitiEventListener能做到和流程设计无关，只需要在配置 Activiti 的时候将其注入，并且可以在其中配置能处理哪些类型的事件：</p>
+
+<pre><code>    &lt;bean id="processEngineConfiguration" class="org.activiti.spring.SpringProcessEngineConfiguration"&gt;
+        &lt;property 其他配置 /&gt;
+        &lt;property name="eventListeners"&gt;
+            &lt;list&gt;
+                &lt;ref bean="globalProcessEventListener"/&gt;
+            &lt;/list&gt;
+        &lt;/property&gt;
+    &lt;/bean&gt;
+
+
+    &lt;!--流程全局事件处理器--&gt;
+    &lt;bean id="globalProcessEventListener" class="com.qunar.scm.ct.biz.process.event.GlobalProcessEventListener"&gt;
+        &lt;property name="handlers"&gt;
+            &lt;map&gt;
+                &lt;entry key="TASK_CREATED"&gt;
+                    &lt;bean class="com.qunar.xxx.ProcessProcessTaskCreateListener"/&gt;
+                &lt;/entry&gt;
+                &lt;entry key="TASK_COMPLETED"&gt;
+                    &lt;bean class="com.qunar.xxx.ProcessProcessTaskCompleteListener"/&gt;
+                &lt;/entry&gt;
+                &lt;entry key="TASK_ASSIGNED"&gt;
+                    &lt;bean class="com.qunar.xxx.ProcessProcessTaskAssignmentListener"/&gt;
+                &lt;/entry&gt;
+            &lt;/map&gt;
+        &lt;/property&gt;
+    &lt;/bean&gt;
+</code></pre>
+
+<p>参考：
+<a href="https://www.activiti.org/userguide/index.html#eventDispatcherConfiguration">https://www.activiti.org/userguide/index.html#eventDispatcherConfiguration</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Activiti任务增加属性]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing/"/>
+    <updated>2016-12-29T18:18:20+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.%E4%BB%BB%E5%8A%A1%E5%A2%9E%E5%8A%A0%E5%B1%9E%E6%80%A7">1.任务增加属性</a></li>
+</ul>
+
+
+<p>最近逐步将组内的审核业务迁移到 Activiti 上，为了适配已有业务，需要原生的 Activiti 的用户任务上增加一些属性，比如用户任务(UserTask)增加类型属性等。
+Activiti版本为：5.22.0</p>
+
+<h2 id="1.任务增加属性">1.任务增加属性</h2>
+
+
+<p>下面以增加任务类型为例子，记录修改点：</p>
+
+<pre><code>1.修改表结构，ACT_RU_TASK表增加 TASK_TYPE_ 字段
+在 activiti-engine 包下，找自己对应的数据库的文件(mysql版本...)
+
+1.UserTask增加taskType属性
+包路径：org.activiti.bpmn.model.UserTask
+
+3.Task接口增加setTaskType方法
+包路径：org.activiti.engine.task.Task
+
+4.TaskEntity增加taskType属性
+包路径：org.activiti.engine.impl.persistence.entity.TaskEntity
+
+5.DelegateTask借口增加 getTaskType 和 setTaskType
+包路径：org.activiti.engine.delegate.DelegateTask
+
+6.TaskDefinition增加taskTypeExpression
+包路径：org.activiti.engine.impl.task.TaskDefinition
+
+7.DynamicBpmnConstants增加USER_TASK_TYPE
+包路径：org.activiti.engine.DynamicBpmnConstants
+
+8.UserTaskActivityBehavior设置taskType属性
+包路径：org.activiti.engine.impl.bpmn.behavior.UserTaskActivityBehavior
+
+9.UserTaskParseHandler解析taskType属性
+包路径：org.activiti.engine.impl.bpmn.parser.handler.UserTaskParseHandler
+
+10.BpmnXMLConstants增加 ATTRIBUTE_TASK_USER_TYPE
+包路径：org.activiti.bpmn.constants.BpmnXMLConstants
+
+11.UserTaskXMLConverter注册 ATTRIBUTE_TASK_USER_TYPE
+包路径：org.activiti.bpmn.converter.UserTaskXMLConverter
+
+12. Semantic.xsd 文件
+包括各个版本的 XSD 文件(XML结构定义)
+
+13. HistoricTaskWrapper 增加 taskType
+包路径：org.activiti.explorer.ui.task.data.HistoricTaskWrapper
+
+14.HistoricTaskInstanceEntity 增加 taskType
+包路径：org.activiti.engine.impl.persistence.entity.HistoricTaskInstanceEntity
+
+15. 更多...
+</code></pre>
+
+<p>在自己的API中定义任务类型，然后我们可以修改 activiti-modeler 的相关代码，使得Activiti支持画图时候指定任务类型。</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Activiti表]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2016/12/16/activitibiao/"/>
+    <updated>2016-12-16T16:31:34+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2016/12/16/activitibiao</id>
+    <content type="html"><![CDATA[<p>整理 Activiti 中的表含义，以及一些重要表的字段。本文的 Activiti 版本为 5.22.0</p>
+
+<ul>
+<li><a href="#1.%E8%A1%A8%E5%90%AB%E4%B9%89">1.表含义</a></li>
+</ul>
+
+
+<h2 id="1.表含义">1.表含义</h2>
+
+
+<p>Activiti 中表定义 activiti-engine 这个 module 下，具体位置 /resources/org.activiti/db/create 下，包括各种类型数据库的建表语句，这里我们以Mysql为DB。</p>
+
+<p>首先简单介绍表的前缀的含义，参考官网：<a href="http://www.activiti.org/userguide/index.html#database.tables.explained">http://www.activiti.org/userguide/index.html#database.tables.explained</a></p>
+
+<p>表名称包含三个部分，第一个为所有的表共有的ACT_表示Activiti，第二部分表示表的使用场景</p>
+
+<pre><code>
+ACT_RE_*: RE表示repository，这个前缀的表包含了流程定义和流程静态资源
+ACT_RU_*: RU表示runtime，这些运行时的表，包含流程实例，任务，变量，异步任务等运行中的数据。Activiti只在流程实例执行过程中保存这些数据， 在流程结束时就会删除这些记录。
+ACT_ID_*: ID表示identity，这些表包含身份信息，比如用户，组等。
+ACT_HI_*: HI表示history，这些表包含历史数据，比如历史流程实例， 变量，任务等。
+ACT_GE_*: 通用数据， 用于不同场景下。
+ACT_EVT_*: EVT表示EVENT，目前只有一张表ACT_EVT_LOG，存储事件处理日志，方便管理员跟踪处理。
+</code></pre>
+
+<p>下面是各个表的大致意义：</p>
+
+<table>
+<thead>
+<tr>
+<th style="text-align:center;">表 </th>
+<th style="text-align:left;"> 意义 </th>
+<th style="text-align:left;"> 备注 </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">ACT_EVT_LOG         </td>
+<td style="text-align:left;"> 事件处理日志 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_GE_BYTEARRAY    </td>
+<td style="text-align:left;"> 二进制数据表 </td>
+<td style="text-align:left;"> 保存流程定义图片和xml </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_GE_PROPERTY     </td>
+<td style="text-align:left;"> 属性数据表存储整个流程引擎级别的数据 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_ACTINST      </td>
+<td style="text-align:left;"> 历史节点表 </td>
+<td style="text-align:left;"> 只记录usertask内容 </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_ATTACHMENT   </td>
+<td style="text-align:left;"> 历史附件表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_COMMENT      </td>
+<td style="text-align:left;"> 历史意见表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_DETAIL       </td>
+<td style="text-align:left;"> 历史详情表，提供历史变量的查询 </td>
+<td style="text-align:left;"> 流程中产生的变量详细，包括控制流程流转的变量等</td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_IDENTITYLINK </td>
+<td style="text-align:left;"> 历史流程人员表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_PROCINST     </td>
+<td style="text-align:left;"> 历史流程实例表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_TASKINST     </td>
+<td style="text-align:left;"> 历史任务实例表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_VARINST      </td>
+<td style="text-align:left;"> 历史变量表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_ID_GROUP        </td>
+<td style="text-align:left;"> 用户组信息表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_ID_INFO         </td>
+<td style="text-align:left;"> 用户扩展信息表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_ID_MEMBERSHIP   </td>
+<td style="text-align:left;"> 用户与用户组对应信息表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_ID_USER         </td>
+<td style="text-align:left;"> 用户信息表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_PROCDEF_INFO    </td>
+<td style="text-align:left;">  </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RE_DEPLOYMENT   </td>
+<td style="text-align:left;"> 部署信息表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RE_MODEL        </td>
+<td style="text-align:left;"> 流程设计模型部署表 </td>
+<td style="text-align:left;"> 流程设计器设计流程后，保存数据到该表 </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RE_PROCDEF      </td>
+<td style="text-align:left;"> 流程定义数据表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RU_EVENT_SUBSCR </td>
+<td style="text-align:left;"> throwEvent，catchEvent时间监听信息表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RU_EXECUTION    </td>
+<td style="text-align:left;"> 运行时流程执行实例表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RU_IDENTITYLINK </td>
+<td style="text-align:left;"> 运行时流程人员表，主要存储任务节点与参与者的相关信息 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RU_JOB          </td>
+<td style="text-align:left;"> 运行时定时任务数据表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RU_TASK         </td>
+<td style="text-align:left;"> 运行时任务节点表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RU_VARIABLE     </td>
+<td style="text-align:left;"> 运行时流程变量数据表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>参考：<a href="http://craft6.cn/detail/activiti_research_database.do">http://craft6.cn/detail/activiti_research_database.do</a>
+<a href="http://blog.csdn.net/flygoa/article/details/51895228">http://blog.csdn.net/flygoa/article/details/51895228</a></p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Activiti入门]]></title>

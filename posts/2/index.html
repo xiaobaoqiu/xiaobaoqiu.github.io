@@ -9,10 +9,11 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.代理 1.1 代理模式
-1.2 Java动态代理
-1.3 CGLib动态代理
-1.4 Java动态代理 VS CGLib动态代理 最近再项目中发现不少同事(包括自己)不太理解默认情况下的Spring事务的运行机制(主要是不理解AOP机制),导致随意使用事务注解.因此也在很多场景事务不生效。 &hellip;">
+  <meta name="description" content="1.背景
+2.问题重现
+3.死锁分析 3.1 SQL加锁
+3.2 锁冲突 4.解决
+5.锁等待 最近线上业务报了几次死锁问题，决定跟进。 1.背景 有一个业务数据表business，维护了一个名为c_id的外键，一个c_id对应多个business数据。 在业务数据新增或者修改的时候， &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -78,6 +79,2332 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2016/07/22/%5B%3F%5D-ge-si-suo-wen-ti/">一个死锁问题</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-07-22T14:33:14+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>22</span><span class='date-suffix'>nd</span>, <span class='date-year'>2016</span></span> <span class='time'>2:33 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.%E8%83%8C%E6%99%AF">1.背景</a></li>
+<li><a href="#2.%E9%97%AE%E9%A2%98%E9%87%8D%E7%8E%B0">2.问题重现</a></li>
+<li><a href="#3.%E6%AD%BB%E9%94%81%E5%88%86%E6%9E%90">3.死锁分析</a>
+
+<ul>
+<li><a href="#3.1%20SQL%E5%8A%A0%E9%94%81">3.1 SQL加锁</a></li>
+<li><a href="#3.2%20%E9%94%81%E5%86%B2%E7%AA%81">3.2 锁冲突</a></li>
+</ul>
+</li>
+<li><a href="#4.%E8%A7%A3%E5%86%B3">4.解决</a></li>
+<li><a href="#5.%E9%94%81%E7%AD%89%E5%BE%85">5.锁等待</a></li>
+</ul>
+
+
+<p>最近线上业务报了几次死锁问题，决定跟进。</p>
+
+<h2 id="1.背景">1.背景</h2>
+
+
+<p>有一个业务数据表business，维护了一个名为c_id的外键，一个c_id对应多个business数据。</p>
+
+<p>在业务数据新增或者修改的时候，需要同步的维护 business 的数据，这时候正确的做法是diff新旧数据，得到需要删除的一部分数据，需要新增的一部分数据以及需要更新的一部分数据，这种实现有点麻烦(其实也不麻烦，使用Guava的集合操作)，因此工程师们的通常做法是先根据c_id删除现有数据，再插入新数据。这个时候很容易出现死锁。</p>
+
+<p>这里也解释一下外键，在业务DB中，出于性能考虑，通常禁止使用外键，通常的做法是，外键这种关系的维护都体现在表中手动维护一个外键。</p>
+
+<p>在交代一下数据库相关的背景：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>DB：Mysql 5.6
+</span><span class='line'>tx_isolation：REPEATABLE-READ</span></code></pre></td></tr></table></div></figure>
+
+
+<h2 id="2.问题重现">2.问题重现</h2>
+
+
+<p>我们在本地重现死锁信息。</p>
+
+<p>建表语句已经初始化的数据如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>CREATE TABLE `business` (
+</span><span class='line'>  `id` int(11) unsigned NOT NULL AUTO_INCREMENT COMMENT '',
+</span><span class='line'>  `c_id` int(11) NOT NULL DEFAULT '0' COMMENT '',
+</span><span class='line'>  `business_id` tinyint(3) unsigned NOT NULL DEFAULT '0' COMMENT '',
+</span><span class='line'>  PRIMARY KEY (`id`),
+</span><span class='line'>  UNIQUE KEY `uniq_idx_c_id_business_id` (`c_id`,`business_id`)
+</span><span class='line'>) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='';
+</span><span class='line'>
+</span><span class='line'>mysql&gt; select * from business;
+</span><span class='line'>+----+-------------+-------------+
+</span><span class='line'>| id | c_id | business_id |
+</span><span class='line'>+----+-------------+-------------+
+</span><span class='line'>| 20 |           1 |           2 |
+</span><span class='line'>| 21 |           1 |           3 |
+</span><span class='line'>| 23 |           1 |           4 |
+</span><span class='line'>| 22 |           1 |           5 |
+</span><span class='line'>| 10 |           2 |           1 |
+</span><span class='line'>| 11 |           2 |           2 |
+</span><span class='line'>|  5 |           3 |           1 |
+</span><span class='line'>|  6 |           4 |           1 |
+</span><span class='line'>|  7 |           5 |           1 |
+</span><span class='line'>+----+-------------+-------------+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们模拟同时两个新数据的插入过程：</p>
+
+<table>
+<thead>
+<tr>
+<th style="text-align:center;">步骤 </th>
+<th style="text-align:left;"> 事务1 </th>
+<th style="text-align:left;"> 事务2 </th>
+<th style="text-align:left;"> 备注 </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">1 </td>
+<td style="text-align:left;"> begin </td>
+<td style="text-align:left;">  </td>
+<td style="text-align:left;">  </td>
+</tr>
+<tr>
+<td style="text-align:center;">2 </td>
+<td style="text-align:left;"> </td>
+<td style="text-align:left;"> begin </td>
+<td style="text-align:left;">  </td>
+</tr>
+<tr>
+<td style="text-align:center;">3 </td>
+<td style="text-align:left;"> mysql> delete from business where c_id = 6;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
+<td style="text-align:left;">  </td>
+<td style="text-align:left;"> 事务1：Gap锁，锁住区域(5, +∞) </td>
+</tr>
+<tr>
+<td style="text-align:center;">4 </td>
+<td style="text-align:left;">  </td>
+<td style="text-align:left;"> mysql> delete from business where c_id = 7;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
+<td style="text-align:left;"> 事务2：Gap锁，锁住区域(5, +∞)  </td>
+</tr>
+<tr>
+<td style="text-align:center;">5 </td>
+<td style="text-align:left;"> mysql> insert into business (c_id, business_id) values (6, 1);<br><br>等待&hellip; </td>
+<td style="text-align:left;">  </td>
+<td style="text-align:left;"> 事务1：插入意向锁(Insert Intention Lock)，期望获取(5, 6)这个Gap锁和一个c_id=6的Recored锁。<br>但是因为 事务2 已经锁住了区域(5, +∞)因此这时候，事务1只能等待 事务2 释放锁. </td>
+</tr>
+<tr>
+<td style="text-align:center;">6 </td>
+<td style="text-align:left;">  </td>
+<td style="text-align:left;"> mysql> insert into business (c_id, business_id) values (7, 1); <br><br>ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting transaction </td>
+<td style="text-align:left;"> 和上面第5步类似， 事务2：等待获取事务1的锁<br><br>出现循环等待，死锁(roll back这个事务，事务2的锁释放) </td>
+</tr>
+<tr>
+<td style="text-align:center;">7 </td>
+<td style="text-align:left;"> Query OK, 2 rows affected (2.89 sec)<br>Records: 2  Duplicates: 0  Warnings: 0<br><br>事务2 rollback了，事务1的insert成功 </td>
+<td style="text-align:left;">  </td>
+<td style="text-align:left;"> 事务1等待的锁得到，事务1成功。</td>
+</tr>
+</tbody>
+</table>
+
+
+<p>第 5 步的锁信息如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// 锁信息
+</span><span class='line'>// 事务1( 即这里的事务id：203797) 持有一个Gap锁，事务2( 即这里的事务id：203798) 持有一个Gap锁
+</span><span class='line'>mysql&gt; select * from INNODB_LOCKS;
+</span><span class='line'>+---------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+------------------------+
+</span><span class='line'>| lock_id       | lock_trx_id | lock_mode | lock_type | lock_table                    | lock_index                       | lock_space | lock_page | lock_rec | lock_data              |
+</span><span class='line'>+---------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+------------------------+
+</span><span class='line'>| 203797:20:4:1 | 203797      | X         | RECORD    | `test`.`business` | uniq_idx_c_id_business_id |         20 |         4 |        1 | supremum pseudo-record |
+</span><span class='line'>| 203798:20:4:1 | 203798      | X         | RECORD    | `test`.`business` | uniq_idx_c_id_business_id |         20 |         4 |        1 | supremum pseudo-record |
+</span><span class='line'>+---------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+------------------------+
+</span><span class='line'>
+</span><span class='line'>// 锁等待信息
+</span><span class='line'>// 事务1( 即这里的事务id：203797) 等待事务2(即这里的事务id：203798 )的锁
+</span><span class='line'>mysql&gt; select * from INNODB_LOCK_WAITS;
+</span><span class='line'>+-------------------+-------------------+-----------------+------------------+
+</span><span class='line'>| requesting_trx_id | requested_lock_id | blocking_trx_id | blocking_lock_id |
+</span><span class='line'>+-------------------+-------------------+-----------------+------------------+
+</span><span class='line'>| 203797            | 203797:20:4:1     | 203798          | 203798:20:4:1    |
+</span><span class='line'>+-------------------+-------------------+-----------------+------------------+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>有些人可能迷惑 lock_data 的 supremum pseudo-record 是什么东西，我们先看看 lock_data 的解释，这里面解释了 supremum pseudo-record，简单说就是正无穷。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Primary key value(s) of the locked record if LOCK_TYPE='RECORD', otherwise NULL. 
+</span><span class='line'>This column contains the value(s) of the primary key column(s) in the locked row, formatted as a valid SQL string (ready to be copied to SQL commands). 
+</span><span class='line'>If there is no primary key then the InnoDB internal unique row ID number is used. 
+</span><span class='line'>If a gap lock is taken for key values or ranges above the largest value in the index, LOCK_DATA reports “supremum pseudo-record”. 
+</span><span class='line'>When the page containing the locked record is not in the buffer pool (in the case that it was paged out to disk while the lock was held), InnoDB does not fetch the page from disk, to avoid unnecessary disk operations. Instead, LOCK_DATA is set to NULL.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>死锁信息：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show engine innodb status \G
+</span><span class='line'>...
+</span><span class='line'>------------------------
+</span><span class='line'>LATEST DETECTED DEADLOCK
+</span><span class='line'>------------------------
+</span><span class='line'>2016-07-21 19:11:05 7f6b90de8700
+</span><span class='line'>*** (1) TRANSACTION:
+</span><span class='line'>TRANSACTION 203797, ACTIVE 42 sec inserting
+</span><span class='line'>mysql tables in use 1, locked 1
+</span><span class='line'>LOCK WAIT 3 lock struct(s), heap size 360, 2 row lock(s), undo log entries 1
+</span><span class='line'>MySQL thread id 9, OS thread handle 0x7f6b90db7700, query id 144 localhost root update
+</span><span class='line'>insert into business (c_id, business_id) values (6, 1)
+</span><span class='line'>*** (1) WAITING FOR THIS LOCK TO BE GRANTED:
+</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_c_id_business_id` of table `test`.`business` trx id 203797 lock_mode X insert intention waiting
+</span><span class='line'>Record lock, heap no 1 PHYSICAL RECORD: n_fields 1; compact format; info bits 0
+</span><span class='line'> 0: len 8; hex 73757072656d756d; asc supremum;;
+</span><span class='line'>
+</span><span class='line'>*** (2) TRANSACTION:
+</span><span class='line'>TRANSACTION 203798, ACTIVE 38 sec inserting
+</span><span class='line'>mysql tables in use 1, locked 1
+</span><span class='line'>3 lock struct(s), heap size 360, 2 row lock(s), undo log entries 1
+</span><span class='line'>MySQL thread id 10, OS thread handle 0x7f6b90de8700, query id 147 localhost root update
+</span><span class='line'>insert into business (c_id, business_id) values (7, 1)
+</span><span class='line'>*** (2) HOLDS THE LOCK(S):
+</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_c_id_business_id` of table `test`.`business` trx id 203798 lock_mode X
+</span><span class='line'>Record lock, heap no 1 PHYSICAL RECORD: n_fields 1; compact format; info bits 0
+</span><span class='line'> 0: len 8; hex 73757072656d756d; asc supremum;;
+</span><span class='line'>
+</span><span class='line'>*** (2) WAITING FOR THIS LOCK TO BE GRANTED:
+</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_c_id_business_id` of table `test`.`business` trx id 203798 lock_mode X insert intention waiting
+</span><span class='line'>Record lock, heap no 1 PHYSICAL RECORD: n_fields 1; compact format; info bits 0
+</span><span class='line'> 0: len 8; hex 73757072656d756d; asc supremum;;
+</span><span class='line'>
+</span><span class='line'>*** WE ROLL BACK TRANSACTION (2)
+</span><span class='line'>------------
+</span><span class='line'>TRANSACTIONS
+</span><span class='line'>------------</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从死锁信息中，我们也可以看到事务1(事务id：203797) 和 事务2(事务id：203798) 持有的锁是锁住相同的一块区域：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> 0: len 8; hex 73757072656d756d; asc supremum;;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>参考：<a href="http://blog.itpub.net/29819001/viewspace-1440895/">mysql InnoDB锁等待的查看及分析</a></p>
+
+<h2 id="3.死锁分析">3.死锁分析</h2>
+
+
+<p>有两个点需要我们知道的信息：各种SQL语句都加什么锁，为什么这里的两个delete的锁没有冲突。</p>
+
+<h4 id="3.1 SQL加锁">3.1 SQL加锁</h4>
+
+
+<p>关于各种SQL语句加什么锁，参见Mysql官方文档：<a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-locks-set.html">Locks Set by Different SQL Statements in InnoDB</a></p>
+
+<p>我们这里来说涉及的删除和插入，先说删除：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>//删除，会在满足条件的记录上加一个next-key锁，也就是锁住之前的Gap和待删除的记录。
+</span><span class='line'>DELETE FROM ... WHERE ... sets an exclusive next-key lock on every record the search encounters.
+</span><span class='line'>
+</span><span class='line'>//显然，如果删除的数据比现有最大数据max还大，就会锁(max, +∞)这个Gap
+</span><span class='line'>//同理，如果删除的数据比现有最小数据min还小，就会锁(-∞, min)这个Gap</span></code></pre></td></tr></table></div></figure>
+
+
+<p>再说插入，插入比较麻烦，因为涉及到插入意向锁(Insert Intention Lock)，还是参考Mysql官方文档：<a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-locking.html">InnoDB Locking</a></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>An insert intention lock is a type of gap lock set by INSERT operations prior to row insertion. 
+</span><span class='line'>This lock signals the intent to insert in such a way that multiple transactions inserting into the same index gap need not wait for each other if they are not inserting at the same position within the gap. 
+</span><span class='line'>Suppose that there are index records with values of 4 and 7. Separate transactions that attempt to insert values of 5 and 6, respectively, each lock the gap between 4 and 7 with insert intention locks prior to obtaining the exclusive lock on the inserted row, but do not block each other because the rows are nonconflicting.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>简单的是说，插入意向锁可以归结为如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>锁的类型：Gap Lock
+</span><span class='line'>加锁时间：插入之前
+</span><span class='line'>锁的区域：待插入的区域，比如已有数据4,7，想要插入5，就会锁住(4, 7)这个区域
+</span><span class='line'>锁的冲突：只要两个插入的数据不在同一个位置(其实可以理解为同一个数据)，插入意向锁之间就不会冲突</span></code></pre></td></tr></table></div></figure>
+
+
+<p>插入的锁如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>INSERT sets an exclusive lock on the inserted row. This lock is an index-record lock, not a next-key lock (that is, there is no gap lock) and does not prevent other sessions from inserting into the gap before the inserted row.
+</span><span class='line'>
+</span><span class='line'>Prior to inserting the row, a type of gap lock called an insert intention gap lock is set. This lock signals the intent to insert in such a way that multiple transactions inserting into the same index gap need not wait for each other if they are not inserting at the same position within the gap. </span></code></pre></td></tr></table></div></figure>
+
+
+<p>就是说插入之前会加一把插入意向锁，除此之外，会在插入的记录上加一把锁。</p>
+
+<h4 id="3.2 锁冲突">3.2 锁冲突</h4>
+
+
+<p>关于锁冲突，我们熟知的肯定是S和S兼容，X和其他所有都不兼容。事实上并没有这么简单。比如我们这里前面的例子，两个delete都加了X型的Gap锁，应该排斥才对，但事实上是兼容的。这里参考了<a href="http://narcissusoyf.iteye.com/blog/1637309">从一个死锁看mysql innodb的锁机制</a>这篇文章的结论(准备读源码验证)：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>下面这个是 precise mode 的兼容矩阵：（这个兼容矩阵发生在X与X，S与X不兼容的情况下再进行比对的）
+</span><span class='line'>
+</span><span class='line'>    G    I     R    N (已经存在的锁,包括等待的锁)
+</span><span class='line'>G   +     +    +     + 
+</span><span class='line'>I    -      +    +     -
+</span><span class='line'>R   +     +     -     -
+</span><span class='line'>N   +     +     -     -
+</span><span class='line'>
+</span><span class='line'>+ 代表兼容， -代表不兼容. I代表插入意图锁,
+</span><span class='line'>G代表Gap锁，I代表插入意图锁,R代表记录锁，N代表Next-Key锁.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其实仔细读<a href="https://dev.mysql.com/doc/refman/5.6/en/innodb-locking.html">Mysql官方文档</a>，我们也能发现上面的两个delete的Gap锁是兼容的：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Gap locks in InnoDB are “purely inhibitive”, which means they only stop other transactions from inserting to the gap. 
+</span><span class='line'>They do not prevent different transactions from taking gap locks on the same gap. Thus, a gap X-lock has the same effect as a gap S-lock.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>意思就是说Gap锁的作用是只防止其他事务在这个Gap内的插入，而不排斥其他事务在同一个Gap加上Gap锁。因此Gap X锁和Gap S锁效果相同。
+(真心文档每句话都需要仔细理解哈。)</p>
+
+<h2 id="4.解决">4.解决</h2>
+
+
+<p>DBA的建议：先根据 c_id 查询id，根据 id 删除;</p>
+
+<p>其实只要保证数据存在再区删除就没问题，我们假设我们执行两个以存在数据的先删除再插入。</p>
+
+<p>一个辅助的示意图如下：</p>
+
+<p><img src="/images/mysql/lock.png"></p>
+
+<h2 id="5.锁等待">5.锁等待</h2>
+
+
+<p>其实上面的例子中会出现一个因为 UNIQUE KEY 导致的锁等待问题，我们可以重现，现有数据如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from business;
+</span><span class='line'>+----+-------------+-------------+
+</span><span class='line'>| id | c_id | business_id |
+</span><span class='line'>+----+-------------+-------------+
+</span><span class='line'>| 20 |           1 |           2 |
+</span><span class='line'>| 21 |           1 |           3 |
+</span><span class='line'>| 23 |           1 |           4 |
+</span><span class='line'>| 22 |           1 |           5 |
+</span><span class='line'>| 10 |           2 |           1 |
+</span><span class='line'>| 11 |           2 |           2 |
+</span><span class='line'>|  5 |           3 |           1 |
+</span><span class='line'>| 30 |           4 |           1 |
+</span><span class='line'>|  7 |           5 |           1 |
+</span><span class='line'>+----+-------------+-------------+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>过程如下：</p>
+
+<table>
+<thead>
+<tr>
+<th style="text-align:center;">步骤 </th>
+<th style="text-align:left;"> 事务1 </th>
+<th style="text-align:left;"> 事务2 </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">1 </td>
+<td style="text-align:left;"> begin </td>
+<td style="text-align:left;">  |  </td>
+</tr>
+<tr>
+<td style="text-align:center;">2 </td>
+<td style="text-align:left;"> </td>
+<td style="text-align:left;"> begin |  </td>
+</tr>
+<tr>
+<td style="text-align:center;">3 </td>
+<td style="text-align:left;"> mysql> delete from business where c_id = 3;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
+<td style="text-align:left;">  </td>
+</tr>
+<tr>
+<td style="text-align:center;">4 </td>
+<td style="text-align:left;">  </td>
+<td style="text-align:left;"> mysql> delete from business where c_id = 4;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
+</tr>
+<tr>
+<td style="text-align:center;">5 </td>
+<td style="text-align:left;"> mysql> insert into business (c_id, business_id) values (3, 1);<br><br>等待&hellip;</td>
+<td style="text-align:left;">  </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>INNODB_LOCKS信息及INNODB_LOCK_WAITS信息如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from INNODB_LOCK_WAITS;
+</span><span class='line'>+-------------------+-------------------+-----------------+------------------+
+</span><span class='line'>| requesting_trx_id | requested_lock_id | blocking_trx_id | blocking_lock_id |
+</span><span class='line'>+-------------------+-------------------+-----------------+------------------+
+</span><span class='line'>| 204349            | 204349:20:4:12    | 204350          | 204350:20:4:12   |
+</span><span class='line'>+-------------------+-------------------+-----------------+------------------+
+</span><span class='line'>1 row in set (0.00 sec)
+</span><span class='line'>
+</span><span class='line'>mysql&gt; select * from INNODB_LOCKS;
+</span><span class='line'>+----------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+-----------+
+</span><span class='line'>| lock_id        | lock_trx_id | lock_mode | lock_type | lock_table                    | lock_index                       | lock_space | lock_page | lock_rec | lock_data |
+</span><span class='line'>+----------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+-----------+
+</span><span class='line'>| 204349:20:4:12 | 204349      | S         | RECORD    | `test`.`business` | uniq_idx_c_id_business_id |         20 |         4 |       12 | 4, 1      |
+</span><span class='line'>| 204350:20:4:12 | 204350      | X         | RECORD    | `test`.`business` | uniq_idx_c_id_business_id |         20 |         4 |       12 | 4, 1      |
+</span><span class='line'>+----------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+-----------+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>show engine innodb status信息如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>---TRANSACTION 204350, ACTIVE 24 sec
+</span><span class='line'>4 lock struct(s), heap size 1184, 3 row lock(s), undo log entries 1
+</span><span class='line'>MySQL thread id 22, OS thread handle 0x7fd7ee4f0700, query id 245 localhost root cleaning up
+</span><span class='line'>---TRANSACTION 204349, ACTIVE 31 sec inserting
+</span><span class='line'>mysql tables in use 1, locked 1
+</span><span class='line'>LOCK WAIT 5 lock struct(s), heap size 1184, 4 row lock(s), undo log entries 2
+</span><span class='line'>MySQL thread id 20, OS thread handle 0x7fd7ee4bf700, query id 250 localhost root update
+</span><span class='line'>insert into business (c_id, business_id) values (3, 1)
+</span><span class='line'>------- TRX HAS BEEN WAITING 6 SEC FOR THIS LOCK TO BE GRANTED:
+</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_c_id_business_id` of table `test`.`business` trx id 204349 lock mode S waiting
+</span><span class='line'>Record lock, heap no 12 PHYSICAL RECORD: n_fields 3; compact format; info bits 32
+</span><span class='line'> 0: len 4; hex 80000004; asc     ;;
+</span><span class='line'> 1: len 1; hex 01; asc  ;;
+</span><span class='line'> 2: len 4; hex 0000001e; asc     ;;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这里没明白的一点好事务1(事务id:204349)的insert一个(3, 1)的数据为什么会在(4, 1)上加一个S锁?</p>
+
+<p>不过实验了一下，去掉UNIQUE KEY，使用普通的key，就没有这个锁等到问题，所以这个锁是因为UNIQUE KEY引发的。
+这个问题有待进一步深入查资料。</p>
+
+<p><a href="http://songuooo.com/2015/1/7/deadlock-detected-on-concurrent-insert">http://songuooo.com/2015/1/7/deadlock-detected-on-concurrent-insert</a></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务2-AOP</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-07-15T14:26:22+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>15</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>2:26 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.Spring%20AOP">1.Spring AOP</a>
+
+<ul>
+<li><a href="#1.1%20%E4%BB%A3%E7%90%86%E7%B1%BB%E5%9E%8B%E9%80%89%E6%8B%A9">1.1 代理类型选择</a></li>
+<li><a href="#1.2%20%E4%BB%A3%E7%90%86%E8%B0%83%E7%94%A8">11.2 代理调用</a></li>
+<li><a href="#1.3%20Understanding%20AOP%20Proxies">1.3 Understanding AOP Proxies</a></li>
+<li><a href="#1.4%20Spring%E5%A6%82%E4%BD%95%E8%AF%86%E5%88%AB%E5%B9%B6%E8%A7%A3%E6%9E%90%E9%85%8D%E7%BD%AE">1.4 Spring如何识别并解析配置</a></li>
+<li><a href="#1.5%20Spring%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E4%BB%A3%E7%90%86%E5%AE%9E%E7%8E%B0AOP">1.5 Spring如何使用代理实现AOP</a></li>
+</ul>
+</li>
+</ul>
+
+
+<h2 id="1.Spring AOP">1.Spring AOP</h2>
+
+
+<p>Spring的AOP(Aspect Oriented Programming，面向切面编程)是一个强大的机制，常用场景在日志、安全、异常处理、事务等。Spring AOP的原理正是基于代理。</p>
+
+<p>我想了解的问题包括：</p>
+
+<pre><code>(1).Spring AOP使用什么机制做代理；
+(2).Spring 怎么使用代理达到AOP目的；
+</code></pre>
+
+<h4 id="#1.1 代理类型选择">#1.1 代理类型选择</h4>
+
+
+<p>先看看Spring是如何选择代理，先看看 <a href="http://docs.spring.io/spring/docs/3.0.x/reference/aop.html">Spring官方AOP文档</a> 的说明：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Spring AOP defaults to using standard J2SE dynamic proxies for AOP proxies. This enables any interface (or set of interfaces) to be proxied.
+</span><span class='line'>
+</span><span class='line'>Spring AOP can also use CGLIB proxies. This is necessary to proxy classes, rather than interfaces. CGLIB is used by default if a business object does not implement an interface. As it is good practice to program to interfaces rather than classes, business classes normally will implement one or more business interfaces. It is possible to force the use of CGLIB, in those (hopefully rare) cases where you need to advise a method that is not declared on an interface, or where you need to pass a proxied object to a method as a concrete type.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>官方文档的结论是：当业务Bean实现了一个或多个接口的时候，默认使用Java动态代理，当业务Bean没有实现任何接口的时候使用CGLib。</p>
+
+<p>我们来看看相关代码，Spring使用AopProxy表示AOP中的代理，它的作用只要一个：创建代理对象。它有两个实现类：JdkDynamicAopProxy 和 CglibAopProxy ：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public interface AopProxy {
+</span><span class='line'>    Object getProxy();
+</span><span class='line'>
+</span><span class='line'>    Object getProxy(ClassLoader classLoader);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>// JdkDynamicAopProxy 实现了 InvocationHandler，实际产生代理类使用 Proxy
+</span><span class='line'>final class JdkDynamicAopProxy implements AopProxy, InvocationHandler, Serializable {
+</span><span class='line'>    public Object getProxy(ClassLoader classLoader) {
+</span><span class='line'>        ...
+</span><span class='line'>        return Proxy.newProxyInstance(classLoader, proxiedInterfaces, this);
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>final class CglibAopProxy implements AopProxy, Serializable {
+</span><span class='line'>    public Object getProxy(ClassLoader classLoader) {
+</span><span class='line'>        Class&lt;?&gt; rootClass = this.advised.getTargetClass();
+</span><span class='line'>
+</span><span class='line'>        // 配置 CGLIB Enhancer...
+</span><span class='line'>        Enhancer enhancer = createEnhancer();
+</span><span class='line'>        enhancer.setSuperclass(proxySuperClass);
+</span><span class='line'>        enhancer.setStrategy(new UndeclaredThrowableStrategy(UndeclaredThrowableException.class));
+</span><span class='line'>        enhancer.setInterfaces(AopProxyUtils.completeProxiedInterfaces(this.advised));
+</span><span class='line'>        enhancer.setInterceptDuringConstruction(false);
+</span><span class='line'>
+</span><span class='line'>        Callback[] callbacks = getCallbacks(rootClass);
+</span><span class='line'>        enhancer.setCallbacks(callbacks);
+</span><span class='line'>        enhancer.setCallbackFilter(new ProxyCallbackFilter(
+</span><span class='line'>                this.advised.getConfigurationOnlyCopy(), this.fixedInterceptorMap, this.fixedInterceptorOffset));
+</span><span class='line'>
+</span><span class='line'>        Class&lt;?&gt;[] types = new Class[callbacks.length]; //CGLib的回调机制
+</span><span class='line'>        for (int x = 0; x &lt; types.length; x++) {
+</span><span class='line'>            types[x] = callbacks[x].getClass();
+</span><span class='line'>        }
+</span><span class='line'>        enhancer.setCallbackTypes(types);
+</span><span class='line'>
+</span><span class='line'>        // 产生代理类并产生代理类的一个instance
+</span><span class='line'>        Object proxy;
+</span><span class='line'>        if (this.constructorArgs != null) {
+</span><span class='line'>            proxy = enhancer.create(this.constructorArgTypes, this.constructorArgs);
+</span><span class='line'>        } else {
+</span><span class='line'>            proxy = enhancer.create();
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        return proxy;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>AopProxyFactory的默认实现类DefaultAopProxyFactory：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public AopProxy createAopProxy(AdvisedSupport config) throws AopConfigException {
+</span><span class='line'>    if (config.isOptimize() || config.isProxyTargetClass() || hasNoUserSuppliedProxyInterfaces(config)) {
+</span><span class='line'>        Class targetClass = config.getTargetClass();
+</span><span class='line'>        if (targetClass == null) {
+</span><span class='line'>            throw new AopConfigException("TargetSource cannot determine target class: " +
+</span><span class='line'>                    "Either an interface or a target is required for proxy creation.");
+</span><span class='line'>        }
+</span><span class='line'>        if (targetClass.isInterface()) {    //被代理类，实现了接口，就使用Java动态代理
+</span><span class='line'>            return new JdkDynamicAopProxy(config);
+</span><span class='line'>        }
+</span><span class='line'>        return CglibProxyFactory.createCglibProxy(config);  //没有实现接口使用 CGLib代理
+</span><span class='line'>    }
+</span><span class='line'>    else {
+</span><span class='line'>        return new JdkDynamicAopProxy(config);
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中 AdvisedSupport 是 AOP配置管理的基类。这几个配置的说明可以参见 ProxyConfig 类。其中我注释的地方和官方文档是一致的。</p>
+
+<h4 id="#1.2 代理调用">#1.2 代理调用</h4>
+
+
+<p>得到代理对象之后的下一步就是调用代理逻辑，这部分实现直接看 JdkDynamicAopProxy.invoke() 代码：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+</span><span class='line'>    //TargetSource包括被代理者的一些属性
+</span><span class='line'>    TargetSource targetSource = this.advised.targetSource;
+</span><span class='line'>    try {
+</span><span class='line'>        Object retVal;
+</span><span class='line'>
+</span><span class='line'>        // 具体的被代理对象
+</span><span class='line'>        target = targetSource.getTarget();
+</span><span class='line'>        if (target != null) {
+</span><span class='line'>            targetClass = target.getClass();
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        // 从代理配置中获取方法上的 MethodInterceptor
+</span><span class='line'>        List&lt;Object&gt; chain = this.advised.getInterceptorsAndDynamicInterceptionAdvice(method, targetClass);
+</span><span class='line'>
+</span><span class='line'>        // 没有 MethodInterceptor，直接反射调用
+</span><span class='line'>        if (chain.isEmpty()) {
+</span><span class='line'>            retVal = AopUtils.invokeJoinpointUsingReflection(target, method, args);
+</span><span class='line'>        } else {
+</span><span class='line'>            // 创建 MethodInvocation 并调用
+</span><span class='line'>            invocation = new ReflectiveMethodInvocation(proxy, target, method, args, targetClass, chain);
+</span><span class='line'>            retVal = invocation.proceed();
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        return retVal;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>先看看如何获取方法上的 MethodInterceptor，AdvisedSupport其实只是对这个做缓存，实际调用 DefaultAdvisorChainFactory.getInterceptorsAndDynamicInterceptionAdvice：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 从提供的配置实例config中获取advisor列表,遍历处理这些advisor
+</span><span class='line'> * 如果是PointcutAdvisor,则判断此Advisor能否应用到目标方法method上.
+</span><span class='line'> * 将满足条件的Advisor通过AdvisorAdaptor转化成Interceptor列表返回
+</span><span class='line'> */
+</span><span class='line'>public List&lt;Object&gt; getInterceptorsAndDynamicInterceptionAdvice(
+</span><span class='line'>        Advised config, Method method, Class targetClass) {
+</span><span class='line'>
+</span><span class='line'>    List&lt;Object&gt; interceptorList = new ArrayList&lt;Object&gt;(config.getAdvisors().length);
+</span><span class='line'>    boolean hasIntroductions = hasMatchingIntroductions(config, targetClass);
+</span><span class='line'>    AdvisorAdapterRegistry registry = GlobalAdvisorAdapterRegistry.getInstance();
+</span><span class='line'>    for (Advisor advisor : config.getAdvisors()) {
+</span><span class='line'>        if (advisor instanceof PointcutAdvisor) {
+</span><span class='line'>            PointcutAdvisor pointcutAdvisor = (PointcutAdvisor) advisor;
+</span><span class='line'>            if (config.isPreFiltered() || pointcutAdvisor.getPointcut().getClassFilter().matches(targetClass)) {
+</span><span class='line'>                //将Advisor转化成Interceptor
+</span><span class='line'>                MethodInterceptor[] interceptors = registry.getInterceptors(advisor);
+</span><span class='line'>                MethodMatcher mm = pointcutAdvisor.getPointcut().getMethodMatcher();
+</span><span class='line'>
+</span><span class='line'>                //检查当前advisor的pointcut是否可以匹配当前方法
+</span><span class='line'>                if (MethodMatchers.matches(mm, method, targetClass, hasIntroductions)) {
+</span><span class='line'>                    if (mm.isRuntime()) {
+</span><span class='line'>                        // Creating a new object instance in the getInterceptors() method
+</span><span class='line'>                        // isn't a problem as we normally cache created chains.
+</span><span class='line'>                        for (MethodInterceptor interceptor : interceptors) {
+</span><span class='line'>                            interceptorList.add(new InterceptorAndDynamicMethodMatcher(interceptor, mm));
+</span><span class='line'>                        }
+</span><span class='line'>                    }
+</span><span class='line'>                    else {
+</span><span class='line'>                        interceptorList.addAll(Arrays.asList(interceptors));
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>        ...
+</span><span class='line'>    }
+</span><span class='line'>    return interceptorList;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面看看这些 Interceptor 是如何起作用的，看 ReflectiveMethodInvocation 的 proceed() 方法逻辑：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public Object proceed() throws Throwable {
+</span><span class='line'>    // currentInterceptorIndex 表示 Interceptor 链中的当前调用的下标
+</span><span class='line'>    Object interceptorOrInterceptionAdvice = this.interceptorsAndDynamicMethodMatchers.get(++this.currentInterceptorIndex);
+</span><span class='line'>    if (interceptorOrInterceptionAdvice instanceof InterceptorAndDynamicMethodMatcher) {
+</span><span class='line'>        InterceptorAndDynamicMethodMatcher dm = (InterceptorAndDynamicMethodMatcher) interceptorOrInterceptionAdvice;
+</span><span class='line'>        // 运行时参数(arguments)是否满足匹配条件
+</span><span class='line'>        if (dm.methodMatcher.matches(this.method, this.targetClass, this.arguments)) {
+</span><span class='line'>            return dm.interceptor.invoke(this);
+</span><span class='line'>        } else {
+</span><span class='line'>            // 不匹配，直接跳过当前这个 Interceptor，执行下一个 Interceptor
+</span><span class='line'>            return proceed();
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h4 id="#1.3 Understanding AOP Proxies">#1.3 Understanding AOP Proxies</h4>
+
+
+<p>这里其实完全参考Spring AOP官方文档的一节就行了：<a href="http://docs.spring.io/spring/docs/3.0.x/reference/aop.html#aop-understanding-aop-proxies">http://docs.spring.io/spring/docs/3.0.x/reference/aop.html#aop-understanding-aop-proxies</a></p>
+
+<p>看懂了这一节，能很明白为什么内部调用的方法上的事务注解无效，我们日常犯的错误基本不会有了。</p>
+
+<h4 id="#1.4 Spring如何识别并解析配置">#1.4 Spring如何识别并解析配置</h4>
+
+
+<p>我们都是通过XML文件的形式使用Spring，Spring使用XmlBeanDefinitionReader类来读取解析XML文件，XmlBeanDefinitionReader使用DefaultBeanDefinitionDocumentReader，再调用BeanDefinitionParserDelegate，其中会根据配置的不同找到对应的NamespaceHandler来处理对应的标签。NamespaceHandler是一个接口，一个具体接口就是解析XML中的一个Element得到一个Spring容器中的一个Bean。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public interface NamespaceHandler {
+</span><span class='line'>    BeanDefinition parse(Element element, ParserContext parserContext);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>NamespaceHandler的具体实现类很多，其中几个我们感兴趣的AopNamespaceHandler，MvcNamespaceHandler，QScheduleNamespaceHandler，QConfigNamespaceHandler，QmqClientNamespaceHandler等，看到这里大家应该很熟悉了。我们来看两个实现吧：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class AopNamespaceHandler extends NamespaceHandlerSupport {
+</span><span class='line'>    public void init() {
+</span><span class='line'>        registerBeanDefinitionParser("config", new ConfigBeanDefinitionParser());
+</span><span class='line'>        registerBeanDefinitionParser("aspectj-autoproxy", new AspectJAutoProxyBeanDefinitionParser());
+</span><span class='line'>        registerBeanDefinitionDecorator("scoped-proxy", new ScopedProxyBeanDefinitionDecorator());
+</span><span class='line'>        registerBeanDefinitionParser("spring-configured", new SpringConfiguredBeanDefinitionParser());
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class MvcNamespaceHandler extends NamespaceHandlerSupport {
+</span><span class='line'>    public void init() {
+</span><span class='line'>        registerBeanDefinitionParser("annotation-driven", new AnnotationDrivenBeanDefinitionParser());
+</span><span class='line'>        registerBeanDefinitionParser("default-servlet-handler", new DefaultServletHandlerBeanDefinitionParser());
+</span><span class='line'>        registerBeanDefinitionParser("interceptors", new InterceptorsBeanDefinitionParser());
+</span><span class='line'>        registerBeanDefinitionParser("resources", new ResourcesBeanDefinitionParser());
+</span><span class='line'>        registerBeanDefinitionParser("view-controller", new ViewControllerBeanDefinitionParser());
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>就是说Spring将配置根据作用分成不同的namespace，每个NamespaceHandler只解析自己独有的几个配置，比如AopNamespaceHandler负责解析scoped-proxy等几个配置，比如我们在配置文件配上：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;!--aop就表示namespace--&gt;
+</span><span class='line'>&lt;aop:config proxy-target-class="true"/&gt;
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>最后就会找到AopNamespaceHandler类解析这个配置。那出了这些带namespace的配置，正常的配置谁来解析？DefaultBeanDefinitionDocumentReader。</p>
+
+<p>spring在解析的过程中，会去收集spring.*.jar/META-INF下的spring.handlers,spring.schemas文件，这2个文件就是指明了解析spring中自定义标签的Namespace类。如果自己开发Spring组件，需要增加新的标签，也可以按照这个机制。<a href="www.qunar.com">我司</a>的同学可以看看qmq-client包下的META-INF下的这两个文件。</p>
+
+<p>到目前为止，大致知道了谁来解析AOP相关的标签。我们继续看看 AopNamespaceHandler 的代码，它的init()的方法就是给每个标签找一个解析器，比如 aop:config 这个配置就会找到 ConfigBeanDefinitionParser 这个解析器。,些解析器只有一个parse入口函数。</p>
+
+<p>最后放一张AOP相关的图(来源：<a href="http://blog.csdn.net/moreevan/article/details/11977115">http://blog.csdn.net/moreevan/article/details/11977115</a>)</p>
+
+<p><img src="/images/spring/aop_class.png"></p>
+
+<h4 id="#1.5 Spring如何使用代理实现AOP">#1.5 Spring如何使用代理实现AOP</h4>
+
+
+<p>最后我们整理一下Spring使用代理实现AOP整个流程的步骤。</p>
+
+<p>1.我们在代码中使用引入bean；
+2.Spring从BeanFactory总获取bean(ApplicationContext.getBean)，参见AbstractBeanFactory.getBean代码：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public Object getBean(String name) throws BeansException {
+</span><span class='line'>    return doGetBean(name, null, null, false);
+</span><span class='line'>}
+</span><span class='line'>protected &lt;T&gt; T doGetBean(final String name, final Class&lt;T&gt; requiredType, final Object[] args, boolean typeCheckOnly)
+</span><span class='line'>        throws BeansException {
+</span><span class='line'>
+</span><span class='line'>    final String beanName = transformedBeanName(name);
+</span><span class='line'>    Object bean;
+</span><span class='line'>
+</span><span class='line'>    // 创建单例的bean
+</span><span class='line'>    if (mbd.isSingleton()) {
+</span><span class='line'>        sharedInstance = getSingleton(beanName, new ObjectFactory&lt;Object&gt;() {
+</span><span class='line'>            public Object getObject() throws BeansException {
+</span><span class='line'>                try {
+</span><span class='line'>                    return createBean(beanName, mbd, args);    //创建Bean
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        });
+</span><span class='line'>        bean = getObjectForBeanInstance(sharedInstance, name, beanName, mbd);
+</span><span class='line'>    }
+</span><span class='line'>}
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>3.触发Bean的创建，参考AbstractAutowireCapableBeanFactory.createBean代码：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public Object createBean(Class beanClass, int autowireMode, boolean dependencyCheck) throws BeansException {
+</span><span class='line'>    // Use non-singleton bean definition, to avoid registering bean as dependent bean.
+</span><span class='line'>    RootBeanDefinition bd = new RootBeanDefinition(beanClass, autowireMode, dependencyCheck);
+</span><span class='line'>    bd.setScope(BeanDefinition.SCOPE_PROTOTYPE);
+</span><span class='line'>    return createBean(beanClass.getName(), bd, null);       //---1
+</span><span class='line'>}
+</span><span class='line'>protected Object createBean(final String beanName, final RootBeanDefinition mbd, final Object[] args)
+</span><span class='line'>        throws BeanCreationException {
+</span><span class='line'>    ...
+</span><span class='line'>    Object beanInstance = doCreateBean(beanName, mbd, args);        //---2
+</span><span class='line'>    return beanInstance;
+</span><span class='line'>}
+</span><span class='line'>protected Object doCreateBean(final String beanName, final RootBeanDefinition mbd, final Object[] args) {
+</span><span class='line'>    // Eagerly cache singletons to be able to resolve circular references
+</span><span class='line'>    // even when triggered by lifecycle interfaces like BeanFactoryAware.
+</span><span class='line'>    boolean earlySingletonExposure = (mbd.isSingleton() && this.allowCircularReferences &&
+</span><span class='line'>            isSingletonCurrentlyInCreation(beanName));
+</span><span class='line'>    if (earlySingletonExposure) {
+</span><span class='line'>        addSingletonFactory(beanName, new ObjectFactory() {
+</span><span class='line'>            public Object getObject() throws BeansException {
+</span><span class='line'>                return getEarlyBeanReference(beanName, mbd, bean);      //---3
+</span><span class='line'>            }
+</span><span class='line'>        });
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    // Initialize the bean instance.
+</span><span class='line'>    ...
+</span><span class='line'>    return exposedObject;
+</span><span class='line'>}
+</span><span class='line'>protected Object getEarlyBeanReference(String beanName, RootBeanDefinition mbd, Object bean) {
+</span><span class='line'>    Object exposedObject = bean;
+</span><span class='line'>    if (bean != null && !mbd.isSynthetic() && hasInstantiationAwareBeanPostProcessors()) {
+</span><span class='line'>        for (BeanPostProcessor bp : getBeanPostProcessors()) {
+</span><span class='line'>            if (bp instanceof SmartInstantiationAwareBeanPostProcessor) {
+</span><span class='line'>                SmartInstantiationAwareBeanPostProcessor ibp = (SmartInstantiationAwareBeanPostProcessor) bp;
+</span><span class='line'>                exposedObject = ibp.getEarlyBeanReference(exposedObject, beanName);     //---逐层包装bean
+</span><span class='line'>                if (exposedObject == null) {
+</span><span class='line'>                    return exposedObject;
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>    return exposedObject;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<ol>
+<li>触发代理类对象的创建，见 AbstractAutoProxyCreator，这个其实是一个 BeanPostProcessor，关于BeanPostProcessor的作用见它的注释：</li>
+</ol>
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> * Factory hook that allows for custom modification of new bean instances,
+</span><span class='line'> * e.g. checking for marker interfaces or wrapping them with proxies.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>AbstractAutoProxyCreator代码：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public Object getEarlyBeanReference(Object bean, String beanName) throws BeansException {
+</span><span class='line'>    Object cacheKey = getCacheKey(bean.getClass(), beanName);
+</span><span class='line'>    this.earlyProxyReferences.put(cacheKey, Boolean.TRUE);
+</span><span class='line'>    return wrapIfNecessary(bean, beanName, cacheKey);
+</span><span class='line'>}
+</span><span class='line'>protected Object wrapIfNecessary(Object bean, String beanName, Object cacheKey) {
+</span><span class='line'>    // 获取被代理bean上的所有的 Advisor
+</span><span class='line'>    Object[] specificInterceptors = getAdvicesAndAdvisorsForBean(bean.getClass(), beanName, null);
+</span><span class='line'>    if (specificInterceptors != DO_NOT_PROXY) {
+</span><span class='line'>        this.advisedBeans.put(cacheKey, Boolean.TRUE);
+</span><span class='line'>        //为制定类创建代理bean
+</span><span class='line'>        Object proxy = createProxy(bean.getClass(), beanName, specificInterceptors, new SingletonTargetSource(bean));
+</span><span class='line'>        this.proxyTypes.put(cacheKey, proxy.getClass());
+</span><span class='line'>        return proxy;
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>protected Object createProxy(
+</span><span class='line'>        Class&lt;?&gt; beanClass, String beanName, Object[] specificInterceptors, TargetSource targetSource) {
+</span><span class='line'>    // ProxyFactory 继承自 ProxyConfig，局部变量
+</span><span class='line'>    ProxyFactory proxyFactory = new ProxyFactory();
+</span><span class='line'>    proxyFactory.copyFrom(this);
+</span><span class='line'>
+</span><span class='line'>    // shouldProxyTargetClass表示显示的定义了proxy-target-class="true"
+</span><span class='line'>    // 没有定义则可能需要被代理类的 interface 信息
+</span><span class='line'>    if (!shouldProxyTargetClass(beanClass, beanName)) {
+</span><span class='line'>        Class&lt;?&gt;[] targetInterfaces = ClassUtils.getAllInterfacesForClass(beanClass, this.proxyClassLoader);
+</span><span class='line'>        for (Class&lt;?&gt; targetInterface : targetInterfaces) {
+</span><span class='line'>            proxyFactory.addInterface(targetInterface);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    Advisor[] advisors = buildAdvisors(beanName, specificInterceptors);
+</span><span class='line'>    for (Advisor advisor : advisors) {
+</span><span class='line'>        proxyFactory.addAdvisor(advisor);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    proxyFactory.setTargetSource(targetSource); //被代理者
+</span><span class='line'>    ...
+</span><span class='line'>    // 创建代理对象
+</span><span class='line'>    return proxyFactory.getProxy(this.proxyClassLoader);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ProxyFactory.java:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public Object getProxy(ClassLoader classLoader) {
+</span><span class='line'>    return createAopProxy().getProxy(classLoader);
+</span><span class='line'>}
+</span><span class='line'>protected final synchronized AopProxy createAopProxy() {
+</span><span class='line'>    if (!this.active) {
+</span><span class='line'>        activate();
+</span><span class='line'>    }
+</span><span class='line'>    return getAopProxyFactory().createAopProxy(this);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>DefaultAopProxyFactory.java的createAopProxy，回到了我们 1.1 代理类型选择 中涉及的内容，整个过程串起来了。</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-07-07T18:45:10+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>7</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>6:45 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.Spring%E4%BA%8B%E5%8A%A1">1.Spring事务</a>
+
+<ul>
+<li><a href="#1.1%20%E4%BA%8B%E5%8A%A1%E5%AE%9A%E4%B9%89">1.1 事务定义</a></li>
+<li><a href="#1.2%20%E4%BA%8B%E5%8A%A1%E7%AE%A1%E7%90%86%E5%99%A8">1.2 事务管理器</a></li>
+<li><a href="#1.3%20How%20Transactional%20Works">1.3 How Transactional Works</a></li>
+<li><a href="#1.4%20Roll%20Back">1.4 Roll Back</a></li>
+<li><a href="#1.4%20Pitfalls">1.5 Pitfalls</a></li>
+</ul>
+</li>
+</ul>
+
+
+<h2 id="1.Spring事务">1.Spring事务</h2>
+
+
+<p>我们使用事务的目标：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>The most common reason for using transactions in an application is to maintain a high degree of data integrity and consistency.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我的理解Spring事务中包括的几个主要要素，下面会一一讲解：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1.事务定义：事务包含哪些属性
+</span><span class='line'>2.事务管理器：如何将我们对事务的诉求转化为数据库层面的实现
+</span><span class='line'>3.事务切面：Spring底层是如何将业务和事务串起来的</span></code></pre></td></tr></table></div></figure>
+
+
+<p>关于事务的使用是最简单的，通常分为 编程式事务 和 注解式事务：</p>
+
+<h5>编程式事务</h5>
+
+<p>代码直接使用PlatformTransactionManager，因此需要使用者自己管理事务的创建，提交，回滚，挂起等逻辑。</p>
+
+<p>优点：灵活度大；
+缺点：使用难度大，易出错，业务代码侵入大；</p>
+
+<p><a href="http://www.tutorialspoint.com/spring/programmatic_management.htm">一个编程式事务的完整Demo</a></p>
+
+<p>我们可以使用 Spring 提供的 TransactionTemplate 类来简化编程事务：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>TransactionTemplate template = new TransactionTemplate();
+</span><span class='line'>template.setIsolationLevel(org.springframework.transaction.TransactionDefinition.ISOLATION_DEFAULT);
+</span><span class='line'>template.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRED);
+</span><span class='line'>template.setTransactionManager(transactionManager);
+</span><span class='line'>template.execute(new TransactionCallback&lt;UserAo&gt;() {
+</span><span class='line'>    @Override
+</span><span class='line'>    public UserAo doInTransaction(TransactionStatus status) {
+</span><span class='line'>         //business logic
+</span><span class='line'>    }
+</span><span class='line'>});</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们可以看一下 TransactionTemplate 的实现代码，TransactionTemplate继承了DefaultTransactionDefinition(实现了TransactionDefinition)，使用TransactionDefinition需要我们给定一个TransactionManager，可以修改 事务隔离级别，事务传播行为等事务属性(其实是DefaultTransactionDefinition提供的功能)。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public &lt;T&gt; T execute(TransactionCallback&lt;T&gt; action) throws TransactionException {
+</span><span class='line'>    TransactionStatus status = this.transactionManager.getTransaction(this);    //获取并初始化事务，处理比如事务传播形式等
+</span><span class='line'>    T result;
+</span><span class='line'>    try {
+</span><span class='line'>        result = action.doInTransaction(status);    //业务逻辑，包括自定义的回滚
+</span><span class='line'>    } catch (RuntimeException ex) {
+</span><span class='line'>        // Transactional code threw application exception -&gt; rollback
+</span><span class='line'>        rollbackOnException(status, ex);
+</span><span class='line'>        throw ex;
+</span><span class='line'>    } catch (Error err) {
+</span><span class='line'>        // Transactional code threw error -&gt; rollback
+</span><span class='line'>        rollbackOnException(status, err);
+</span><span class='line'>        throw err;
+</span><span class='line'>    } catch (Exception ex) {
+</span><span class='line'>        // Transactional code threw unexpected exception -&gt; rollback
+</span><span class='line'>        rollbackOnException(status, ex);
+</span><span class='line'>        throw new UndeclaredThrowableException(ex, "TransactionCallback threw undeclared checked exception");
+</span><span class='line'>    }
+</span><span class='line'>    this.transactionManager.commit(status); //事务提交
+</span><span class='line'>    return result;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中 transactionManager.getTransaction(this) 的代码后面会详细分析。</p>
+
+<h5>注解式事务</h5>
+
+<p>使用 @Transactional 来管理事务，我们需要声明一个全局的事务管理器，以及事务对注解的支持：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;bean id="txManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager"&gt;
+</span><span class='line'>    &lt;property name="dataSource" ref="dataSource"/&gt;
+</span><span class='line'>&lt;/bean&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;tx:annotation-driven transaction-manager="txManager"/&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>优点：使用简单，业务代码侵入小；
+缺点：理解有难度；</p>
+
+<p>注意：Spring建议在具体业务实现类上使用Transactional注解，而不是在接口或则接口的方法上配置@Transactional注解：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>The Spring team’s recommendation is that you only annotate concrete classes with the @Transactional annotation, as opposed to annotating interfaces. 
+</span><span class='line'>You certainly can place the @Transactional annotation on an interface (or an interface method), but this will only work as you would expect it to if you are using interface-based proxies. 
+</span><span class='line'>The fact that annotations are not inherited means that if you are using class-based proxies (proxy-target-class=“true“) or the weaving-based aspect (mode=“aspectj“) then the transaction settings will not be recognised by the proxying/weaving infrastructure and the object will not be wrapped in a transactional proxy (which would be decidedly bad). 
+</span><span class='line'>So please do take the Spring team’s advice and only annotate concrete classes (and the methods of concrete classes) with the @Transactional annotation.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Transactional注解上可以设置很多事务相关的参数：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public @interface Transactional {
+</span><span class='line'>    /**
+</span><span class='line'>     * 用于配置事务管理器，当系统中存在多个数据源多个事务管理器的时候有用
+</span><span class='line'>     * 配置 txManager1 这种 bean name
+</span><span class='line'>     */
+</span><span class='line'>    String value() default "";
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务传播级别
+</span><span class='line'>     */
+</span><span class='line'>    Propagation propagation() default Propagation.REQUIRED;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务隔离级别
+</span><span class='line'>     */
+</span><span class='line'>    Isolation isolation() default Isolation.DEFAULT;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务超时时间
+</span><span class='line'>     */
+</span><span class='line'>    int timeout() default TransactionDefinition.TIMEOUT_DEFAULT;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务是否read-only
+</span><span class='line'>     * 注意：这个设置对真实的事务执行系统是一个 hint 而不是 强制要求有这个配置的情况下 write 一定导致失败
+</span><span class='line'>     */
+</span><span class='line'>    boolean readOnly() default false;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 定义0个或多个exception，当事务遇到这些异常的时候，事务会回滚
+</span><span class='line'>     */
+</span><span class='line'>    Class&lt;? extends Throwable&gt;[] rollbackFor() default {};
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 定义0个或多个exception的name，当事务遇到这些异常的时候，事务会回滚
+</span><span class='line'>     * 最好定义完整的路径，比如 javax.servlet.ServletException 会代表 ServletException 本身及子类
+</span><span class='line'>     */
+</span><span class='line'>    String[] rollbackForClassName() default {};
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 定义0个或多个exception，当事务遇到这些异常的时候，事务不会回滚
+</span><span class='line'>     */
+</span><span class='line'>    Class&lt;? extends Throwable&gt;[] noRollbackFor() default {};
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 定义0个或多个exception的name，当事务遇到这些异常的时候，事务不会回滚
+</span><span class='line'>     */
+</span><span class='line'>    String[] noRollbackForClassName() default {};
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h4 id="1.1 事务定义">1.1 事务定义</h4>
+
+
+<p>如何定义一个事务，Spring中使用 TransactionDefinition 来定义一个事务的属性，使用接口的形式：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public interface TransactionDefinition {
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务传播行为,可选项参见 TransactionDefinition 中定义的 PROPAGATION_XXX
+</span><span class='line'>     */
+</span><span class='line'>    int getPropagationBehavior();
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务隔离级别,可选项参见 TransactionDefinition 中定义的 ISOLATION_XXX
+</span><span class='line'>     * 只在 PROPAGATION_REQUIRED 和 PROPAGATION_REQUIRES_NEW 这两个事务传播行为配置下有效
+</span><span class='line'>     */
+</span><span class='line'>    int getIsolationLevel();
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务超时时间,单位秒
+</span><span class='line'>     * 默认 TIMEOUT_DEFAULT = -1 表示使用底层实现的超时时间或者没有(不支持事务超时时间)
+</span><span class='line'>     * 只在 PROPAGATION_REQUIRED 和 PROPAGATION_REQUIRES_NEW 这两个事务传播行为配置下有效
+</span><span class='line'>     * 如果事务管理器不支持设置超时时间，而调用了这个接口会抛出异常
+</span><span class='line'>     */
+</span><span class='line'>    int getTimeout();
+</span><span class='line'>
+</span><span class='line'>    boolean isReadOnly();
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务name，允许为null
+</span><span class='line'>     * 对于申明式事务，默认的name为：完整的class名称.metho名称
+</span><span class='line'>     */
+</span><span class='line'>    String getName();
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>TransactionDefinition 有一个默认实现 DefaultTransactionDefinition，其中定义了事务几个属性的默认值：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private int propagationBehavior = PROPAGATION_REQUIRED;
+</span><span class='line'>private int isolationLevel = ISOLATION_DEFAULT;
+</span><span class='line'>private int timeout = TIMEOUT_DEFAULT;
+</span><span class='line'>private boolean readOnly = false;</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>事务传播</h5>
+
+<p>关于事务的传播行为，这里简单介绍一下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 如果已经存在事务直接使用，如果不存在则创建一个新事务
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_REQUIRED = 0;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 如果已经存在事务直接使用，如果不存在则不使用事务
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_SUPPORTS = 1;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 如果已经存在事务直接使用，如果不存在则抛出异常
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_MANDATORY = 2;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 创建一个新事务，如果如果已经存在事务则将当前事务挂起
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_REQUIRES_NEW = 3;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 不使用事务，如果当前已经存在事务则将当前事务挂起
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_NOT_SUPPORTED = 4;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 不使用事务，如果当前存在事务则跑出异常
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_NEVER = 5;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 如果已经存在事务直接使用，则执行一个嵌套事务，如果当前没有事务就创建一个新事务
+</span><span class='line'> */
+</span><span class='line'>int PROPAGATION_NESTED = 6;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中 PROPAGATION_NESTED 理解有点困难，可以参考 <a href="http://docs.spring.io/spring/docs/3.2.x/spring-framework-reference/html/transaction.html#tx-propagation">Spring 的文档</a>：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>PROPAGATION_NESTED uses a single physical transaction with multiple savepoints that it can roll back to. 
+</span><span class='line'>Such partial rollbacks allow an inner transaction scope to trigger a rollback for its scope, with the outer transaction being able to continue the physical transaction despite some operations having been rolled back. 
+</span><span class='line'>This setting is typically mapped onto JDBC savepoints, so will only work with JDBC resource transactions. See Spring's DataSourceTransactionManager.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>大致意思就是关于 SavePoint，JDBC定义了java.sql.SavePoint接口，提供在一个更细粒度的事务控制机制。当设置了一个保存点后，可以rollback到该保存点处的状态，而不是rollback整个事务。Connection接口的setSavepoint和releaseSavepoint方法可以设置和释放保存点。
+而Spring中定义了 SavepointManager，用于 SavePoint 的创建(createSavepoint)，回滚(rollbackToSavepoint)，释放(releaseSavepoint)。</p>
+
+<h5>事务隔离级别</h5>
+
+<p>关于事务的隔离级别，也简单介绍一下，除了 ISOLATION_DEFAULT ，其余均使用 java.sql.Connection 中的隔离级别的定义：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 使用底层数据源的隔离级别
+</span><span class='line'> * 参考：java.sql.Connection.getTransactionIsolation()
+</span><span class='line'> */
+</span><span class='line'>int ISOLATION_DEFAULT = -1;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * READ_UNCOMMITTED
+</span><span class='line'> */
+</span><span class='line'>int ISOLATION_READ_UNCOMMITTED = Connection.TRANSACTION_READ_UNCOMMITTED;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * READ_COMMITTED
+</span><span class='line'> */
+</span><span class='line'>int ISOLATION_READ_COMMITTED = Connection.TRANSACTION_READ_COMMITTED;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * REPEATABLE_READ
+</span><span class='line'> */
+</span><span class='line'>int ISOLATION_REPEATABLE_READ = Connection.TRANSACTION_REPEATABLE_READ;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * SERIALIZABLE
+</span><span class='line'> */
+</span><span class='line'>int ISOLATION_SERIALIZABLE = Connection.TRANSACTION_SERIALIZABLE;</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h4 id="1.2 事务管理器">1.2 事务管理器</h4>
+
+
+<p>事务管理 Spring 使用 PlatformTransactionManager 定义，其中包含一个事务的三个主要操作，在业务开始之前开始事务，执行业务逻辑之后提交事务，业务逻辑异常则回滚事务：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public interface PlatformTransactionManager {
+</span><span class='line'>    /**
+</span><span class='line'>     * 根据事务定义(TransactionDefinition),返回当前active事务或者创建一个新的事务
+</span><span class='line'>     * 注意：
+</span><span class='line'>     * 1.TransactionDefinition 中的隔离级别超时时间等设置只在创建了新事物的时候有效，如果使用当前已存在的事务则无效
+</span><span class='line'>     * 2.不是所有的事务管理器都支持 TransactionDefinition 中的所有属性，当事务管理器遇到不支持的属性则抛异常
+</span><span class='line'>     * 3.上条规则的例外是 read-only这个属性，如果事务管理器不支持这个属性直接忽略
+</span><span class='line'>     */
+</span><span class='line'>    TransactionStatus getTransaction(TransactionDefinition definition) throws TransactionException;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 事务提交
+</span><span class='line'>     */
+</span><span class='line'>    void commit(TransactionStatus status) throws TransactionException;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 回滚事务
+</span><span class='line'>     */
+</span><span class='line'>    void rollback(TransactionStatus status) throws TransactionException;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们熟悉的 JDBC 支持的事务管理器 DataSourceTransactionManager 就是其一个实现，其他还包括 JtaTransactionManager 等。</p>
+
+<p>同时，Spring提供了一个 TransactionStatus 的就看便于再代码中控制事务以及获取事物状态。在PlatformTransactionManager中获取事务的返回值就是一个 TransactionStatus 对象。</p>
+
+<h4 id="1.3 How Transactional Works">1.3 How Transactional Works</h4>
+
+
+<p>下面会讲解我们使用的 Transactional 注解的工作原理，即当我们在Service的某个public方法上加上 @Transactional之后，从编译到调用这个方法整个过程中会发生什么，事务再其中如何起作用。</p>
+
+<p>这个好像没什么讲的，就是AOP的实现原理。简单的说就是创建Bean的时候会创建一个代理Bean，使用AOP实现事务，参考上一届的AOP实现原理。我们可以参考 TransactionInterceptor 的代码。</p>
+
+<h4 id="1.4 线程保持">1.4 线程保持</h4>
+
+
+
+
+<h4 id="1.5 Roll Back">1.5 Roll Back</h4>
+
+
+<p>主要关注Spring事务的回滚，其实主要就是要搞明白Spring在什么情况下会回滚。</p>
+
+<h4 id="1.6 Pitfalls">1.6 Pitfalls</h4>
+
+
+<p>事务的坑
+<a href="http://www.ibm.com/developerworks/library/j-ts1/">http://www.ibm.com/developerworks/library/j-ts1/</a></p>
+
+<p>代理实现选择器:
+AdviceMode
+TransactionManagementConfigurationSelector</p>
+
+<p>声明事务切面实现:
+TransactionInterceptor</p>
+
+<p>事务实现
+Connection关闭自动提交
+ConnectionHolder来保持Connection</p>
+
+<p>参考:
+<a href="http://openwares.net/java/spring_mybatis_transaction.html">http://openwares.net/java/spring_mybatis_transaction.html</a>
+<a href="http://my.oschina.net/guanzhenxing/blog/214228">http://my.oschina.net/guanzhenxing/blog/214228</a>
+<a href="http://www.mybatis.org/spring/zh/transactions.html">http://www.mybatis.org/spring/zh/transactions.html</a>
+<a href="http://tracylihui.github.io/2015/07/28/spring/Spring%E5%A3%B0%E6%98%8E%E5%BC%8F%E4%BA%8B%E5%8A%A1%E7%AE%A1%E7%90%86/">http://tracylihui.github.io/2015/07/28/spring/Spring%E5%A3%B0%E6%98%8E%E5%BC%8F%E4%BA%8B%E5%8A%A1%E7%AE%A1%E7%90%86/</a>
+<a href="http://www.cnblogs.com/davenkin/archive/2013/02/16/java-tranaction-1.html">http://www.cnblogs.com/davenkin/archive/2013/02/16/java-tranaction-1.html</a>
+<a href="http://www.importnew.com/12300.html">http://www.importnew.com/12300.html</a>
+详细介绍Spring事务管理: <a href="http://developer.51cto.com/art/200906/129854.htm">http://developer.51cto.com/art/200906/129854.htm</a>
+spring事务原理1-事务的抽象: <a href="http://sqtds.github.io/2014/06/09/2014/spring-tx1/">http://sqtds.github.io/2014/06/09/2014/spring-tx1/</a>
+Spring官方文档Transaction Management: <a href="http://docs.spring.io/autorepo/docs/spring/3.2.x/spring-framework-reference/html/transaction.html">http://docs.spring.io/autorepo/docs/spring/3.2.x/spring-framework-reference/html/transaction.html</a>
+Spring官方文档Aspect Oriented Programming with Spring: <a href="http://docs.spring.io/spring/docs/3.0.x/reference/aop.html">http://docs.spring.io/spring/docs/3.0.x/reference/aop.html</a>
+StackOverFlow Spring - @Transactional - What happens in background?: <a href="http://stackoverflow.com/questions/1099025/spring-transactional-what-happens-in-background">http://stackoverflow.com/questions/1099025/spring-transactional-what-happens-in-background</a>
+Transaction strategies: Understanding transaction pitfalls: <a href="http://www.ibm.com/developerworks/library/j-ts1/">http://www.ibm.com/developerworks/library/j-ts1/</a>
+Annotation-based Transactions in Spring: <a href="http://springinpractice.com/2008/03/18/annotation-based-transactions-in-spring">http://springinpractice.com/2008/03/18/annotation-based-transactions-in-spring</a>
+Design principle behind Transaction framework with Spring 3: <a href="http://stackoverflow.com/questions/11789857/design-principle-behind-transaction-framework-with-spring-3">http://stackoverflow.com/questions/11789857/design-principle-behind-transaction-framework-with-spring-3</a>
+Chapter 6. 使用Spring进行面向切面编程（AOP）: <a href="http://shouce.jb51.net/spring/aop.html">http://shouce.jb51.net/spring/aop.html</a>
+wiki: <a href="http://wiki.corp.qunar.com/display/~yushen.ma/Spring+3.x-JDBC+Transaction">http://wiki.corp.qunar.com/display/~yushen.ma/Spring+3.x-JDBC+Transaction</a>
+spring事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=52084161">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=52084161</a>
+spring 事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=93338632">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=93338632</a>
+aspectj事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=92656954">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=92656954</a></p>
+
+<p>Demo:
+编程事务: <a href="http://www.tutorialspoint.com/spring/programmatic_management.htm">http://www.tutorialspoint.com/spring/programmatic_management.htm</a>
+声明事务: <a href="http://www.tutorialspoint.com/spring/declarative_management.htm">http://www.tutorialspoint.com/spring/declarative_management.htm</a></p>
+
+<p>@Transactional注解工作原理：<a href="http://blog.csdn.net/dslztx/article/details/46636079">http://blog.csdn.net/dslztx/article/details/46636079</a>
+分布式事务系列（1.2）Spring的事务体系： <a href="https://yq.aliyun.com/articles/39046">https://yq.aliyun.com/articles/39046</a>
+spring transaction源码分析&ndash;事务架构：<a href="http://www.cnblogs.com/davidwang456/p/4309038.html">http://www.cnblogs.com/davidwang456/p/4309038.html</a></p>
+
+<p><a href="http://blog.csdn.net/szwangdf/article/details/41516239">http://blog.csdn.net/szwangdf/article/details/41516239</a></p>
+
+<p>AopProxy
+DefaultAopProxyFactory</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-04-06T10:09:38+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>6</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>10:09 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%9A%84%E5%9F%BA%E6%9C%AC%E7%9F%A5%E8%AF%86">1.工作流的基本知识</a>
+
+<ul>
+<li><a href="#1.1%20%E8%83%8C%E6%99%AF">1.1 背景</a></li>
+<li><a href="#1.2%20%E5%B7%A5%E4%BD%9C%E6%B5%81%E4%BD%BF%E7%94%A8%E5%9C%BA%E6%99%AF">1.2 工作流使用场景</a></li>
+<li><a href="#1.3%20BPMN%E5%9F%BA%E6%9C%AC%E5%85%83%E7%B4%A0">1.3 BPMN基本元素</a></li>
+</ul>
+</li>
+<li><a href="#2.%E5%B8%B8%E8%A7%81%E7%9A%84%E5%B7%A5%E4%BD%9C%E6%B5%81%E5%BC%95%E6%93%8E">2.常见的工作流引擎</a>
+
+<ul>
+<li><a href="#2.1%20jBPM">2.1 jBPM</a></li>
+<li><a href="#2.2%20Activiti">2.2 Activiti</a></li>
+<li><a href="#2.3%20FixFlow">2.3 FixFlow</a></li>
+<li><a href="#2.4%20%E5%A6%82%E4%BD%95%E9%80%89%E6%8B%A9">2.4 如何选择</a></li>
+</ul>
+</li>
+<li><a href="#3.Activiti">3.Activiti</a>
+
+<ul>
+<li><a href="#3.1%20%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8">3.1 如何使用</a></li>
+</ul>
+</li>
+<li><a href="#4.%E4%B8%9A%E5%8A%A1%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E5%B7%A5%E4%BD%9C%E6%B5%81">4.业务如何使用工作流</a></li>
+</ul>
+
+
+<p>最近在项目中涉及到工作流的知识,需要调研各个工作流引擎,顺道总结.</p>
+
+<p>如何做流程服务,通常而言两种选择(在我的认知范围内的):</p>
+
+<pre><code>1.状态机
+2.工作流
+</code></pre>
+
+<p>状态机通常意味着需要和业务状态绑定在一起,因此无法做到业务和流程分离,通常的后果就是业务和流程紧耦合.</p>
+
+<p>因此,当我们的多个业务系统涉及到流程时候,可以考虑工作流.</p>
+
+<h2 id="1.工作流的基本知识">1.工作流的基本知识</h2>
+
+
+<h4 id="1.1 背景">1.1 背景</h4>
+
+
+<p>先介绍几个术语:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1.BPM
+</span><span class='line'>业务流程管理(Business Process Management),基本内容是管理既定工作的流程,通过服务编排,统一调控各个业务流程,以确保工作在正确的时间被正确的人执行,达到优化整体业务过程的目的.
+</span><span class='line'>BPM概念的贯彻执行,需要有标准化的流程定义语言来支撑,使用统一的语言遵循一致的标准描述具体业务过程,这些流程定义描述由专有引擎去驱动执行,这个引擎就是工作流引擎.
+</span><span class='line'>
+</span><span class='line'>2.Workflow
+</span><span class='line'>全部或者部分由计算机支持或自动处理的业务过程
+</span><span class='line'>
+</span><span class='line'>3.WfMC
+</span><span class='line'>工作流管理联盟
+</span><span class='line'>
+</span><span class='line'>4.BPMN
+</span><span class='line'>业务流程建模与标注(Business Process Modeling Notation),又叫业务流程建模符号.可以理解为工作流的建模语言.2004年5月发布了BPMN1.0规范.2011年BPMN2.0新规范的发布为各工作流产品互容互通提供了统一的标准,结束了各工作流厂商各自为政相互抵斥的局面.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>参考:
+<a href="http://www.infoq.com/cn/articles/bpmn2-activiti5">BPMN2新规范与Activiti5</a>
+<a href="http://www.omg.org/spec/BPMN/2.0/">BPMN2.0规范</a></p>
+
+<h4 id="1.2 工作流使用场景">1.2 工作流使用场景</h4>
+
+
+<p>具体什么场景下适合使用工作流,参考前任的总结:</p>
+
+<p><a href="http://stackoverflow.com/questions/104099/when-to-use-windows-workflow-foundation">when-to-use-windows-workflow-foundation</a></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>You may need WF only if any of the following are true:
+</span><span class='line'>
+</span><span class='line'>1.You have a long-running process.
+</span><span class='line'>2.You have a process that changes frequently.
+</span><span class='line'>3.You want a visual model of the process</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我理解,注意这里的第三点说的流程可视化的目的并不是为了展示,而是说工作流提供了一种给非开发人员(如运营人员)在线修改流程并且流程实时生效的途径(当然,需要业务支持).</p>
+
+<p><a href="http://programmers.stackexchange.com/questions/103972/when-to-use-workflow-engines">when-to-use-workflow-engines</a></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>A workflow engine is useful when you need to go from a start to a finish but there are many different paths/logic/rules to get there.
+</span><span class='line'>if you have processes that are variable from start to end, use a workflow. If the same process can be used by everyone, then you don't need a workflow.</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h4 id="1.3 BPMN基本元素">1.3 BPMN基本元素</h4>
+
+
+<p>简单介绍BPMN中的基本元素,详细内容可以在<a href="http://www.omg.org/spec/BPMN/2.0/">BPMN 2.0规范官网</a>下载PDF版本(章节7.2).包含5个基本元素,每个基本元素下面又包含集中类型的元素,其中Flow Objects是最重要的:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1. Flow Objects 流对象
+</span><span class='line'>2. Data 数据
+</span><span class='line'>3. Connecting Objects 连接对象
+</span><span class='line'>4. Swimlanes 泳道
+</span><span class='line'>5. Artifacts 工件</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(1).Flow Objects</h5>
+
+<p>Flow Objects包含了工作流的三个基本执行语义</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>(1).Events 事件
+</span><span class='line'>发生在流程执行过程中的事情.像流程的启动,结束,边界条件以及每个活动的创建,开始,流转等都是流程事件,利用事件机制,可以通过事件控制器为系统增加辅助功能.如其它业务系统集成及活动预警等
+</span><span class='line'>
+</span><span class='line'>(2).Activities 活动
+</span><span class='line'>在工作流中所有具备生命周期状态的都可以称之为活动,如原子级的任务(Task)以及子流程(Sub-Process)等.任务是流程模型中最小工作单元,不能继续分解.
+</span><span class='line'>
+</span><span class='line'>(3).Gateways 网关
+</span><span class='line'>Gateways用来决定流程流转指向的,简单理解就是判断条件.比如同意走一个流程,驳回走另外一个流程.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>事件有三种类型:Start, Intermediate, End</p>
+
+<h5>(2).Data</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Data Objects 数据对象
+</span><span class='line'>Data Inputs 数据输入
+</span><span class='line'>Data Outputs 数据输出
+</span><span class='line'>Data Stores 数据存储</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(3).Connecting Objects</h5>
+
+<p>连接对象用来把各个流对象或流对象与其他信息连接起来</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>(1).Sequence Flows 序列流
+</span><span class='line'>表示流对象的前后执行顺序
+</span><span class='line'>
+</span><span class='line'>(2).Message Flows 消息流
+</span><span class='line'>表示公开流程或协作模型里参与者之间的消息,交互
+</span><span class='line'>
+</span><span class='line'>(3).Associations 结合关系
+</span><span class='line'>为流程中的元素关联信息或数据
+</span><span class='line'>
+</span><span class='line'>(4).Data Associations 数据结合关系
+</span><span class='line'>表示数据在流程、活动和数据对象之间的传递</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(4).Swimlanes</h5>
+
+<p>使用泳道来区分不同部门或者不同参与者的功能和职责。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Pools 池
+</span><span class='line'>Lanes 道</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(5).Artifacts</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Group 组
+</span><span class='line'>Text Annotation 文本注释</span></code></pre></td></tr></table></div></figure>
+
+
+<p>各种基本元素的示意图字节参考BPMN 2.0规范给出的图吧:</p>
+
+<p><img src="/images/workflow/BPMN_model_1.png"></p>
+
+<p><img src="/images/workflow/BPMN_model_2.png"></p>
+
+<p>几个在线画图的应用如<a href="www.processon.com">processon</a>都支持BPMN图形.</p>
+
+<p>参考:
+<a href="http://blog.csdn.net/ronghao100/article/details/6707276">BPMN这点事-BPMN基本元素（上）</a>
+<a href="http://blog.csdn.net/ronghao100/article/details/6711779">BPMN这点事-BPMN基本元素（下）</a></p>
+
+<h2 id="2.常见的工作流引擎">2.常见的工作流引擎</h2>
+
+
+<h4 id="2.1 jBPM">2.1 jBPM</h4>
+
+
+<p><a href="http://www.jbpm.org/">jBPM官网</a></p>
+
+<h4 id="2.2 Activiti">2.2 Activiti</h4>
+
+
+<p><a href="http://www.activiti.org/">Activiti官网</a>
+<a href="http://www.activiti.org/">Activiti用户手册</a>
+<a href="http://www.mossle.com/docs/activiti/index.html">Activiti 5.16 用户手册中文版</a></p>
+
+<h4 id="2.3 FixFlow">2.3 FixFlow</h4>
+
+
+<p>FixFlow国人开发的工作流引擎
+<a href="https://github.com/fixteam/fixflow">FixFlow github地址</a></p>
+
+<h4 id="2.4 如何选择">2.4 如何选择</h4>
+
+
+<p>主要从易用性,维护成本等几个角度考虑:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1.流程设计器的支持;
+</span><span class='line'>2.嵌入到业务的成本,比如对Spring的支持等;
+</span><span class='line'>3.事务支持;
+</span><span class='line'>4.使用范围</span></code></pre></td></tr></table></div></figure>
+
+
+<p>目前来看,Activiti的使用是最简单方便的.</p>
+
+<h2 id="3.Activiti">3.Activiti</h2>
+
+
+<p>支持最新BPMN2.0规范的开源工作流引擎Activit5,实现了对规范的绝大多数图元的定义(包括一些自己的扩展定义),能够满足企业工作流的各种复杂应用.
+它是一个无侵入的,支持嵌入式和独立部署的开源工作流引擎,是Tom Bayen离开jBoss加入Alfresco公司后的另立山头之作.</p>
+
+<p>关于Activiti的一些关键特性:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>支持的流程格式: BPMN2、xPDL、jPDL等
+</span><span class='line'>引擎核心: PVM（流程虚拟机）
+</span><span class='line'>技术前身: jBPM3、jBPM4
+</span><span class='line'>
+</span><span class='line'>数据库持久层: ORM MyBatis3
+</span><span class='line'>事务管理: MyBatis机制/Spring事务控制
+</span><span class='line'>数据库连接方式: Jdbc/DataSource
+</span><span class='line'>支持数据库: Oracle、SQL Server、MySQL等多数数据库
+</span><span class='line'>集成接口: SOAP、Mule、RESTful</span></code></pre></td></tr></table></div></figure>
+
+
+<p>几个关键的概念:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1.流程定义
+</span><span class='line'>BPMN语法定义的流程定义;比如请假流程定义:开始--&gt;申请人发起--&gt;直属leader审批--&gt;部门leader审批--&gt;人力审批--&gt;结束;
+</span><span class='line'>
+</span><span class='line'>2.流程实例
+</span><span class='line'>启动一个流程case,比如张三发起一个请假流程,这时候就会生成一个请假流程的实例;
+</span><span class='line'>
+</span><span class='line'>3.历史流程实例
+</span><span class='line'>已经结束的流程,还是可以被查询到
+</span><span class='line'>
+</span><span class='line'>4.任务
+</span><span class='line'>最常见的用户任务,即需要人参与的流程节点. 比如请假流程中的直属leader审批这个节点就会生成一个用户任务.</span></code></pre></td></tr></table></div></figure>
+
+
+<h4 id="3.1 如何使用">3.1 如何使用</h4>
+
+
+<p>这里主要大致说一下怎么结合Spring使用Activiti</p>
+
+<p>Maven依赖</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;dependency&gt;
+</span><span class='line'>  &lt;groupId&gt;org.activiti&lt;/groupId&gt;
+</span><span class='line'>  &lt;artifactId&gt;activiti-engine&lt;/artifactId&gt;
+</span><span class='line'>  &lt;version&gt;5.14&lt;/version&gt;
+</span><span class='line'>&lt;/dependency&gt;
+</span><span class='line'>&lt;dependency&gt;
+</span><span class='line'>  &lt;groupId&gt;org.activiti&lt;/groupId&gt;
+</span><span class='line'>  &lt;artifactId&gt;activiti-spring&lt;/artifactId&gt;
+</span><span class='line'>  &lt;version&gt;5.14&lt;/version&gt;
+</span><span class='line'>&lt;/dependency&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中activiti-spring主要是提供了SpringProcessEngineConfiguration这个配置入口,并且提供ProcessEngineFactoryBean这个流程引擎的Bean,通过这个Bean,我们就可以获取Activiti内部的各种Service:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>RepositoryService
+</span><span class='line'>RuntimeService
+</span><span class='line'>TaskService
+</span><span class='line'>HistoryService
+</span><span class='line'>ManagementService
+</span><span class='line'>IdentityService
+</span><span class='line'>FormService</span></code></pre></td></tr></table></div></figure>
+
+
+<p>activiti将其内部的表的建表语句和对应的Mybatis配置文件都打包在依赖jar包中,可以参考activiti-engine中的org.activiti.db这个包路径下的内容.</p>
+
+<p><a href="http://www.tuicool.com/articles/NBZNFvF">整合Acitiviti在线流程设计器</a>
+<a href="http://www.ibm.com/developerworks/cn/java/j-lo-activiti1/">Activiti - 新一代的开源 BPM 引擎</a>
+<a href="http://www.infoq.com/cn/articles/bpmn2-activiti5">http://www.infoq.com/cn/articles/bpmn2-activiti5</a></p>
+
+<h2 id="4.业务如何使用工作流">4.业务如何使用工作流</h2>
+
+
+<p>一般使用方式两种:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1.独立部署的工作流服务
+</span><span class='line'>对外服务方式: 接口
+</span><span class='line'>和业务交互方式: 接口或者MQ
+</span><span class='line'>优点: 彻底隔离工作流和业务;可以为多套业务提供服务;
+</span><span class='line'>缺点: 无法保证业务数据的强一致性
+</span><span class='line'>
+</span><span class='line'>2.嵌入到业务系统
+</span><span class='line'>和业务交互方式: 直接调用
+</span><span class='line'>优点: 能保证业务数据的强一致性
+</span><span class='line'>缺点: 每套业务都需要自己单独使用工作流(存在重复工作)</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1316,1138 +3643,6 @@ DefaultAopProxyFactory</p>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2016/02/03/strace/">Strace</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2016-02-03T13:55:05+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2016</span></span> <span class='time'>1:55 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><ul>
-<li><a href="#1.strace%E7%AE%80%E4%BB%8B">1.strace简介</a></li>
-<li><a href="#2.strace%E4%BD%BF%E7%94%A8Demo">2.strace使用Demo</a></li>
-</ul>
-
-
-<h2 id="1.strace简介">1.strace简介</h2>
-
-
-<p>strace用来跟踪进程执行时的系统调用和所接收的信号.</p>
-
-<p>Linux下进程不能直接访问硬件设备,当进程需要访问硬件设备(比如读取磁盘文件,接收网络数据等等)时,必须由用户态模式切换至内核态模式,通过系统调用访问硬件设备.strace可以跟踪到一个进程产生的系统调用,包括参数,返回值,执行消耗的时间.</p>
-
-<p>参数及意义如下,忽略了一些不大重要的(其实海报看一些没看懂的&hellip;):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>OPTIONS
-</span><span class='line'>       -c         计数,包括每个系统调用耗时,调用次数,错误次数.注意这里显示的时间是CPU花在内核上的时间.
-</span><span class='line'>       -D         跟踪程序作为被跟踪程序的子进程.
-</span><span class='line'>       -d          输出strace关于标准错误的调试信息
-</span><span class='line'>       -f          根据进程,包括其子进程(fork(2), vfork(2) and clone(2)这些系统调用)
-</span><span class='line'>       -ff         如果提供-o filename,则所有进程的跟踪结果输出到相应的filename.pid中,pid是各进程的进程号.
-</span><span class='line'>       -F          尝试跟踪vfork调用
-</span><span class='line'>       -h         帮助信息.
-</span><span class='line'>       -i          输出系统调用的入口指针
-</span><span class='line'>       -q         禁止输出attaching和detaching的信息
-</span><span class='line'>       -r          打印出每个系统调用的相对时间(相对于第一个系统调用)
-</span><span class='line'>       -t          在输出中的每一行前加上时间信息(时分秒)
-</span><span class='line'>       -tt         在输出中的每一行前加上时间信息,包含毫秒
-</span><span class='line'>       -ttt        微秒级输出,单位是秒(如1454483650.043891).
-</span><span class='line'>       -T          显示每个系统调用使用时间的百分比占比.
-</span><span class='line'>       -v          输出所有的系统调用.一些调用关于环境变量,状态,输入输出等调用由于使用频繁,默认不输出.
-</span><span class='line'>       -V          版本信息
-</span><span class='line'>       -x          以十六进制形式输出非标准字符串(non-ASCII strings)
-</span><span class='line'>       -xx         所有字符串以十六进制形式输出
-</span><span class='line'>       -y          Print paths associated with file descriptor arguments.
-</span><span class='line'>       -a column   设置返回值的输出位置,默认为40
-</span><span class='line'>       -b syscall  当某个系统调用被调用,trace程序就会detach.当前只支持execve. 这个选项在trace多线程的时候十分有用(需要-f选项)
-</span><span class='line'>       -e expr     指定一个表达式,用来控制如何跟踪.表达式格式如下:
-</span><span class='line'>
-</span><span class='line'>                             [qualifier=][!]value1[,value2]...
-</span><span class='line'>
-</span><span class='line'>                   其中qualifier只能是 trace,abbrev,verbose,raw,signal,read,write其中之,value是用来限定的符号或数字.默认的 qualifier是 trace.感叹号是否定符号.例如:
-</span><span class='line'>-eopen等价于 -e trace=open,表示只跟踪open调用.而-etrace!=open表示跟踪除了open以外的其他调用.
-</span><span class='line'>
-</span><span class='line'>       -e trace=set   只跟踪指定的系统调用.例如:-e trace=open,close,rean,write表示只跟踪这四个系统调用.默认的为set=all.
-</span><span class='line'>       -e trace=file   只跟踪有关文件操作的系统调用
-</span><span class='line'>       -e trace=process 只跟踪有关进程控制的系统调用.
-</span><span class='line'>       -e trace=network 只跟踪与网络有关的所有系统调用.
-</span><span class='line'>       -e trace=signal 只跟踪所有与系统信号有关的 系统调用
-</span><span class='line'>       -e trace=ipc 只跟踪所有与进程通讯有关的系统调用
-</span><span class='line'>       -e trace=desc 只跟踪所有与文件描述符有关的系统调用
-</span><span class='line'>       -e trace=memory 只跟踪所有与内存映射有关的系统调用
-</span><span class='line'>       -e signal=set 指定跟踪的系统信号.默认为all.如 signal=!SIGIO(或者signal=!io),表示不跟踪SIGIO信号.
-</span><span class='line'>       -o filename 将trace结果输出到文件
-</span><span class='line'>       -p pid      跟踪指定的进程pid
-</span><span class='line'>       -s strsize  指定输出的字符串的最大长度.默认为32.文件名一直全部输出.
-</span><span class='line'>       -S sortby   使用了-c选项的情况下的排序准则,可选包括time, calls, name, 和nothing,默认是time
-</span><span class='line'>       -u username 以username的UID和GID执行被跟踪的命令.</span></code></pre></td></tr></table></div></figure>
-
-
-<p>使用<a href="http://www.tecmint.com/cheat-command-line-cheat-sheet-for-linux-users/">cheat</a>可以看到strace通常使用方法:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ cheat strace
-</span><span class='line'># 基本使用
-</span><span class='line'>strace &lt;command&gt;
-</span><span class='line'>
-</span><span class='line'># 将trace结构写到文件,使用-o参数
-</span><span class='line'>strace -o strace.out &lt;other switches&gt; &lt;command&gt;
-</span><span class='line'>
-</span><span class='line'># 只trace open()这个系统调用
-</span><span class='line'>strace -e trace=open &lt;command&gt;
-</span><span class='line'>
-</span><span class='line'># trace所有会打开文件的系统调用
-</span><span class='line'>strace -e trace=file &lt;command&gt;
-</span><span class='line'>
-</span><span class='line'># trace所有和进程管理相关的系统调用,再查看一个进程的fork,wait和exec等步骤的时候很有用
-</span><span class='line'>strace -e trace=process &lt;command&gt;
-</span><span class='line'>
-</span><span class='line'># 当前进程fork出来的子进程也trace
-</span><span class='line'>strace -f &lt;command&gt;
-</span><span class='line'>
-</span><span class='line'># 每个系统调用计数,包括:调用时间,调用次数,错误次数
-</span><span class='line'>strace -c &lt;command&gt;
-</span><span class='line'>
-</span><span class='line'># trace某一个进程(可以指定多个pid)
-</span><span class='line'>strace -p &lt;pid&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>通常而言,我们使用-c选项找出最耗时的系统调用,再使用-e选项跟踪这个操作.</p>
-
-<p>参考: <a href="http://huoding.com/2015/10/16/474">手把手教你用Strace诊断问题</a></p>
-
-<h2 id="2.strace使用Demo">2.strace使用Demo</h2>
-
-
-<p>一直很好奇top命令的数据从哪里获取的.我这里的前提我知道的一点:top的数据肯定是从proc/pid/下的某个文件中读取的,有这个前提我们就可以来跟踪top命令执行过程中有那些系统调用了,打开了什么文件等.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$ strace -o top.strace -e trace=open top
-</span><span class='line'>
-</span><span class='line'>//找出1381这个进程的信息来源
-</span><span class='line'>[baoqiu.xiao@Xxx ~]$ grep 1381 top.strace 
-</span><span class='line'>open("/proc/1381/stat", O_RDONLY)       = 4
-</span><span class='line'>open("/proc/1381/statm", O_RDONLY)      = 4</span></code></pre></td></tr></table></div></figure>
-
-
-<p>从上面的strace中,我们知道,top的信息来源于两个文件,stat和statm.这两个文件的介绍参考上一篇博客: <a href="http://xiaobaoqiu.github.io/blog/2016/01/28/who-eat-jvms-memory/.">http://xiaobaoqiu.github.io/blog/2016/01/28/who-eat-jvms-memory/.</a></p>
-
-<p>参考:
-<a href="http://linoxide.com/linux-command/linux-strace-command-examples/">8 Options to Trace/Debug Programs using Linux strace Command</a></p>
-
-<p><a href="http://huoding.com/tag/strace">火丁笔记 strace</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2016/01/28/who-eat-jvms-memory/">Who Eats JVM's Memory</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2016-01-28T13:40:27+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>28</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>1:40 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><ul>
-<li><a href="#1.JVM%E5%86%85%E5%AD%98%E5%8D%A0%E7%94%A8%E4%B8%8A%E9%99%90">1.JVM内存占用上限</a></li>
-<li><a href="#2.JVM%20RES%E6%95%B0%E6%8D%AE%E6%9D%A5%E6%BA%90">2.JVM RES数据来源</a>
-
-<ul>
-<li><a href="#2.1%20/proc/pid%E5%86%85%E5%AE%B9">2.1 /proc/pid内容</a></li>
-<li><a href="#2.2%20/proc/pid%E4%B8%8B%E5%86%85%E5%AD%98%E7%9B%B8%E5%85%B3%E6%96%87%E4%BB%B6">2.2 /proc/pid下内存相关文件</a></li>
-<li><a href="#2.3%20top%E5%91%BD%E4%BB%A4RES%E6%95%B0%E6%8D%AE%E6%9D%A5%E6%BA%90">2.3 top命令RES数据来源</a></li>
-</ul>
-</li>
-<li><a href="#3.%E8%B0%81%E5%90%83%E4%BA%86JVM%E5%86%85%E5%AD%98">3.谁吃了JVM内存</a></li>
-</ul>
-
-
-<h2 id="1.JVM内存占用上限">1.JVM内存占用上限</h2>
-
-
-<p>关于JVM的一些基础知识,可以看 <a href="http://blog.jamesdbloom.com/JVMInternals.html">JVM Internals</a>,曾经我尝试翻译过,地址:<a href="http://xiaobaoqiu.github.io/blog/2014/09/11/internal-jvm/">http://xiaobaoqiu.github.io/blog/2014/09/11/internal-jvm/</a></p>
-
-<p>这里要说的是,那些参数决定了JVM内存上限,比如常用的内存配置如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>-Xms1024m -Xmx1024m -XX:PermSize=256m</span></code></pre></td></tr></table></div></figure>
-
-
-<p>说明堆(Heap)的大小1G,永久代大小256M.</p>
-
-<p>另外,64位的操作系统(Linux服务器),线程的栈空间大小最大为1M:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ...]$ java -XX:+PrintFlagsFinal -version | grep ThreadStackSize
-</span><span class='line'>     intx CompilerThreadStackSize                   = 0               {pd product}        
-</span><span class='line'>     intx ThreadStackSize                           = 1024            {pd product}        
-</span><span class='line'>     intx VMThreadStackSize                         = 1024            {pd product}        
-</span><span class='line'>java version "1.7.0_45"
-</span><span class='line'>Java(TM) SE Runtime Environment (build 1.7.0_45-b18)
-</span><span class='line'>Java HotSpot(TM) 64-Bit Server VM (build 24.45-b08, mixed mode)</span></code></pre></td></tr></table></div></figure>
-
-
-<p>JVM的占用上限由一下几个因素决定:</p>
-
-<pre><code>1. 堆内存
-2. 持久代
-3. 线程栈空间
-4. 堆外内存
-</code></pre>
-
-<p>堆外内存参考: <a href="http://www.infoq.com/cn/news/2014/12/external-memory-heap-memory">http://www.infoq.com/cn/news/2014/12/external-memory-heap-memory</a></p>
-
-<p>线程数可以如下得到:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$ ps -m 1381 | wc -l
-</span><span class='line'>176</span></code></pre></td></tr></table></div></figure>
-
-
-<p>通常而言,我们只需要计算堆内存,持久代再加上线程栈空间.比如我们的本地一个小服务:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Max Memory = Heap(1G) + Perm(256M) + 176 * Thread stack (1M)</span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<h2 id="2.JVM RES数据来源">2.JVM RES数据来源</h2>
-
-
-<p>首先得知道top命令中RES数据从哪里来的.再Linux上,万物皆文件,因此RES的数据也是来源于文件.</p>
-
-<h4 id="2.1 /proc/pid内容">2.1 /proc/pid内容</h4>
-
-
-<p>下面是一个典型的Tomcat应用的线程下的内容,进程号为1381,简单说描述每个文件的内容或者作用:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>attr         进程的属性
-</span><span class='line'>autogroup
-</span><span class='line'>auxv
-</span><span class='line'>cgroup
-</span><span class='line'>clear_refs
-</span><span class='line'>cmdline       启动进程时执行的命令
-</span><span class='line'>coredump_filter
-</span><span class='line'>cpuset
-</span><span class='line'>cwd           指向进程当前工作目录的软链
-</span><span class='line'>environ       进程执行时使用的环境变量
-</span><span class='line'>exe           这个就是起这个进程的执行文件
-</span><span class='line'>fd            进程打开的文件描述符,可以知道具体的文件路径
-</span><span class='line'>fdinfo
-</span><span class='line'>io            进程的io统计信息
-</span><span class='line'>limits            进程的软限制，硬限制等信息
-</span><span class='line'>loginuid
-</span><span class='line'>maps          进程相关的内存映射信息
-</span><span class='line'>mem           代进程持有的内存,不可读
-</span><span class='line'>mountinfo
-</span><span class='line'>mounts
-</span><span class='line'>mountstats
-</span><span class='line'>net
-</span><span class='line'>numa_maps
-</span><span class='line'>oom_adj       调节oom-killer的参数
-</span><span class='line'>oom_score         oom-killer打分,当需要是,oom-killer会根据各个进程的分数,kill掉某个进程
-</span><span class='line'>oom_score_adj         调节oom-killer的参数
-</span><span class='line'>pagemap       进程的虚拟页和物理内存页或者swap区的映射关系
-</span><span class='line'>personality
-</span><span class='line'>root          指向进程根目录的软链
-</span><span class='line'>sched
-</span><span class='line'>schedstat
-</span><span class='line'>sessionid
-</span><span class='line'>smaps             This file shows memory consumption for each of the process's mappings.
-</span><span class='line'>stack             This file provides a symbolic trace of the function calls in this process's kernel stack
-</span><span class='line'>stat          进程的状态
-</span><span class='line'>statm         进程使用的内存的状态
-</span><span class='line'>status            进程状态信息,比stat/statm更具可读性
-</span><span class='line'>syscall
-</span><span class='line'>task          进程包含的线程，子目录名是线程的ID
-</span><span class='line'>wchan</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参考: <a href="http://man7.org/linux/man-pages/man5/proc.5.html">http://man7.org/linux/man-pages/man5/proc.5.html</a></p>
-
-<h4 id="2.2 /proc/pid下内存相关文件">2.2 /proc/pid下内存相关文件</h4>
-
-
-<p>和内存相关的文件主要包括(解析各个文件的时间不同,可能内容上存在对不上的情况):</p>
-
-<pre><code>1. statm: 
-2. stat:    
-3. status
-4. maps
-5. smaps
-</code></pre>
-
-<p><em>1. statm</em></p>
-
-<p>进程的内存使用,注意单位是page,内容的解析参考2.3节的内容.</p>
-
-<p><em>2. stat</em></p>
-
-<p>1381这个进程的stat文件及各个字段的含义(含义参见proc命令手册: man proc &ndash;> 搜stat, 见/proc/[pid]/stat):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>1381 pid             进程号
-</span><span class='line'>(java)    comm            应用程序或命令的名字
-</span><span class='line'>S state           任务的状态(RSDZTW中一个字符),R:runnign, S:sleeping in an interruptible wait, D:waiting in uninterruptible disk sleep, Z:zombie, T is  traced  or  stopped, W is paging
-</span><span class='line'>1 ppid            父进程ID
-</span><span class='line'>1374  pgrp            线程组号
-</span><span class='line'>1374  session         该任务所在的会话组ID
-</span><span class='line'>0 tty_nr          进程的控制终端设备号
-</span><span class='line'>-1    tpgid           进程控制终端的前台任务id
-</span><span class='line'>4202496   flags           进程内核标志位
-</span><span class='line'>988135    minflt          任务不需要从硬盘拷数据而发生的缺页(minor faults)的次数
-</span><span class='line'>191   cminflt         任务的所有的waited-for子进程曾经发生的次缺页的次数累计值
-</span><span class='line'>252944    majflt          任务需要从硬盘拷数据而发生的缺页(minor faults)的次数
-</span><span class='line'>5 cmajflt             任务的所有的waited-for子进程需要从硬盘拷数据而发生的缺页(minor faults)的次数
-</span><span class='line'>229942    utime           任务在用户态(User mode)运行的时间，单位为时钟周期(clock ticks)
-</span><span class='line'>102219    stime           任务在内核态(kernel mode)运行的时间，单位为时钟周期(clock ticks)
-</span><span class='line'>0 cutime          任务的所有的waited-for子进程曾经在用户态运行的时间累计值，单位为时钟周期(clock ticks)
-</span><span class='line'>0 cstime          任务的所有的waited-for子进程曾经在核心态运行的时间累计值，单位为时钟周期(clock ticks)
-</span><span class='line'>20    priority            任务的动态优先级
-</span><span class='line'>0 nice            任务的静态优先级
-</span><span class='line'>179   num_threads     进程的线程数
-</span><span class='line'>0 itrealvalue     由于计时间隔导致的下一个 SIGALRM 发送进程的时延,单位jiffies
-</span><span class='line'>2107287914    starttime       任务启动的时间,单位为jiffies
-</span><span class='line'>3968053248    vsize           该任务的虚拟地址空间大小,单位byte
-</span><span class='line'>122542    rss             任务当前驻留物理地址空间的大小,单位page
-</span><span class='line'>18446744073709551615  rsslim          任务能驻留物理地址空间的最大值,单位byte
-</span><span class='line'>4194304   startcode       任务在虚拟地址空间的代码段的起始地址
-</span><span class='line'>4196452   endcode     任务在虚拟地址空间的代码段的结束地址
-</span><span class='line'>140734635670848   startstack      任务在虚拟地址空间的栈的结束地址
-</span><span class='line'>140734635653408   kstkesp         ESP(stack pointer, 栈指针)的当前值
-</span><span class='line'>250460799149  kstkeip         EIP(instruction pointer, 指令指针)的当前值
-</span><span class='line'>0 signal          pending信号的位图(bitmap),十进制数显示
-</span><span class='line'>0 blocked         blocked信号的位图(bitmap),十进制数显示
-</span><span class='line'>2 sigignore       ignored信号的位图(bitmap),十进制数显示
-</span><span class='line'>16800973  sigcatch        caught信号的位图(bitmap),十进制数显示
-</span><span class='line'>18446744073709551615  wchan           进程等待的channel.是系统调用地址
-</span><span class='line'>0 nswap           被swapped的页数(当前不用)
-</span><span class='line'>0 cnswap      所有子进程被swapped的页数的和(当前不用)
-</span><span class='line'>17    exit_signal     该进程结束时,向父进程所发送的信号
-</span><span class='line'>3 processor       进程最后一次执行的CPU号
-</span><span class='line'>0 rt_priority     实时调度优先级
-</span><span class='line'>0 policy          调度策略
-</span><span class='line'>4 delayacct_blkio_ticks   IO阻塞延迟汇总,单位时钟周期(clock ticks)
-</span><span class='line'>0 guest_time      进程的guest time(指费再运行guest操作系统上的时间),单位时钟周期(clock ticks)
-</span><span class='line'>0 cguest_time     子进程guest time</span></code></pre></td></tr></table></div></figure>
-
-
-<p>里面包含我们熟悉的RSS数据,注意其单位是page.</p>
-
-<p><em>3. status</em></p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx /proc/1381]$ sudo cat status
-</span><span class='line'>Name: Java                                        /*当前进程的命令*/
-</span><span class='line'>State:    S (sleeping)                           /*当前进程状态: "R (running)", "S (sleeping)", "D (disk sleep)", "T (stopped)", "T (tracing stop)", "Z (zombie)", or "X (dead)"*/
-</span><span class='line'>Tgid: 1381                                      /*线程组号*/
-</span><span class='line'>Pid:  1381                                             /*线程id*/
-</span><span class='line'>PPid: 1                                            /*父进程的pid*/
-</span><span class='line'>TracerPid:    0                                     /*跟踪进程的pid,如果没有就是0*/
-</span><span class='line'>Uid:  40001   40001   40001   40001      /*uid euid suid fsuid*/
-</span><span class='line'>Gid:  40001   40001   40001   40001      /*gid egid sgid fsgid*/
-</span><span class='line'>Utrace:   0
-</span><span class='line'>FDSize:   512                                        /*FDSize是当前分配的文件描述符*/
-</span><span class='line'>Groups:   40001                             /*这里的groups表示启动这个进程的用户所在的组*/
-</span><span class='line'>VmPeak:    3880116 kB                   /*当前进程运行过程中占用内存的峰值*/
-</span><span class='line'>VmSize:    3875052 kB                         /*进程现在正在占用的内存*/
-</span><span class='line'>VmLck:           0 kB                               /*进程已经锁住的物理内存的大小.锁住的物理内存不能交换到硬盘*/
-</span><span class='line'>VmHWM:      766000 kB                    /*程序得到分配到物理内存的峰值*/
-</span><span class='line'>VmRSS:      490168 kB                          /*程序现在使用的物理内存*/
-</span><span class='line'>VmData:    3718132 kB                   /*进程数据段的大小*/
-</span><span class='line'>VmStk:          88 kB                              /*进程堆栈段的大小*/
-</span><span class='line'>VmExe:           4 kB                              /*进程代码的大小*/
-</span><span class='line'>VmLib:       15720 kB                          /*进程所使用LIB库的大小*/
-</span><span class='line'>VmPTE:        2280 kB                           /*进程所使用LIB库的大小*/
-</span><span class='line'>VmSwap:     303616 kB                   /*进程占用Swap的大小*/
-</span><span class='line'>Threads:  179                                /*当前进程组线程数*/
-</span><span class='line'>SigQ: 0/62812                               /*表示当前待处理信号的个数*/
-</span><span class='line'>SigPnd:   0000000000000000             /*屏蔽位,存储了该线程的待处理信号,等同于线程的PENDING信号*/
-</span><span class='line'>ShdPnd:   0000000000000000      /*屏蔽位,存储了该线程组的待处理信号.等同于进程组的PENDING信号*/
-</span><span class='line'>SigBlk:   0000000000000000             /*放被阻塞的信号,等同于BLOCKED信号*/
-</span><span class='line'>SigIgn:   0000000000000002            /*存放被忽略的信号,等同于IGNORED信号*/
-</span><span class='line'>SigCgt:   2000000181005ccd            /*存放捕获的信号,等同于CAUGHT信号*/
-</span><span class='line'>CapInh:   0000000000000000
-</span><span class='line'>CapPrm:   0000000000000000
-</span><span class='line'>CapEff:   0000000000000000
-</span><span class='line'>CapBnd:   ffffffffffffffff
-</span><span class='line'>Cpus_allowed: f
-</span><span class='line'>Cpus_allowed_list:    0-3
-</span><span class='line'>Mems_allowed: 00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
-</span><span class='line'>Mems_allowed_list:    0
-</span><span class='line'>voluntary_ctxt_switches:  35
-</span><span class='line'>nonvoluntary_ctxt_switches:   9</span></code></pre></td></tr></table></div></figure>
-
-
-<p>关于其中的TracerPid,在Linux下,我们可以使用strace来跟踪命令的运行.</p>
-
-<p>参考: <a href="http://blog.csdn.net/zjl410091917/article/details/8075691">http://blog.csdn.net/zjl410091917/article/details/8075691</a></p>
-
-<p><em>4. maps</em></p>
-
-<p>maps内容如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@l-crm3.des.dev.cn0 ~]$ head -30 maps
-</span><span class='line'>00400000-00401000 r-xp 00000000 fc:07 1179664                            /home/q/java/jdk1.7.0_45/bin/java
-</span><span class='line'>00600000-00601000 rw-p 00000000 fc:07 1179664                            /home/q/java/jdk1.7.0_45/bin/java
-</span><span class='line'>00b78000-00bed000 rw-p 00000000 00:00 0                                  [heap]
-</span><span class='line'>aff80000-100000000 rw-p 00000000 00:00 0 
-</span><span class='line'>3a4fe00000-3a4fe20000 r-xp 00000000 fc:02 2613                           /lib64/ld-2.12.so
-</span><span class='line'>3a5001f000-3a50020000 r--p 0001f000 fc:02 2613                           /lib64/ld-2.12.so
-</span><span class='line'>3a50020000-3a50021000 rw-p 00020000 fc:02 2613                           /lib64/ld-2.12.so
-</span><span class='line'>3a50021000-3a50022000 rw-p 00000000 00:00 0 
-</span><span class='line'>3a50200000-3a5038a000 r-xp 00000000 fc:02 25297                          /lib64/libc-2.12.so
-</span><span class='line'>3a5038a000-3a50589000 ---p 0018a000 fc:02 25297                          /lib64/libc-2.12.so
-</span><span class='line'>3a50589000-3a5058d000 r--p 00189000 fc:02 25297                          /lib64/libc-2.12.so
-</span><span class='line'>3a5058d000-3a5058e000 rw-p 0018d000 fc:02 25297                          /lib64/libc-2.12.so</span></code></pre></td></tr></table></div></figure>
-
-
-<p>第一列代表内存段的虚拟地址
-第二列代表执行权限虚拟内存的权限,r=读,w=写,x=,s=共享,p=私有
-第三列代表在进程地址里的偏移量
-第四列映射文件的主设备号和次设备号
-第五列映像文件的节点号,即inode
-第六列是映像文件的路径</p>
-
-<p>参考: <a href="http://stackoverflow.com/questions/1401359/understanding-linux-proc-id-maps">http://stackoverflow.com/questions/1401359/understanding-linux-proc-id-maps</a></p>
-
-<p><em>5. smaps</em></p>
-
-<p>smaps代表进程的各个线程的内存消耗</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx /proc/1381]$ sudo cat smaps
-</span><span class='line'>在smaps文件中,每一条记录(每块)表示进程虚拟内存空间中一块连续的区域.
-</span><span class='line'>
-</span><span class='line'>...
-</span><span class='line'>00b78000-00bed000 rw-p 00000000 00:00 0                                  [heap]       /*和maps中的内容相同*/
-</span><span class='line'>Size:                468 kB                   /*表示该映射区域在虚拟内存空间中的大小*/
-</span><span class='line'>Rss:                  76 kB                    /*表示该映射区域当前在物理内存中实际占用了多少空间*/
-</span><span class='line'>Pss:                  76 kB                    /*该虚拟内存区域平摊计算后使用的物理内存大小*/
-</span><span class='line'>Shared_Clean:          0 kB             /*和其他进程共享的未被改写的page的大小*/
-</span><span class='line'>Shared_Dirty:          0 kB              /*和其他进程共享的被改写的page的大小*/
-</span><span class='line'>Private_Clean:         0 kB              /*未被改写的私有页面的大小*/
-</span><span class='line'>Private_Dirty:        76 kB
-</span><span class='line'>Referenced:           76 kB
-</span><span class='line'>Anonymous:            76 kB
-</span><span class='line'>AnonHugePages:         0 kB
-</span><span class='line'>Swap:                144 kB                 /*由于物理内存不足被swap到交换空间的大小*/
-</span><span class='line'>KernelPageSize:        4 kB             /*操作系统一个页面大小*/
-</span><span class='line'>MMUPageSize:           4 kB           /*CPU页面大小, MMU表示内存管理单元(Memory Management Unit)*/
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<p>关于其中的Pss,因为进程之间存在内存共享,比如该区域所映射的物理内存部分同时也被另一个进程映射了,且该部分物理内存的大小为1000KB(Rss会是1000KB),那么该进程分摊其中一半的内存,即Pss=500KB。</p>
-
-<p>内存页引用计数>1,则表示是shared,否则是private.</p>
-
-<p>参考: <a href="http://stackoverflow.com/questions/9922928/what-does-pss-mean-in-proc-pid-smaps">stackoverflow: what does pss mean in /proc/pid/smaps</a></p>
-
-<p><a href="http://unix.stackexchange.com/questions/33381/getting-information-about-a-process-memory-usage-from-proc-pid-smaps">Getting information about a process' memory usage from /proc/pid/smaps</a></p>
-
-<p>另外,当前系统的page大小可以通过getconf命令获取,比如我当前的服务器page大小为4k:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$ getconf PAGESIZE
-</span><span class='line'>4096</span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<h4 id="2.3 top命令RES数据来源">2.3 top命令RES数据来源</h4>
-
-
-<p>top命令RES数据来源于/proc/PID/statm中的第二个字段.还是1381这个进程的statm文件内容和对应的top信息如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx /proc/1381]$ sudo cat statm
-</span><span class='line'>968763 122480 558 1 0 929555 0
-</span><span class='line'>
-</span><span class='line'>[baoqiu.xiao@Xxx ~]$ top -p 1381
-</span><span class='line'>  PID  USER      PR   NI  VIRT     RES     SHR  S  %CPU  %MEM    TIME+       COMMAND                                                                                                                             
-</span><span class='line'> 1381 tomcat    20   0   3784m  478m 2228  S  2.0       6.1           54:53.36    java</span></code></pre></td></tr></table></div></figure>
-
-
-<p>/proc/[pid]/statm文件的几个字段的具体意义如下(注意单位是page):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>size         (1) total program size(same as VmSize in /proc/[pid]/status)
-</span><span class='line'>resident      (2) (resident set size)(same as VmRSS in /proc/[pid]/status),即RSS
-</span><span class='line'>share         (3) shared pages (i.e., backed by a file)
-</span><span class='line'>text          (4) text (code)
-</span><span class='line'>lib               (5) library (unused in Linux 2.6)
-</span><span class='line'>data          (6) data + stack
-</span><span class='line'>dt                (7) dirty pages (unused in Linux 2.6)</span></code></pre></td></tr></table></div></figure>
-
-
-<p>可以验证,1381这个进程的RES大小来源, 和top命令中RES的数字是吻合的:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>122480 * 4096 / (1024 * 1024) = 478.4375 MB</span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<h2 id="3.谁吃了JVM内存">3.谁吃了JVM内存</h2>
-
-
-<p>写到这发现谢步下去了,因为我一开始就写错了.</p>
-
-<p>想知道谁吃了我们JVM的内存,可以jmap dump下来,用MAT分析一下.</p>
-
-<p>想知道谁吃了服务器的内存,建议看看参考里面的<a href="http://blog.yufeng.info/archives/2456">Linux Used内存到底哪里去了</a>这篇文章.</p>
-
-<p>参考:
-<a href="http://tldp.org/LDP/khg/HyperNews/get/memory/linuxmm.html">Linux Memory Management Overview</a></p>
-
-<p><a href="https://techtalk.intersec.com/2013/07/memory-part-2-understanding-process-memory/">Understanding Process memory</a></p>
-
-<p><a href="http://lwn.net/Articles/230975/">How much memory are applications really using</a></p>
-
-<p><a href="http://tldp.org/LDP/tlk/mm/memory.html">Memory Management</a></p>
-
-<p><a href="http://blog.yufeng.info/archives/2456">Linux Used内存到底哪里去了</a></p>
-
-<p><a href="http://www.361way.com/whereis-the-memory/4036.html">也看linux内存去哪儿了</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-12-22T10:43:49+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>22</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>10:43 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><ul>
-<li><a href="#1.Protocol%20Buffers%E7%AE%80%E4%BB%8B">1.Protocol Buffers简介</a></li>
-<li><a href="#2.Protocol%20Buffers%E5%AE%89%E8%A3%85">2.Protocol Buffers安装</a></li>
-<li><a href="#3.Protocol%20Buffers%20Demo%20in%20Java">3.Protocol Buffers Demo in Java</a></li>
-<li><a href="#4.%E8%87%AA%E6%8F%8F%E8%BF%B0%E6%B6%88%E6%81%AF">4.自描述消息</a></li>
-<li><a href="#5.%E5%BA%8F%E5%88%97%E5%8C%96%E6%80%A7%E8%83%BD">5.序列化性能</a></li>
-</ul>
-
-
-<h2>1.Protocol Buffers简介</h2>
-
-<p>最近项目中接触到久闻大名的Protocol Buffers。简单学习Protocol Buffers是什么，能做什么，为什么需要它，怎么使用它。</p>
-
-<p>Protocol Buffers官网：<a href="https://developers.google.com/protocol-buffers/">https://developers.google.com/protocol-buffers/</a></p>
-
-<p>Protocol Buffers官网(中文)：<a href="https://developers.google.com/protocol-buffers/?hl=zh-CN">https://developers.google.com/protocol-buffers/?hl=zh-CN</a></p>
-
-<p>Git地址：<a href="https://github.com/google/protobuf">https://github.com/google/protobuf</a></p>
-
-<p>Java API：<a href="https://developers.google.com/protocol-buffers/docs/reference/java/?hl=zh-CN">https://developers.google.com/protocol-buffers/docs/reference/java/?hl=zh-CN</a></p>
-
-<p>proro文件的编写指南：<a href="https://developers.google.com/protocol-buffers/docs/style?hl=zh-CN">https://developers.google.com/protocol-buffers/docs/style?hl=zh-CN</a></p>
-
-<p>Java使用指南：<a href="https://developers.google.com/protocol-buffers/docs/javatutorial?hl=zh-CN">https://developers.google.com/protocol-buffers/docs/javatutorial?hl=zh-CN</a></p>
-
-<p>protocol buffers是google提供的一种将结构化数据进行序列化和反序列化的方法，其优点是语言中立，平台中立，可扩展性好，目前在google内部大量用于数据存储，通讯协议等方面。语言中立说明和语言无关，可以作为跨语言的通信协议。平台中立说明Protocol Buffers可以作为不同平台之间的通信协议；可扩展性好可以理解为protocol buffers支持嵌套。</p>
-
-<p>PB在功能上类似XML，但是序列化后的数据更小，解析更快，使用上更简单。用户只要按照proto语法在.proto文件中定义好数据的结构，就可以使用PB提供的工具(protoc)自动生成处理数据的代码，使用这些代码就能在程序中方便的通过各种数据流读写数据。</p>
-
-<p>PB目前支持Java, C++和Python3种语言(截止目前已经额外支持C#，Ruby和Object-C)。另外，PB还提供了很好的向后兼容，即旧版本的程序可以正常处理新版本的数据，新版本的程序也能正常处理旧版本的数据。</p>
-
-<h2>2.Protocol Buffers安装</h2>
-
-<p>1.下载源码
-从<a href="https://github.com/google/protobuf%E4%B8%8B%E8%BD%BD%E6%BA%90%E7%A0%81">https://github.com/google/protobuf%E4%B8%8B%E8%BD%BD%E6%BA%90%E7%A0%81</a></p>
-
-<p>2.根据README安装
-(1).使用./autogen.sh生成configure脚本；
-(2).配置./configure，默认在/usr/local下，可以指定路径
-(3).make
-(4).make check
-(5).make install</p>
-
-<p>这里安装的是最新的Protoc 3。安装之后，就会有一个根据Message文件产生对应代码文件的工具protoc：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Work/JavaCode/ProtobufDemo/com/qunar/scm/protobuf$ protoc --version
-</span><span class='line'>libprotoc 3.0.0</span></code></pre></td></tr></table></div></figure>
-
-
-<p>在帮助文当中就可以看到如何生成各种类型的文件的方式：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  --cpp_out=OUT_DIR           Generate C++ header and source.
-</span><span class='line'>  --csharp_out=OUT_DIR        Generate C# source file.
-</span><span class='line'>  --java_out=OUT_DIR          Generate Java source file.
-</span><span class='line'>  --javanano_out=OUT_DIR      Generate Java Nano source file.
-</span><span class='line'>  --objc_out=OUT_DIR          Generate Objective C header and source.
-</span><span class='line'>  --python_out=OUT_DIR        Generate Python source file.
-</span><span class='line'>  --ruby_out=OUT_DIR          Generate Ruby source file.</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>3.Protocol Buffers Demo in Java</h2>
-
-<p>参考官网的一个例子，message是定义protobuf的关键词，Person表示一个人的信息，包括id，name，email和phone四个信息，其中name和id是必须的，email是可选的，phone是数组形式并且phone本身也是一种消息(message)，PhoneNumber内部包含了枚举类型PhoneType，主要枚举的定义和Java有点不同，这里是分号分割的。1234这种序号表示字段在数据中的顺序，新增字段依次增加这个序号就行。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>package tutorial;
-</span><span class='line'>
-</span><span class='line'>option java_package = "com.example.tutorial";
-</span><span class='line'>option java_outer_classname = "AddressBookProtos";
-</span><span class='line'>
-</span><span class='line'>message Person {
-</span><span class='line'>  required string name = 1;
-</span><span class='line'>  required int32 id = 2;
-</span><span class='line'>  optional string email = 3;
-</span><span class='line'>
-</span><span class='line'>  enum PhoneType {
-</span><span class='line'>    MOBILE = 0;
-</span><span class='line'>    HOME = 1;
-</span><span class='line'>    WORK = 2;
-</span><span class='line'>  }
-</span><span class='line'>
-</span><span class='line'>  message PhoneNumber {
-</span><span class='line'>    required string number = 1;
-</span><span class='line'>    optional PhoneType type = 2 [default = HOME];
-</span><span class='line'>  }
-</span><span class='line'>
-</span><span class='line'>  repeated PhoneNumber phone = 4;
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>message AddressBook {
-</span><span class='line'>  repeated Person person = 1;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>string和int32是protobuf支持的基本类型，所有支持的类型及其含义如下：</p>
-
-<p><img src="/images/protocol/protobuf_field_type.png"></p>
-
-<p>如下生成message对应的Java文件如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>protoc -I=. --java_out=. ./addressbook.proto</span></code></pre></td></tr></table></div></figure>
-
-
-<p>生产数据方直接使用对应的Builder生成对象，然后往流里面写数据：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>    final String FILE_NAME = "protobuf.stream";
-</span><span class='line'>
-</span><span class='line'>    //build
-</span><span class='line'>    AddressBookProtos.Person me =
-</span><span class='line'>            AddressBookProtos.Person.newBuilder()
-</span><span class='line'>                    .setId(1234)
-</span><span class='line'>                    .setName("baoiu.xiao")
-</span><span class='line'>                    .setEmail("baoiu.xiao@example.com")
-</span><span class='line'>                    .addPhone(AddressBookProtos.Person.PhoneNumber.newBuilder()
-</span><span class='line'>                            .setNumber("15910645718")
-</span><span class='line'>                            .setType(AddressBookProtos.Person.PhoneType.HOME))
-</span><span class='line'>                    .build();
-</span><span class='line'>
-</span><span class='line'>    FileOutputStream FileOutputStream = new FileOutputStream(FILE_NAME);
-</span><span class='line'>    //往流里面写数据
-</span><span class='line'>    me.writeTo(FileOutputStream);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>消费数据方可以直接从流中读取并解析对象：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>    final String FILE_NAME = "protobuf.stream";
-</span><span class='line'>
-</span><span class='line'>    FileInputStream fis = new FileInputStream(FILE_NAME);
-</span><span class='line'>
-</span><span class='line'>    //从流里面解析出AddressBookProtos.Person对象
-</span><span class='line'>    AddressBookProtos.Person me = AddressBookProtos.Person.parseFrom(fis);
-</span><span class='line'>
-</span><span class='line'>    System.out.println(me.toString());</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>4.自描述消息</h2>
-
-<h2>5.序列化性能</h2>
-
-<p>参考git上的各种序列化的测试结果：
-<a href="https://github.com/eishay/jvm-serializers/wiki">https://github.com/eishay/jvm-serializers/wiki</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-11-23T20:48:42+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>8:48 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>今天发布线上碰到一个小问题，Memcached存储的数据类型包括枚举的时候，当修改枚举的包路径之后，会出现问题。
-异常信息如下，比较直观，就是数据的反序列化失败：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[2015-11-23 18:04:45 ERROR net.rubyeye.xmemcached.transcoders.BaseSerializingTranscoder:113] Caught CNFE decoding 944 bytes of data
-</span><span class='line'>java.lang.ClassNotFoundException: Xxx.Xxx.Xxx.Xxx.RoomStatus
-</span><span class='line'>        at org.apache.catalina.loader.WebappClassLoader.loadClass(WebappClassLoader.java:1702) ~[catalina.jar:7.0.47]
-</span><span class='line'>        at org.apache.catalina.loader.WebappClassLoader.loadClass(WebappClassLoader.java:1547) ~[catalina.jar:7.0.47]
-</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.BaseSerializingTranscoder$1.resolveClass(BaseSerializingTranscoder.java:102) ~[xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at java.io.ObjectInputStream.readNonProxyDesc(ObjectInputStream.java:1612) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readClassDesc(ObjectInputStream.java:1517) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readEnum(ObjectInputStream.java:1725) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1347) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.defaultReadFields(ObjectInputStream.java:1990) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readSerialData(ObjectInputStream.java:1915) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readOrdinaryObject(ObjectInputStream.java:1798) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1350) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readObject(ObjectInputStream.java:370) ~[na:1.7.0_45]
-</span><span class='line'>        at java.util.ArrayList.readObject(ArrayList.java:771) ~[na:1.7.0_45]
-</span><span class='line'>        at sun.reflect.GeneratedMethodAccessor41.invoke(Unknown Source) ~[na:na]
-</span><span class='line'>        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43) ~[na:1.7.0_45]
-</span><span class='line'>        at java.lang.reflect.Method.invoke(Method.java:606) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectStreamClass.invokeReadObject(ObjectStreamClass.java:1017) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readSerialData(ObjectInputStream.java:1893) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readOrdinaryObject(ObjectInputStream.java:1798) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1350) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.defaultReadFields(ObjectInputStream.java:1990) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readSerialData(ObjectInputStream.java:1915) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readOrdinaryObject(ObjectInputStream.java:1798) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1350) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readObject(ObjectInputStream.java:370) ~[na:1.7.0_45]
-</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.BaseSerializingTranscoder.deserialize(BaseSerializingTranscoder.java:106) ~[xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.SerializingTranscoder.decode0(SerializingTranscoder.java:92) [xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.SerializingTranscoder.decode(SerializingTranscoder.java:86) [xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.fetch0(XMemcachedClient.java:630) [xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.get0(XMemcachedClient.java:1030) [xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.get(XMemcachedClient.java:988) [xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.get(XMemcachedClient.java:999) [xmemcached-1.4.1.jar:na]</span></code></pre></td></tr></table></div></figure>
-
-
-<p>场景如下：</p>
-
-<ol>
-<li>Memcached已经有数据，数据中包含RoomStatus数据；</li>
-<li>修改了枚举的包路径，发布线上；</li>
-<li>从Cache中读取之前的数据会出现枚举反序列化异常；</li>
-</ol>
-
-
-<p>在本地代码中重现了一下问题，并看了一下使用枚举的情况下其他可能处心问题的场景，结论如下（前提是Cache中已经存在使用RoomStatus数据）：</p>
-
-<ol>
-<li>修改包路径，会导致get数据反序列化失败，java.lang.ClassNotFoundException: Xxx.Xxx.Xxx.Xxx.RoomStatus；</li>
-<li>RoomStatus增加项，正常；</li>
-<li>RoomStatus减少项(已Cache数据中未使用到的项)，正常；</li>
-<li>RoomStatus减少项(已Cache数据中使用到的项)，异常：enum constant Xxx does not exist in Xxx.Xxx.Xxx.Xxx.RoomStatus；</li>
-</ol>
-
-
-<p>综上，在Memcached中cache包含枚举的数据时候，建议如下：</p>
-
-<ol>
-<li>不要修改枚举的包路径；</li>
-<li>不要删除枚举中的数据；</li>
-</ol>
-
-
-<p>这些序列化和反序列化的逻辑再XMemcached客户端实现的。详见SerializingTranscoder类，包含数据的encode和decode逻辑。再使用Memcached的时候也可以使用</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/3">&larr; Older</a>
@@ -2465,6 +3660,22 @@ DefaultAopProxyFactory</p>
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/12/29/activitishi-jian-chu-li/">Activiti事件处理</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing/">Activiti任务增加属性</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/12/16/activitibiao/">Activiti表</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/11/28/ni-zhen-de-liao-jie-stringma/">你真的了解String吗</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/08/20/cratewen-dang-fan-yi/">Crate文档翻译</a>
@@ -2490,22 +3701,6 @@ DefaultAopProxyFactory</p>
         <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/02/03/strace/">Strace</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2016/01/28/who-eat-jvms-memory/">Who Eats JVM's Memory</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -2517,7 +3712,7 @@ DefaultAopProxyFactory</p>
 <li><a class='list-group-item' href='/blog/categories/druid/'>druid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
-<li><a class='list-group-item' href='/blog/categories/java/'>java (24)</a></li>
+<li><a class='list-group-item' href='/blog/categories/java/'>java (25)</a></li>
 <li><a class='list-group-item' href='/blog/categories/library/'>library (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (13)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
@@ -2536,7 +3731,7 @@ DefaultAopProxyFactory</p>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (4)</a></li>
  
   </div>
 </section>

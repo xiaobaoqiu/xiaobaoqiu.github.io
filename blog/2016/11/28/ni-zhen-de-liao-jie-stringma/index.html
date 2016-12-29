@@ -1,0 +1,631 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>你真的了解String吗 - xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="String是Java中最重要最常用的类，没有之一。但是我们很多人可能只知道String的存在和简单使用，并不了解其背后的实现以及为什么这么实现。
+这里我就简单的挑选几个重要的节点讲解。 本文基于JDK 1.7 1
+2
+3
+4
+xiaobaoqiu@xiaobaoqiu:~ java - &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2016/11/28/ni-zhen-de-liao-jie-stringma/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  
+
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <!-- <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script> -->
+  <script src="/javascripts/libs/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<!--
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+-->
+
+  
+
+  
+  <meta name="baidu-site-verification" content="5oIt2xaFFz" />
+  <meta name="google-site-verification" content="U9Avd5Yqzpetvn_zxo1KaK2iqYNwSlLon27veprwBRY" />
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Think More, Code Less</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss email">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+    <li><a href="xiaobaoqiu@163.com" rel="subscribe-email" title="subscribe via email">Email</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">首页</a></li>
+  <li><a href="/blog/archives">所有博文</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">你真的了解String吗</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-11-28T21:01:06+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>28</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>9:01 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>String是Java中最重要最常用的类，没有之一。但是我们很多人可能只知道String的存在和简单使用，并不了解其背后的实现以及为什么这么实现。
+这里我就简单的挑选几个重要的节点讲解。</p>
+
+<p>本文基于JDK 1.7</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~ java -version
+</span><span class='line'>java version "1.7.0_80"
+</span><span class='line'>Java(TM) SE Runtime Environment (build 1.7.0_80-b15)
+</span><span class='line'>Java HotSpot(TM) 64-Bit Server VM (build 24.80-b11, mixed mode)</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>实现</h1>
+
+<p>Java其实就是char数组的一个包装,String真实的内容就是存储在char数组中，数组的一个特性就是在逻辑和存储上都是连续的、可随机访问的。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/** The value is used for character storage. */
+</span><span class='line'>private final char value[];</span></code></pre></td></tr></table></div></figure>
+
+
+<p>String的操作其实都是围绕底层的char数组来的，比如trim实现，trim的其实是value的内容</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public String trim() {
+</span><span class='line'>    int len = value.length;
+</span><span class='line'>    int st = 0;
+</span><span class='line'>    char[] val = value;    /* avoid getfield opcode */
+</span><span class='line'>
+</span><span class='line'>    while ((st &lt; len) && (val[st] &lt;= ' ')) {
+</span><span class='line'>        st++;
+</span><span class='line'>    }
+</span><span class='line'>    while ((st &lt; len) && (val[len - 1] &lt;= ' ')) {
+</span><span class='line'>        len--;
+</span><span class='line'>    }
+</span><span class='line'>    return ((st &gt; 0) || (len &lt; value.length)) ? substring(st, len) : this;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>需要注意的是，String中的很多实现都是使用 System.arraycopy 来实现数组数据的快速拷贝,System.arraycopy是一个native方法:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public char[] toCharArray() {
+</span><span class='line'>    char result[] = new char[value.length];
+</span><span class='line'>    System.arraycopy(value, 0, result, 0, value.length);
+</span><span class='line'>    return result;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>final &amp; immutable</h1>
+
+<p>String基本约定中最重要的一条是Immutable，Immutable的意思就是对String的每次修改都是生成一个新的String，原始对象不受影响，类似于copy-on-write的思想。</p>
+
+<p>先具体看一下什么是Immutable。String不可变很简单，如下图，给一个已有字符串"abcd"，第二次赋值成"abcedl"，不是在原内存地址上修改数据，而是重新指向一个新对象，新地址。</p>
+
+<p><img src="/images/java/java_immutable.png"></p>
+
+<p> 那String怎么做到不可变？主要通过三个手段
+ (1).String类声明为final(不会被继承改掉这种Immutable特性)；
+ (2).底层的value数组声明为final(value这个引用地址不可变)；
+(3).所有String的方法里很小心的没有去动value数组里的元素，没有暴露内部成员字段；</p>
+
+<p>其实String是不可变的关键都在底层的实现，而不是一个final修饰符。</p>
+
+<p>不可变对象带来的最大好处就是线程安全，因为不会被改写。</p>
+
+<h1>hashcode</h1>
+
+<p>String内部属性除了value数组外，还有一个 hash，用于记录String的hash值。
+String能这样讲hash值cache下来的原因就是上面提到的</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/** Cache the hash code for the string */
+</span><span class='line'>private int hash; // Default to 0</span></code></pre></td></tr></table></div></figure>
+
+
+<p>每次调用hashCode，先检测 hash 是否已经计算好了，如果计算了，就不要重新计算。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public int hashCode() {
+</span><span class='line'>    int h = hash;
+</span><span class='line'>    if (h == 0 && value.length &gt; 0) {
+</span><span class='line'>        char val[] = value;
+</span><span class='line'>
+</span><span class='line'>        for (int i = 0; i &lt; value.length; i++) {
+</span><span class='line'>            h = 31 * h + val[i];
+</span><span class='line'>        }
+</span><span class='line'>        hash = h;
+</span><span class='line'>    }
+</span><span class='line'>    return h;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>hash32</h1>
+
+<p>String中有一个hash32()的方法，它的结果被缓存在成员变量int hash32 中。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Cached value of the alternative hashing algorithm result
+</span><span class='line'> */
+</span><span class='line'>private transient int hash32 = 0;</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Calculates a 32-bit hash value for this string.
+</span><span class='line'> *
+</span><span class='line'> * @return a 32-bit hash value for this string.
+</span><span class='line'> */
+</span><span class='line'>int hash32() {
+</span><span class='line'>    int h = hash32;
+</span><span class='line'>    if (0 == h) {
+</span><span class='line'>       // harmless data race on hash32 here.
+</span><span class='line'>       h = sun.misc.Hashing.murmur3_32(HASHING_SEED, value, 0, value.length);
+</span><span class='line'>
+</span><span class='line'>       // ensure result is not zero to avoid recalcing
+</span><span class='line'>       h = (0 != h) ? h : 1;
+</span><span class='line'>
+</span><span class='line'>       hash32 = h;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    return h;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>关于 hash32 为什么存在，可以看下面官网的说明：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Java SE 7u6 introduces an improved, alternative hash function for the following map and map-derived collection implementations:
+</span><span class='line'>
+</span><span class='line'>HashMap
+</span><span class='line'>Hashtable
+</span><span class='line'>HashSet
+</span><span class='line'>LinkedHashMap
+</span><span class='line'>LinkedHashSet
+</span><span class='line'>WeakHashMap
+</span><span class='line'>ConcurrentHashMap
+</span><span class='line'>
+</span><span class='line'>The alternative hash function improves the performance of these map implementations when a large number of key hash collisions are encountered.
+</span><span class='line'>
+</span><span class='line'>For Java SE 7u6, this alternative hash function is implemented as follows:
+</span><span class='line'>
+</span><span class='line'>The alternative hash function is only applied to maps with a capacity larger than a specified threshold size. By default, the threshold is -1. This value disables the alternative hash function. To enable the alternative hash function, set the jdk.map.althashing.threshold system property to a different value. The recommended value is 512. Setting this system property to 512 causes all maps with a capacity larger than 512 entries to use the alternative hash function. You can set this system property to 0, which causes all maps to use the alternative hash function.
+</span><span class='line'>
+</span><span class='line'>The following describes the jdk.map.althashing.threshold system property in more detail:
+</span><span class='line'>
+</span><span class='line'>Value type: Integer
+</span><span class='line'>Value default: -1
+</span><span class='line'>Value range: From -1 to 2147483647, inclusive
+</span><span class='line'>Description: Threshold capacity at which maps use the alternative hash function. The value -1 is a synonym for 2147483647 (which is easier to remember). All other values correspond to threshold capacity.
+</span><span class='line'>For example, the following command runs the Java application MyApplication and sets the jdk.map.althashing.threshold system property to 512:
+</span><span class='line'>
+</span><span class='line'>java -Djdk.map.althashing.threshold=512 MyApplication
+</span><span class='line'>If the alternative hash function is being used, then the iteration order of keys, values, and entities vary for each instance of HashMap, Hashtable, HashSet, and ConcurrentHashMap. This change in iteration order may cause compatibility issues with some programs. This is the reason that the alternative hash function is disabled by default. Hashing improvements will be investigated in future releases. In the meantime, the system property jdk.map.althashing.threshold is experimental. It is strongly recommended that you test your applications with the alternative hashing function enabled (by setting jdk.map.althashing.threshold to 0) to determine if your applications are affected by iteration order. If there is an impact, you should fix your applications as soon as possible because there is no guarantee of iteration order.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>简单说就是为了解决 HashMap 这种hash 碰撞严重时候的性能，因为HashMap使用链地址法解决Hash碰撞，当链很长的时候，性能会受影响。
+但是这个问题在Java 8 中已经解决了，因为Java 8中引入一个新的策略，当链比较长的时候(默认阈值10)，会转化为采用红黑树实现后面的链表，可以讲时间从O(N)降到O(lgN).</p>
+
+<p>参考：
+<a href="http://stackoverflow.com/questions/23716836/what-is-use-of-hash32-in-string-class">http://stackoverflow.com/questions/23716836/what-is-use-of-hash32-in-string-class</a>
+<a href="http://docs.oracle.com/javase/7/docs/technotes/guides/collections/changes7.html">http://docs.oracle.com/javase/7/docs/technotes/guides/collections/changes7.html</a>
+<a href="http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object">http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object</a>
+<a href="http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object/23926405#23926405">http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object/23926405#23926405</a></p>
+
+<p>hash32这个方法最大的变化是，同一个字符串在不同的JVM上执行hash32()的结果可能不同（确切的说，多数情况下都会不同，因为其内部分别调用了一次System.currentTimeMillis()和两次System.nanoTime()用于初始化seed）。因此，某些容器在每次运行程序时迭代顺序都不同。</p>
+
+<h1>CaseInsensitiveComparator</h1>
+
+<p>在String中，有一个护额略大小写的比较方法，它的实现就是我们这里要说的CaseInsensitiveComparator</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public int compareToIgnoreCase(String str) {
+</span><span class='line'>    return CASE_INSENSITIVE_ORDER.compare(this, str);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public static final Comparator&lt;String&gt; CASE_INSENSITIVE_ORDER = new CaseInsensitiveComparator();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>CaseInsensitiveComparator的实现如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private static class CaseInsensitiveComparator implements Comparator&lt;String&gt;, java.io.Serializable {
+</span><span class='line'>    // use serialVersionUID from JDK 1.2.2 for interoperability
+</span><span class='line'>    private static final long serialVersionUID = 8575799808933029326L;
+</span><span class='line'>
+</span><span class='line'>    public int compare(String s1, String s2) {
+</span><span class='line'>        int n1 = s1.length();
+</span><span class='line'>        int n2 = s2.length();
+</span><span class='line'>        int min = Math.min(n1, n2);
+</span><span class='line'>        for (int i = 0; i &lt; min; i++) {
+</span><span class='line'>            char c1 = s1.charAt(i);
+</span><span class='line'>            char c2 = s2.charAt(i);
+</span><span class='line'>            if (c1 != c2) {
+</span><span class='line'>                c1 = Character.toUpperCase(c1);
+</span><span class='line'>                c2 = Character.toUpperCase(c2);
+</span><span class='line'>                if (c1 != c2) {
+</span><span class='line'>                    c1 = Character.toLowerCase(c1);
+</span><span class='line'>                    c2 = Character.toLowerCase(c2);
+</span><span class='line'>                    if (c1 != c2) {
+</span><span class='line'>                        // No overflow because of numeric promotion
+</span><span class='line'>                        return c1 - c2;
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>        return n1 - n2;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们发现比较时候需要现将字符转化为大小比较，再转化为小写比较。</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">xiaobaoqiu</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2016-11-28T21:01:06+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>28</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>9:01 pm</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/java/'>java</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2016/11/28/ni-zhen-de-liao-jie-stringma/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2016/11/28/ni-zhen-de-liao-jie-stringma/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2016/08/20/cratewen-dang-fan-yi/" title="Previous Post: Crate文档翻译">&laquo; Crate文档翻译</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2016/12/16/activitibiao/" title="Next Post: Activiti表">Activiti表 &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+<!-- 
+  <section>
+    <h1>评论(Comments)</h1>
+    <div id="disqus_thread" aria-live="polite"><div id="disqus_thread"></div>
+<script type="text/javascript">
+    /* * * CONFIGURATION VARIABLES: EDIT BEFORE PASTING INTO YOUR WEBPAGE * * */
+    var disqus_shortname = 'xiaobaoqiugithubio'; // required: replace example with your forum shortname 这个地方需要改成你配置的网站名
+
+    /* * * DON'T EDIT BELOW THIS LINE * * */
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = 'http://' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">blog comments powered by <span class="logo-disqus">Disqus</span></a>
+</div>
+  </section>
+ -->
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <div class="panel-heading">
+    <h1 class="panel-title">最新文章</h3>
+  </div>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/12/29/activitishi-jian-chu-li/">Activiti事件处理</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing/">Activiti任务增加属性</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/12/16/activitibiao/">Activiti表</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/11/28/ni-zhen-de-liao-jie-stringma/">你真的了解String吗</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/08/20/cratewen-dang-fan-yi/">Crate文档翻译</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/07/22/%5B%3F%5D-ge-si-suo-wen-ti/">一个死锁问题</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务2-AOP</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
+      </li>
+    
+  </ul>
+</section>
+<section class="panel panel-default">
+  <div  class="panel-heading">
+    <h1 class="panel-title">文章分类</h1>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <li><a class='list-group-item' href='/blog/categories/algorithm/'>algorithm (5)</a></li>
+<li><a class='list-group-item' href='/blog/categories/druid/'>druid (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/java/'>java (25)</a></li>
+<li><a class='list-group-item' href='/blog/categories/library/'>library (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/linux/'>linux (13)</a></li>
+<li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/mybatis/'>mybatis (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (12)</a></li>
+<li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/protocol/'>protocol (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
+<li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (4)</a></li>
+ 
+  </div>
+</section>
+<section class="panel panel-default">
+  <div  class="panel-heading">
+    <h1 class="panel-title">友情链接</h3>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <a class='list-group-item' href='http://wenzhang.baidu.com/'>百度文章</a>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <a class='list-group-item' href='https://github.com/xiaobaoqiu/leetcode'>LeetCode Solution</a>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <a class='list-group-item' href='http://youdang.github.io/'>Youdang's Blog</a>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <a class='list-group-item' href='http://blog.csdn.net/ghsau'>Gaoshuang's Blog</a>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <a class='list-group-item' href='http://kriszhang.com/'>kriszhang's Blog</a>
+  </div>
+</section>
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2016 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+<!--  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script> -->
+
+
+
+
+
+</body>
+</html>

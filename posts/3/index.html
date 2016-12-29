@@ -9,9 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.LSH简介
-2.普通Hash
-3.LSH 1.LSH简介 之前在项目中做数据聚合去重的逻辑的时候简单看过局部敏感Hash(Locality Sensitive Hashing,简称LSH)这个东东。今天整理一下个人的理解。 LSH可以理解为一种衡量文本相似度的算法， &hellip;">
+  <meta name="description" content="1.strace简介
+2.strace使用Demo 1.strace简介 strace用来跟踪进程执行时的系统调用和所接收的信号. Linux下进程不能直接访问硬件设备,当进程需要访问硬件设备(比如读取磁盘文件,接收网络数据等等)时,必须由用户态模式切换至内核态模式,通过系统调用访问硬件设备. &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -77,6 +76,1138 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2016/02/03/strace/">Strace</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-02-03T13:55:05+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2016</span></span> <span class='time'>1:55 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.strace%E7%AE%80%E4%BB%8B">1.strace简介</a></li>
+<li><a href="#2.strace%E4%BD%BF%E7%94%A8Demo">2.strace使用Demo</a></li>
+</ul>
+
+
+<h2 id="1.strace简介">1.strace简介</h2>
+
+
+<p>strace用来跟踪进程执行时的系统调用和所接收的信号.</p>
+
+<p>Linux下进程不能直接访问硬件设备,当进程需要访问硬件设备(比如读取磁盘文件,接收网络数据等等)时,必须由用户态模式切换至内核态模式,通过系统调用访问硬件设备.strace可以跟踪到一个进程产生的系统调用,包括参数,返回值,执行消耗的时间.</p>
+
+<p>参数及意义如下,忽略了一些不大重要的(其实海报看一些没看懂的&hellip;):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>OPTIONS
+</span><span class='line'>       -c         计数,包括每个系统调用耗时,调用次数,错误次数.注意这里显示的时间是CPU花在内核上的时间.
+</span><span class='line'>       -D         跟踪程序作为被跟踪程序的子进程.
+</span><span class='line'>       -d          输出strace关于标准错误的调试信息
+</span><span class='line'>       -f          根据进程,包括其子进程(fork(2), vfork(2) and clone(2)这些系统调用)
+</span><span class='line'>       -ff         如果提供-o filename,则所有进程的跟踪结果输出到相应的filename.pid中,pid是各进程的进程号.
+</span><span class='line'>       -F          尝试跟踪vfork调用
+</span><span class='line'>       -h         帮助信息.
+</span><span class='line'>       -i          输出系统调用的入口指针
+</span><span class='line'>       -q         禁止输出attaching和detaching的信息
+</span><span class='line'>       -r          打印出每个系统调用的相对时间(相对于第一个系统调用)
+</span><span class='line'>       -t          在输出中的每一行前加上时间信息(时分秒)
+</span><span class='line'>       -tt         在输出中的每一行前加上时间信息,包含毫秒
+</span><span class='line'>       -ttt        微秒级输出,单位是秒(如1454483650.043891).
+</span><span class='line'>       -T          显示每个系统调用使用时间的百分比占比.
+</span><span class='line'>       -v          输出所有的系统调用.一些调用关于环境变量,状态,输入输出等调用由于使用频繁,默认不输出.
+</span><span class='line'>       -V          版本信息
+</span><span class='line'>       -x          以十六进制形式输出非标准字符串(non-ASCII strings)
+</span><span class='line'>       -xx         所有字符串以十六进制形式输出
+</span><span class='line'>       -y          Print paths associated with file descriptor arguments.
+</span><span class='line'>       -a column   设置返回值的输出位置,默认为40
+</span><span class='line'>       -b syscall  当某个系统调用被调用,trace程序就会detach.当前只支持execve. 这个选项在trace多线程的时候十分有用(需要-f选项)
+</span><span class='line'>       -e expr     指定一个表达式,用来控制如何跟踪.表达式格式如下:
+</span><span class='line'>
+</span><span class='line'>                             [qualifier=][!]value1[,value2]...
+</span><span class='line'>
+</span><span class='line'>                   其中qualifier只能是 trace,abbrev,verbose,raw,signal,read,write其中之,value是用来限定的符号或数字.默认的 qualifier是 trace.感叹号是否定符号.例如:
+</span><span class='line'>-eopen等价于 -e trace=open,表示只跟踪open调用.而-etrace!=open表示跟踪除了open以外的其他调用.
+</span><span class='line'>
+</span><span class='line'>       -e trace=set   只跟踪指定的系统调用.例如:-e trace=open,close,rean,write表示只跟踪这四个系统调用.默认的为set=all.
+</span><span class='line'>       -e trace=file   只跟踪有关文件操作的系统调用
+</span><span class='line'>       -e trace=process 只跟踪有关进程控制的系统调用.
+</span><span class='line'>       -e trace=network 只跟踪与网络有关的所有系统调用.
+</span><span class='line'>       -e trace=signal 只跟踪所有与系统信号有关的 系统调用
+</span><span class='line'>       -e trace=ipc 只跟踪所有与进程通讯有关的系统调用
+</span><span class='line'>       -e trace=desc 只跟踪所有与文件描述符有关的系统调用
+</span><span class='line'>       -e trace=memory 只跟踪所有与内存映射有关的系统调用
+</span><span class='line'>       -e signal=set 指定跟踪的系统信号.默认为all.如 signal=!SIGIO(或者signal=!io),表示不跟踪SIGIO信号.
+</span><span class='line'>       -o filename 将trace结果输出到文件
+</span><span class='line'>       -p pid      跟踪指定的进程pid
+</span><span class='line'>       -s strsize  指定输出的字符串的最大长度.默认为32.文件名一直全部输出.
+</span><span class='line'>       -S sortby   使用了-c选项的情况下的排序准则,可选包括time, calls, name, 和nothing,默认是time
+</span><span class='line'>       -u username 以username的UID和GID执行被跟踪的命令.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>使用<a href="http://www.tecmint.com/cheat-command-line-cheat-sheet-for-linux-users/">cheat</a>可以看到strace通常使用方法:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ cheat strace
+</span><span class='line'># 基本使用
+</span><span class='line'>strace &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># 将trace结构写到文件,使用-o参数
+</span><span class='line'>strace -o strace.out &lt;other switches&gt; &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># 只trace open()这个系统调用
+</span><span class='line'>strace -e trace=open &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># trace所有会打开文件的系统调用
+</span><span class='line'>strace -e trace=file &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># trace所有和进程管理相关的系统调用,再查看一个进程的fork,wait和exec等步骤的时候很有用
+</span><span class='line'>strace -e trace=process &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># 当前进程fork出来的子进程也trace
+</span><span class='line'>strace -f &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># 每个系统调用计数,包括:调用时间,调用次数,错误次数
+</span><span class='line'>strace -c &lt;command&gt;
+</span><span class='line'>
+</span><span class='line'># trace某一个进程(可以指定多个pid)
+</span><span class='line'>strace -p &lt;pid&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>通常而言,我们使用-c选项找出最耗时的系统调用,再使用-e选项跟踪这个操作.</p>
+
+<p>参考: <a href="http://huoding.com/2015/10/16/474">手把手教你用Strace诊断问题</a></p>
+
+<h2 id="2.strace使用Demo">2.strace使用Demo</h2>
+
+
+<p>一直很好奇top命令的数据从哪里获取的.我这里的前提我知道的一点:top的数据肯定是从proc/pid/下的某个文件中读取的,有这个前提我们就可以来跟踪top命令执行过程中有那些系统调用了,打开了什么文件等.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$ strace -o top.strace -e trace=open top
+</span><span class='line'>
+</span><span class='line'>//找出1381这个进程的信息来源
+</span><span class='line'>[baoqiu.xiao@Xxx ~]$ grep 1381 top.strace 
+</span><span class='line'>open("/proc/1381/stat", O_RDONLY)       = 4
+</span><span class='line'>open("/proc/1381/statm", O_RDONLY)      = 4</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面的strace中,我们知道,top的信息来源于两个文件,stat和statm.这两个文件的介绍参考上一篇博客: <a href="http://xiaobaoqiu.github.io/blog/2016/01/28/who-eat-jvms-memory/.">http://xiaobaoqiu.github.io/blog/2016/01/28/who-eat-jvms-memory/.</a></p>
+
+<p>参考:
+<a href="http://linoxide.com/linux-command/linux-strace-command-examples/">8 Options to Trace/Debug Programs using Linux strace Command</a></p>
+
+<p><a href="http://huoding.com/tag/strace">火丁笔记 strace</a></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2016/01/28/who-eat-jvms-memory/">Who Eats JVM's Memory</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-01-28T13:40:27+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>28</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>1:40 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.JVM%E5%86%85%E5%AD%98%E5%8D%A0%E7%94%A8%E4%B8%8A%E9%99%90">1.JVM内存占用上限</a></li>
+<li><a href="#2.JVM%20RES%E6%95%B0%E6%8D%AE%E6%9D%A5%E6%BA%90">2.JVM RES数据来源</a>
+
+<ul>
+<li><a href="#2.1%20/proc/pid%E5%86%85%E5%AE%B9">2.1 /proc/pid内容</a></li>
+<li><a href="#2.2%20/proc/pid%E4%B8%8B%E5%86%85%E5%AD%98%E7%9B%B8%E5%85%B3%E6%96%87%E4%BB%B6">2.2 /proc/pid下内存相关文件</a></li>
+<li><a href="#2.3%20top%E5%91%BD%E4%BB%A4RES%E6%95%B0%E6%8D%AE%E6%9D%A5%E6%BA%90">2.3 top命令RES数据来源</a></li>
+</ul>
+</li>
+<li><a href="#3.%E8%B0%81%E5%90%83%E4%BA%86JVM%E5%86%85%E5%AD%98">3.谁吃了JVM内存</a></li>
+</ul>
+
+
+<h2 id="1.JVM内存占用上限">1.JVM内存占用上限</h2>
+
+
+<p>关于JVM的一些基础知识,可以看 <a href="http://blog.jamesdbloom.com/JVMInternals.html">JVM Internals</a>,曾经我尝试翻译过,地址:<a href="http://xiaobaoqiu.github.io/blog/2014/09/11/internal-jvm/">http://xiaobaoqiu.github.io/blog/2014/09/11/internal-jvm/</a></p>
+
+<p>这里要说的是,那些参数决定了JVM内存上限,比如常用的内存配置如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-Xms1024m -Xmx1024m -XX:PermSize=256m</span></code></pre></td></tr></table></div></figure>
+
+
+<p>说明堆(Heap)的大小1G,永久代大小256M.</p>
+
+<p>另外,64位的操作系统(Linux服务器),线程的栈空间大小最大为1M:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ...]$ java -XX:+PrintFlagsFinal -version | grep ThreadStackSize
+</span><span class='line'>     intx CompilerThreadStackSize                   = 0               {pd product}        
+</span><span class='line'>     intx ThreadStackSize                           = 1024            {pd product}        
+</span><span class='line'>     intx VMThreadStackSize                         = 1024            {pd product}        
+</span><span class='line'>java version "1.7.0_45"
+</span><span class='line'>Java(TM) SE Runtime Environment (build 1.7.0_45-b18)
+</span><span class='line'>Java HotSpot(TM) 64-Bit Server VM (build 24.45-b08, mixed mode)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>JVM的占用上限由一下几个因素决定:</p>
+
+<pre><code>1. 堆内存
+2. 持久代
+3. 线程栈空间
+4. 堆外内存
+</code></pre>
+
+<p>堆外内存参考: <a href="http://www.infoq.com/cn/news/2014/12/external-memory-heap-memory">http://www.infoq.com/cn/news/2014/12/external-memory-heap-memory</a></p>
+
+<p>线程数可以如下得到:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$ ps -m 1381 | wc -l
+</span><span class='line'>176</span></code></pre></td></tr></table></div></figure>
+
+
+<p>通常而言,我们只需要计算堆内存,持久代再加上线程栈空间.比如我们的本地一个小服务:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Max Memory = Heap(1G) + Perm(256M) + 176 * Thread stack (1M)</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h2 id="2.JVM RES数据来源">2.JVM RES数据来源</h2>
+
+
+<p>首先得知道top命令中RES数据从哪里来的.再Linux上,万物皆文件,因此RES的数据也是来源于文件.</p>
+
+<h4 id="2.1 /proc/pid内容">2.1 /proc/pid内容</h4>
+
+
+<p>下面是一个典型的Tomcat应用的线程下的内容,进程号为1381,简单说描述每个文件的内容或者作用:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>attr         进程的属性
+</span><span class='line'>autogroup
+</span><span class='line'>auxv
+</span><span class='line'>cgroup
+</span><span class='line'>clear_refs
+</span><span class='line'>cmdline       启动进程时执行的命令
+</span><span class='line'>coredump_filter
+</span><span class='line'>cpuset
+</span><span class='line'>cwd           指向进程当前工作目录的软链
+</span><span class='line'>environ       进程执行时使用的环境变量
+</span><span class='line'>exe           这个就是起这个进程的执行文件
+</span><span class='line'>fd            进程打开的文件描述符,可以知道具体的文件路径
+</span><span class='line'>fdinfo
+</span><span class='line'>io            进程的io统计信息
+</span><span class='line'>limits            进程的软限制，硬限制等信息
+</span><span class='line'>loginuid
+</span><span class='line'>maps          进程相关的内存映射信息
+</span><span class='line'>mem           代进程持有的内存,不可读
+</span><span class='line'>mountinfo
+</span><span class='line'>mounts
+</span><span class='line'>mountstats
+</span><span class='line'>net
+</span><span class='line'>numa_maps
+</span><span class='line'>oom_adj       调节oom-killer的参数
+</span><span class='line'>oom_score         oom-killer打分,当需要是,oom-killer会根据各个进程的分数,kill掉某个进程
+</span><span class='line'>oom_score_adj         调节oom-killer的参数
+</span><span class='line'>pagemap       进程的虚拟页和物理内存页或者swap区的映射关系
+</span><span class='line'>personality
+</span><span class='line'>root          指向进程根目录的软链
+</span><span class='line'>sched
+</span><span class='line'>schedstat
+</span><span class='line'>sessionid
+</span><span class='line'>smaps             This file shows memory consumption for each of the process's mappings.
+</span><span class='line'>stack             This file provides a symbolic trace of the function calls in this process's kernel stack
+</span><span class='line'>stat          进程的状态
+</span><span class='line'>statm         进程使用的内存的状态
+</span><span class='line'>status            进程状态信息,比stat/statm更具可读性
+</span><span class='line'>syscall
+</span><span class='line'>task          进程包含的线程，子目录名是线程的ID
+</span><span class='line'>wchan</span></code></pre></td></tr></table></div></figure>
+
+
+<p>参考: <a href="http://man7.org/linux/man-pages/man5/proc.5.html">http://man7.org/linux/man-pages/man5/proc.5.html</a></p>
+
+<h4 id="2.2 /proc/pid下内存相关文件">2.2 /proc/pid下内存相关文件</h4>
+
+
+<p>和内存相关的文件主要包括(解析各个文件的时间不同,可能内容上存在对不上的情况):</p>
+
+<pre><code>1. statm: 
+2. stat:    
+3. status
+4. maps
+5. smaps
+</code></pre>
+
+<p><em>1. statm</em></p>
+
+<p>进程的内存使用,注意单位是page,内容的解析参考2.3节的内容.</p>
+
+<p><em>2. stat</em></p>
+
+<p>1381这个进程的stat文件及各个字段的含义(含义参见proc命令手册: man proc &ndash;> 搜stat, 见/proc/[pid]/stat):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1381 pid             进程号
+</span><span class='line'>(java)    comm            应用程序或命令的名字
+</span><span class='line'>S state           任务的状态(RSDZTW中一个字符),R:runnign, S:sleeping in an interruptible wait, D:waiting in uninterruptible disk sleep, Z:zombie, T is  traced  or  stopped, W is paging
+</span><span class='line'>1 ppid            父进程ID
+</span><span class='line'>1374  pgrp            线程组号
+</span><span class='line'>1374  session         该任务所在的会话组ID
+</span><span class='line'>0 tty_nr          进程的控制终端设备号
+</span><span class='line'>-1    tpgid           进程控制终端的前台任务id
+</span><span class='line'>4202496   flags           进程内核标志位
+</span><span class='line'>988135    minflt          任务不需要从硬盘拷数据而发生的缺页(minor faults)的次数
+</span><span class='line'>191   cminflt         任务的所有的waited-for子进程曾经发生的次缺页的次数累计值
+</span><span class='line'>252944    majflt          任务需要从硬盘拷数据而发生的缺页(minor faults)的次数
+</span><span class='line'>5 cmajflt             任务的所有的waited-for子进程需要从硬盘拷数据而发生的缺页(minor faults)的次数
+</span><span class='line'>229942    utime           任务在用户态(User mode)运行的时间，单位为时钟周期(clock ticks)
+</span><span class='line'>102219    stime           任务在内核态(kernel mode)运行的时间，单位为时钟周期(clock ticks)
+</span><span class='line'>0 cutime          任务的所有的waited-for子进程曾经在用户态运行的时间累计值，单位为时钟周期(clock ticks)
+</span><span class='line'>0 cstime          任务的所有的waited-for子进程曾经在核心态运行的时间累计值，单位为时钟周期(clock ticks)
+</span><span class='line'>20    priority            任务的动态优先级
+</span><span class='line'>0 nice            任务的静态优先级
+</span><span class='line'>179   num_threads     进程的线程数
+</span><span class='line'>0 itrealvalue     由于计时间隔导致的下一个 SIGALRM 发送进程的时延,单位jiffies
+</span><span class='line'>2107287914    starttime       任务启动的时间,单位为jiffies
+</span><span class='line'>3968053248    vsize           该任务的虚拟地址空间大小,单位byte
+</span><span class='line'>122542    rss             任务当前驻留物理地址空间的大小,单位page
+</span><span class='line'>18446744073709551615  rsslim          任务能驻留物理地址空间的最大值,单位byte
+</span><span class='line'>4194304   startcode       任务在虚拟地址空间的代码段的起始地址
+</span><span class='line'>4196452   endcode     任务在虚拟地址空间的代码段的结束地址
+</span><span class='line'>140734635670848   startstack      任务在虚拟地址空间的栈的结束地址
+</span><span class='line'>140734635653408   kstkesp         ESP(stack pointer, 栈指针)的当前值
+</span><span class='line'>250460799149  kstkeip         EIP(instruction pointer, 指令指针)的当前值
+</span><span class='line'>0 signal          pending信号的位图(bitmap),十进制数显示
+</span><span class='line'>0 blocked         blocked信号的位图(bitmap),十进制数显示
+</span><span class='line'>2 sigignore       ignored信号的位图(bitmap),十进制数显示
+</span><span class='line'>16800973  sigcatch        caught信号的位图(bitmap),十进制数显示
+</span><span class='line'>18446744073709551615  wchan           进程等待的channel.是系统调用地址
+</span><span class='line'>0 nswap           被swapped的页数(当前不用)
+</span><span class='line'>0 cnswap      所有子进程被swapped的页数的和(当前不用)
+</span><span class='line'>17    exit_signal     该进程结束时,向父进程所发送的信号
+</span><span class='line'>3 processor       进程最后一次执行的CPU号
+</span><span class='line'>0 rt_priority     实时调度优先级
+</span><span class='line'>0 policy          调度策略
+</span><span class='line'>4 delayacct_blkio_ticks   IO阻塞延迟汇总,单位时钟周期(clock ticks)
+</span><span class='line'>0 guest_time      进程的guest time(指费再运行guest操作系统上的时间),单位时钟周期(clock ticks)
+</span><span class='line'>0 cguest_time     子进程guest time</span></code></pre></td></tr></table></div></figure>
+
+
+<p>里面包含我们熟悉的RSS数据,注意其单位是page.</p>
+
+<p><em>3. status</em></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx /proc/1381]$ sudo cat status
+</span><span class='line'>Name: Java                                        /*当前进程的命令*/
+</span><span class='line'>State:    S (sleeping)                           /*当前进程状态: "R (running)", "S (sleeping)", "D (disk sleep)", "T (stopped)", "T (tracing stop)", "Z (zombie)", or "X (dead)"*/
+</span><span class='line'>Tgid: 1381                                      /*线程组号*/
+</span><span class='line'>Pid:  1381                                             /*线程id*/
+</span><span class='line'>PPid: 1                                            /*父进程的pid*/
+</span><span class='line'>TracerPid:    0                                     /*跟踪进程的pid,如果没有就是0*/
+</span><span class='line'>Uid:  40001   40001   40001   40001      /*uid euid suid fsuid*/
+</span><span class='line'>Gid:  40001   40001   40001   40001      /*gid egid sgid fsgid*/
+</span><span class='line'>Utrace:   0
+</span><span class='line'>FDSize:   512                                        /*FDSize是当前分配的文件描述符*/
+</span><span class='line'>Groups:   40001                             /*这里的groups表示启动这个进程的用户所在的组*/
+</span><span class='line'>VmPeak:    3880116 kB                   /*当前进程运行过程中占用内存的峰值*/
+</span><span class='line'>VmSize:    3875052 kB                         /*进程现在正在占用的内存*/
+</span><span class='line'>VmLck:           0 kB                               /*进程已经锁住的物理内存的大小.锁住的物理内存不能交换到硬盘*/
+</span><span class='line'>VmHWM:      766000 kB                    /*程序得到分配到物理内存的峰值*/
+</span><span class='line'>VmRSS:      490168 kB                          /*程序现在使用的物理内存*/
+</span><span class='line'>VmData:    3718132 kB                   /*进程数据段的大小*/
+</span><span class='line'>VmStk:          88 kB                              /*进程堆栈段的大小*/
+</span><span class='line'>VmExe:           4 kB                              /*进程代码的大小*/
+</span><span class='line'>VmLib:       15720 kB                          /*进程所使用LIB库的大小*/
+</span><span class='line'>VmPTE:        2280 kB                           /*进程所使用LIB库的大小*/
+</span><span class='line'>VmSwap:     303616 kB                   /*进程占用Swap的大小*/
+</span><span class='line'>Threads:  179                                /*当前进程组线程数*/
+</span><span class='line'>SigQ: 0/62812                               /*表示当前待处理信号的个数*/
+</span><span class='line'>SigPnd:   0000000000000000             /*屏蔽位,存储了该线程的待处理信号,等同于线程的PENDING信号*/
+</span><span class='line'>ShdPnd:   0000000000000000      /*屏蔽位,存储了该线程组的待处理信号.等同于进程组的PENDING信号*/
+</span><span class='line'>SigBlk:   0000000000000000             /*放被阻塞的信号,等同于BLOCKED信号*/
+</span><span class='line'>SigIgn:   0000000000000002            /*存放被忽略的信号,等同于IGNORED信号*/
+</span><span class='line'>SigCgt:   2000000181005ccd            /*存放捕获的信号,等同于CAUGHT信号*/
+</span><span class='line'>CapInh:   0000000000000000
+</span><span class='line'>CapPrm:   0000000000000000
+</span><span class='line'>CapEff:   0000000000000000
+</span><span class='line'>CapBnd:   ffffffffffffffff
+</span><span class='line'>Cpus_allowed: f
+</span><span class='line'>Cpus_allowed_list:    0-3
+</span><span class='line'>Mems_allowed: 00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+</span><span class='line'>Mems_allowed_list:    0
+</span><span class='line'>voluntary_ctxt_switches:  35
+</span><span class='line'>nonvoluntary_ctxt_switches:   9</span></code></pre></td></tr></table></div></figure>
+
+
+<p>关于其中的TracerPid,在Linux下,我们可以使用strace来跟踪命令的运行.</p>
+
+<p>参考: <a href="http://blog.csdn.net/zjl410091917/article/details/8075691">http://blog.csdn.net/zjl410091917/article/details/8075691</a></p>
+
+<p><em>4. maps</em></p>
+
+<p>maps内容如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@l-crm3.des.dev.cn0 ~]$ head -30 maps
+</span><span class='line'>00400000-00401000 r-xp 00000000 fc:07 1179664                            /home/q/java/jdk1.7.0_45/bin/java
+</span><span class='line'>00600000-00601000 rw-p 00000000 fc:07 1179664                            /home/q/java/jdk1.7.0_45/bin/java
+</span><span class='line'>00b78000-00bed000 rw-p 00000000 00:00 0                                  [heap]
+</span><span class='line'>aff80000-100000000 rw-p 00000000 00:00 0 
+</span><span class='line'>3a4fe00000-3a4fe20000 r-xp 00000000 fc:02 2613                           /lib64/ld-2.12.so
+</span><span class='line'>3a5001f000-3a50020000 r--p 0001f000 fc:02 2613                           /lib64/ld-2.12.so
+</span><span class='line'>3a50020000-3a50021000 rw-p 00020000 fc:02 2613                           /lib64/ld-2.12.so
+</span><span class='line'>3a50021000-3a50022000 rw-p 00000000 00:00 0 
+</span><span class='line'>3a50200000-3a5038a000 r-xp 00000000 fc:02 25297                          /lib64/libc-2.12.so
+</span><span class='line'>3a5038a000-3a50589000 ---p 0018a000 fc:02 25297                          /lib64/libc-2.12.so
+</span><span class='line'>3a50589000-3a5058d000 r--p 00189000 fc:02 25297                          /lib64/libc-2.12.so
+</span><span class='line'>3a5058d000-3a5058e000 rw-p 0018d000 fc:02 25297                          /lib64/libc-2.12.so</span></code></pre></td></tr></table></div></figure>
+
+
+<p>第一列代表内存段的虚拟地址
+第二列代表执行权限虚拟内存的权限,r=读,w=写,x=,s=共享,p=私有
+第三列代表在进程地址里的偏移量
+第四列映射文件的主设备号和次设备号
+第五列映像文件的节点号,即inode
+第六列是映像文件的路径</p>
+
+<p>参考: <a href="http://stackoverflow.com/questions/1401359/understanding-linux-proc-id-maps">http://stackoverflow.com/questions/1401359/understanding-linux-proc-id-maps</a></p>
+
+<p><em>5. smaps</em></p>
+
+<p>smaps代表进程的各个线程的内存消耗</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx /proc/1381]$ sudo cat smaps
+</span><span class='line'>在smaps文件中,每一条记录(每块)表示进程虚拟内存空间中一块连续的区域.
+</span><span class='line'>
+</span><span class='line'>...
+</span><span class='line'>00b78000-00bed000 rw-p 00000000 00:00 0                                  [heap]       /*和maps中的内容相同*/
+</span><span class='line'>Size:                468 kB                   /*表示该映射区域在虚拟内存空间中的大小*/
+</span><span class='line'>Rss:                  76 kB                    /*表示该映射区域当前在物理内存中实际占用了多少空间*/
+</span><span class='line'>Pss:                  76 kB                    /*该虚拟内存区域平摊计算后使用的物理内存大小*/
+</span><span class='line'>Shared_Clean:          0 kB             /*和其他进程共享的未被改写的page的大小*/
+</span><span class='line'>Shared_Dirty:          0 kB              /*和其他进程共享的被改写的page的大小*/
+</span><span class='line'>Private_Clean:         0 kB              /*未被改写的私有页面的大小*/
+</span><span class='line'>Private_Dirty:        76 kB
+</span><span class='line'>Referenced:           76 kB
+</span><span class='line'>Anonymous:            76 kB
+</span><span class='line'>AnonHugePages:         0 kB
+</span><span class='line'>Swap:                144 kB                 /*由于物理内存不足被swap到交换空间的大小*/
+</span><span class='line'>KernelPageSize:        4 kB             /*操作系统一个页面大小*/
+</span><span class='line'>MMUPageSize:           4 kB           /*CPU页面大小, MMU表示内存管理单元(Memory Management Unit)*/
+</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>关于其中的Pss,因为进程之间存在内存共享,比如该区域所映射的物理内存部分同时也被另一个进程映射了,且该部分物理内存的大小为1000KB(Rss会是1000KB),那么该进程分摊其中一半的内存,即Pss=500KB。</p>
+
+<p>内存页引用计数>1,则表示是shared,否则是private.</p>
+
+<p>参考: <a href="http://stackoverflow.com/questions/9922928/what-does-pss-mean-in-proc-pid-smaps">stackoverflow: what does pss mean in /proc/pid/smaps</a></p>
+
+<p><a href="http://unix.stackexchange.com/questions/33381/getting-information-about-a-process-memory-usage-from-proc-pid-smaps">Getting information about a process' memory usage from /proc/pid/smaps</a></p>
+
+<p>另外,当前系统的page大小可以通过getconf命令获取,比如我当前的服务器page大小为4k:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$ getconf PAGESIZE
+</span><span class='line'>4096</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h4 id="2.3 top命令RES数据来源">2.3 top命令RES数据来源</h4>
+
+
+<p>top命令RES数据来源于/proc/PID/statm中的第二个字段.还是1381这个进程的statm文件内容和对应的top信息如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx /proc/1381]$ sudo cat statm
+</span><span class='line'>968763 122480 558 1 0 929555 0
+</span><span class='line'>
+</span><span class='line'>[baoqiu.xiao@Xxx ~]$ top -p 1381
+</span><span class='line'>  PID  USER      PR   NI  VIRT     RES     SHR  S  %CPU  %MEM    TIME+       COMMAND                                                                                                                             
+</span><span class='line'> 1381 tomcat    20   0   3784m  478m 2228  S  2.0       6.1           54:53.36    java</span></code></pre></td></tr></table></div></figure>
+
+
+<p>/proc/[pid]/statm文件的几个字段的具体意义如下(注意单位是page):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>size         (1) total program size(same as VmSize in /proc/[pid]/status)
+</span><span class='line'>resident      (2) (resident set size)(same as VmRSS in /proc/[pid]/status),即RSS
+</span><span class='line'>share         (3) shared pages (i.e., backed by a file)
+</span><span class='line'>text          (4) text (code)
+</span><span class='line'>lib               (5) library (unused in Linux 2.6)
+</span><span class='line'>data          (6) data + stack
+</span><span class='line'>dt                (7) dirty pages (unused in Linux 2.6)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>可以验证,1381这个进程的RES大小来源, 和top命令中RES的数字是吻合的:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>122480 * 4096 / (1024 * 1024) = 478.4375 MB</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h2 id="3.谁吃了JVM内存">3.谁吃了JVM内存</h2>
+
+
+<p>写到这发现谢步下去了,因为我一开始就写错了.</p>
+
+<p>想知道谁吃了我们JVM的内存,可以jmap dump下来,用MAT分析一下.</p>
+
+<p>想知道谁吃了服务器的内存,建议看看参考里面的<a href="http://blog.yufeng.info/archives/2456">Linux Used内存到底哪里去了</a>这篇文章.</p>
+
+<p>参考:
+<a href="http://tldp.org/LDP/khg/HyperNews/get/memory/linuxmm.html">Linux Memory Management Overview</a></p>
+
+<p><a href="https://techtalk.intersec.com/2013/07/memory-part-2-understanding-process-memory/">Understanding Process memory</a></p>
+
+<p><a href="http://lwn.net/Articles/230975/">How much memory are applications really using</a></p>
+
+<p><a href="http://tldp.org/LDP/tlk/mm/memory.html">Memory Management</a></p>
+
+<p><a href="http://blog.yufeng.info/archives/2456">Linux Used内存到底哪里去了</a></p>
+
+<p><a href="http://www.361way.com/whereis-the-memory/4036.html">也看linux内存去哪儿了</a></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-12-22T10:43:49+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>22</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>10:43 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.Protocol%20Buffers%E7%AE%80%E4%BB%8B">1.Protocol Buffers简介</a></li>
+<li><a href="#2.Protocol%20Buffers%E5%AE%89%E8%A3%85">2.Protocol Buffers安装</a></li>
+<li><a href="#3.Protocol%20Buffers%20Demo%20in%20Java">3.Protocol Buffers Demo in Java</a></li>
+<li><a href="#4.%E8%87%AA%E6%8F%8F%E8%BF%B0%E6%B6%88%E6%81%AF">4.自描述消息</a></li>
+<li><a href="#5.%E5%BA%8F%E5%88%97%E5%8C%96%E6%80%A7%E8%83%BD">5.序列化性能</a></li>
+</ul>
+
+
+<h2>1.Protocol Buffers简介</h2>
+
+<p>最近项目中接触到久闻大名的Protocol Buffers。简单学习Protocol Buffers是什么，能做什么，为什么需要它，怎么使用它。</p>
+
+<p>Protocol Buffers官网：<a href="https://developers.google.com/protocol-buffers/">https://developers.google.com/protocol-buffers/</a></p>
+
+<p>Protocol Buffers官网(中文)：<a href="https://developers.google.com/protocol-buffers/?hl=zh-CN">https://developers.google.com/protocol-buffers/?hl=zh-CN</a></p>
+
+<p>Git地址：<a href="https://github.com/google/protobuf">https://github.com/google/protobuf</a></p>
+
+<p>Java API：<a href="https://developers.google.com/protocol-buffers/docs/reference/java/?hl=zh-CN">https://developers.google.com/protocol-buffers/docs/reference/java/?hl=zh-CN</a></p>
+
+<p>proro文件的编写指南：<a href="https://developers.google.com/protocol-buffers/docs/style?hl=zh-CN">https://developers.google.com/protocol-buffers/docs/style?hl=zh-CN</a></p>
+
+<p>Java使用指南：<a href="https://developers.google.com/protocol-buffers/docs/javatutorial?hl=zh-CN">https://developers.google.com/protocol-buffers/docs/javatutorial?hl=zh-CN</a></p>
+
+<p>protocol buffers是google提供的一种将结构化数据进行序列化和反序列化的方法，其优点是语言中立，平台中立，可扩展性好，目前在google内部大量用于数据存储，通讯协议等方面。语言中立说明和语言无关，可以作为跨语言的通信协议。平台中立说明Protocol Buffers可以作为不同平台之间的通信协议；可扩展性好可以理解为protocol buffers支持嵌套。</p>
+
+<p>PB在功能上类似XML，但是序列化后的数据更小，解析更快，使用上更简单。用户只要按照proto语法在.proto文件中定义好数据的结构，就可以使用PB提供的工具(protoc)自动生成处理数据的代码，使用这些代码就能在程序中方便的通过各种数据流读写数据。</p>
+
+<p>PB目前支持Java, C++和Python3种语言(截止目前已经额外支持C#，Ruby和Object-C)。另外，PB还提供了很好的向后兼容，即旧版本的程序可以正常处理新版本的数据，新版本的程序也能正常处理旧版本的数据。</p>
+
+<h2>2.Protocol Buffers安装</h2>
+
+<p>1.下载源码
+从<a href="https://github.com/google/protobuf%E4%B8%8B%E8%BD%BD%E6%BA%90%E7%A0%81">https://github.com/google/protobuf%E4%B8%8B%E8%BD%BD%E6%BA%90%E7%A0%81</a></p>
+
+<p>2.根据README安装
+(1).使用./autogen.sh生成configure脚本；
+(2).配置./configure，默认在/usr/local下，可以指定路径
+(3).make
+(4).make check
+(5).make install</p>
+
+<p>这里安装的是最新的Protoc 3。安装之后，就会有一个根据Message文件产生对应代码文件的工具protoc：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Work/JavaCode/ProtobufDemo/com/qunar/scm/protobuf$ protoc --version
+</span><span class='line'>libprotoc 3.0.0</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在帮助文当中就可以看到如何生成各种类型的文件的方式：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  --cpp_out=OUT_DIR           Generate C++ header and source.
+</span><span class='line'>  --csharp_out=OUT_DIR        Generate C# source file.
+</span><span class='line'>  --java_out=OUT_DIR          Generate Java source file.
+</span><span class='line'>  --javanano_out=OUT_DIR      Generate Java Nano source file.
+</span><span class='line'>  --objc_out=OUT_DIR          Generate Objective C header and source.
+</span><span class='line'>  --python_out=OUT_DIR        Generate Python source file.
+</span><span class='line'>  --ruby_out=OUT_DIR          Generate Ruby source file.</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>3.Protocol Buffers Demo in Java</h2>
+
+<p>参考官网的一个例子，message是定义protobuf的关键词，Person表示一个人的信息，包括id，name，email和phone四个信息，其中name和id是必须的，email是可选的，phone是数组形式并且phone本身也是一种消息(message)，PhoneNumber内部包含了枚举类型PhoneType，主要枚举的定义和Java有点不同，这里是分号分割的。1234这种序号表示字段在数据中的顺序，新增字段依次增加这个序号就行。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>package tutorial;
+</span><span class='line'>
+</span><span class='line'>option java_package = "com.example.tutorial";
+</span><span class='line'>option java_outer_classname = "AddressBookProtos";
+</span><span class='line'>
+</span><span class='line'>message Person {
+</span><span class='line'>  required string name = 1;
+</span><span class='line'>  required int32 id = 2;
+</span><span class='line'>  optional string email = 3;
+</span><span class='line'>
+</span><span class='line'>  enum PhoneType {
+</span><span class='line'>    MOBILE = 0;
+</span><span class='line'>    HOME = 1;
+</span><span class='line'>    WORK = 2;
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  message PhoneNumber {
+</span><span class='line'>    required string number = 1;
+</span><span class='line'>    optional PhoneType type = 2 [default = HOME];
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  repeated PhoneNumber phone = 4;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>message AddressBook {
+</span><span class='line'>  repeated Person person = 1;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>string和int32是protobuf支持的基本类型，所有支持的类型及其含义如下：</p>
+
+<p><img src="/images/protocol/protobuf_field_type.png"></p>
+
+<p>如下生成message对应的Java文件如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>protoc -I=. --java_out=. ./addressbook.proto</span></code></pre></td></tr></table></div></figure>
+
+
+<p>生产数据方直接使用对应的Builder生成对象，然后往流里面写数据：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>    final String FILE_NAME = "protobuf.stream";
+</span><span class='line'>
+</span><span class='line'>    //build
+</span><span class='line'>    AddressBookProtos.Person me =
+</span><span class='line'>            AddressBookProtos.Person.newBuilder()
+</span><span class='line'>                    .setId(1234)
+</span><span class='line'>                    .setName("baoiu.xiao")
+</span><span class='line'>                    .setEmail("baoiu.xiao@example.com")
+</span><span class='line'>                    .addPhone(AddressBookProtos.Person.PhoneNumber.newBuilder()
+</span><span class='line'>                            .setNumber("15910645718")
+</span><span class='line'>                            .setType(AddressBookProtos.Person.PhoneType.HOME))
+</span><span class='line'>                    .build();
+</span><span class='line'>
+</span><span class='line'>    FileOutputStream FileOutputStream = new FileOutputStream(FILE_NAME);
+</span><span class='line'>    //往流里面写数据
+</span><span class='line'>    me.writeTo(FileOutputStream);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>消费数据方可以直接从流中读取并解析对象：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>    final String FILE_NAME = "protobuf.stream";
+</span><span class='line'>
+</span><span class='line'>    FileInputStream fis = new FileInputStream(FILE_NAME);
+</span><span class='line'>
+</span><span class='line'>    //从流里面解析出AddressBookProtos.Person对象
+</span><span class='line'>    AddressBookProtos.Person me = AddressBookProtos.Person.parseFrom(fis);
+</span><span class='line'>
+</span><span class='line'>    System.out.println(me.toString());</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>4.自描述消息</h2>
+
+<h2>5.序列化性能</h2>
+
+<p>参考git上的各种序列化的测试结果：
+<a href="https://github.com/eishay/jvm-serializers/wiki">https://github.com/eishay/jvm-serializers/wiki</a></p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-11-23T20:48:42+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>8:48 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>今天发布线上碰到一个小问题，Memcached存储的数据类型包括枚举的时候，当修改枚举的包路径之后，会出现问题。
+异常信息如下，比较直观，就是数据的反序列化失败：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[2015-11-23 18:04:45 ERROR net.rubyeye.xmemcached.transcoders.BaseSerializingTranscoder:113] Caught CNFE decoding 944 bytes of data
+</span><span class='line'>java.lang.ClassNotFoundException: Xxx.Xxx.Xxx.Xxx.RoomStatus
+</span><span class='line'>        at org.apache.catalina.loader.WebappClassLoader.loadClass(WebappClassLoader.java:1702) ~[catalina.jar:7.0.47]
+</span><span class='line'>        at org.apache.catalina.loader.WebappClassLoader.loadClass(WebappClassLoader.java:1547) ~[catalina.jar:7.0.47]
+</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.BaseSerializingTranscoder$1.resolveClass(BaseSerializingTranscoder.java:102) ~[xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at java.io.ObjectInputStream.readNonProxyDesc(ObjectInputStream.java:1612) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readClassDesc(ObjectInputStream.java:1517) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readEnum(ObjectInputStream.java:1725) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1347) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.defaultReadFields(ObjectInputStream.java:1990) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readSerialData(ObjectInputStream.java:1915) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readOrdinaryObject(ObjectInputStream.java:1798) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1350) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readObject(ObjectInputStream.java:370) ~[na:1.7.0_45]
+</span><span class='line'>        at java.util.ArrayList.readObject(ArrayList.java:771) ~[na:1.7.0_45]
+</span><span class='line'>        at sun.reflect.GeneratedMethodAccessor41.invoke(Unknown Source) ~[na:na]
+</span><span class='line'>        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43) ~[na:1.7.0_45]
+</span><span class='line'>        at java.lang.reflect.Method.invoke(Method.java:606) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectStreamClass.invokeReadObject(ObjectStreamClass.java:1017) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readSerialData(ObjectInputStream.java:1893) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readOrdinaryObject(ObjectInputStream.java:1798) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1350) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.defaultReadFields(ObjectInputStream.java:1990) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readSerialData(ObjectInputStream.java:1915) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readOrdinaryObject(ObjectInputStream.java:1798) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1350) ~[na:1.7.0_45]
+</span><span class='line'>        at java.io.ObjectInputStream.readObject(ObjectInputStream.java:370) ~[na:1.7.0_45]
+</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.BaseSerializingTranscoder.deserialize(BaseSerializingTranscoder.java:106) ~[xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.SerializingTranscoder.decode0(SerializingTranscoder.java:92) [xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.SerializingTranscoder.decode(SerializingTranscoder.java:86) [xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.fetch0(XMemcachedClient.java:630) [xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.get0(XMemcachedClient.java:1030) [xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.get(XMemcachedClient.java:988) [xmemcached-1.4.1.jar:na]
+</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.get(XMemcachedClient.java:999) [xmemcached-1.4.1.jar:na]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>场景如下：</p>
+
+<ol>
+<li>Memcached已经有数据，数据中包含RoomStatus数据；</li>
+<li>修改了枚举的包路径，发布线上；</li>
+<li>从Cache中读取之前的数据会出现枚举反序列化异常；</li>
+</ol>
+
+
+<p>在本地代码中重现了一下问题，并看了一下使用枚举的情况下其他可能处心问题的场景，结论如下（前提是Cache中已经存在使用RoomStatus数据）：</p>
+
+<ol>
+<li>修改包路径，会导致get数据反序列化失败，java.lang.ClassNotFoundException: Xxx.Xxx.Xxx.Xxx.RoomStatus；</li>
+<li>RoomStatus增加项，正常；</li>
+<li>RoomStatus减少项(已Cache数据中未使用到的项)，正常；</li>
+<li>RoomStatus减少项(已Cache数据中使用到的项)，异常：enum constant Xxx does not exist in Xxx.Xxx.Xxx.Xxx.RoomStatus；</li>
+</ol>
+
+
+<p>综上，在Memcached中cache包含枚举的数据时候，建议如下：</p>
+
+<ol>
+<li>不要修改枚举的包路径；</li>
+<li>不要删除枚举中的数据；</li>
+</ol>
+
+
+<p>这些序列化和反序列化的逻辑再XMemcached客户端实现的。详见SerializingTranscoder类，包含数据的encode和decode逻辑。再使用Memcached的时候也可以使用</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -170,1360 +1301,6 @@
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/11/19/memcachedxian-zhi-fang-wen-ip/">Memcached安全性</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-11-19T18:39:25+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>19</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:39 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><ul>
-<li><a href="#1.Memcached%20-l%E5%8F%82%E6%95%B0">1.Memcached -l参数</a></li>
-<li><a href="#2.%E4%BD%BF%E7%94%A8iptable">2.使用iptable</a></li>
-<li><a href="#2.%E4%B8%8D%E9%9C%80%E8%A6%81Root%E6%9D%83%E9%99%90">3.不需要Root权限</a></li>
-</ul>
-
-
-<h2 id="1.Memcached -l参数">1.Memcached -l参数</h2>
-
-
-<p>最近整理了组内使用的Memcached。发现很多问题，其中一个问题就是开发机器测试机器可以直连线上的Memcached。这也是memcached公认的问题：memcached 是一种很简单、有效的协议，但也有其缺点，就是 memcached 自身没有 ACL 控制（或者相当弱）。</p>
-
-<p>Memcache服务器端都是直接通过客户端连接后直接操作，没有任何的验证过程，这样如果服务器是直接暴露在互联网上的话是比较危险，轻则数据泄露被其他无关人员查看，重则服务器被入侵。</p>
-
-<p>乌云也爆料过很多网站的memcached的安全性问题：
-<a href="http://www.wooyun.org/bugs/wooyun-2010-0790">http://www.wooyun.org/bugs/wooyun-2010-0790</a>
-<a href="http://www.wooyun.org/bugs/wooyun-2013-023891">http://www.wooyun.org/bugs/wooyun-2013-023891</a>
-<a href="http://www.wooyun.org/bugs/wooyun-2013-037301">http://www.wooyun.org/bugs/wooyun-2013-037301</a></p>
-
-<p>通过-l参数可以再已定成都上做到安全的限制：</p>
-
-<ol>
-<li>如果限定只要自己能够使用本机的Memcached，可以直接将-l参数绑定到回路地址127.0.0.1.</li>
-<li>如果是后台系统且有自己的私有IP，最好将-l参数绑定到私有IP上(比如192.168.0.200).</li>
-</ol>
-
-
-<p>如果Memcached非要挂在公网IP上，就需要做防火量限制，如下面说道的iptables。</p>
-
-<h2 id="2.使用iptable">2.使用iptable</h2>
-
-
-<p>ACL 最简单的设置方法就是在网络层，直接拒绝掉你的访问，通过iptable可以实现这个功能。</p>
-
-<p>假如我们的一台 memcached 的机器，想拒绝除了自身之外的访问，假如机器自己IP是：XX.XX.XX.184，那么我们可以以root身份用下面几条命令来达到我们的目的：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp -s 127.0.0.1 --dport 6666 -j ACCEPT
-</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp -s XX.XX.XX.184 --dport 6666 -j ACCEPT
-</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp --dport 6666 -j REJECT
-</span><span class='line'>
-</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -L -n --line-number
-</span><span class='line'>Chain INPUT (policy ACCEPT)
-</span><span class='line'>num  target     prot opt source               destination         
-</span><span class='line'>1    ACCEPT     tcp  --  127.0.0.1            0.0.0.0/0           tcp dpt:6666 
-</span><span class='line'>2    ACCEPT     tcp  --  XX.XX.XX.184         0.0.0.0/0           tcp dpt:6666 
-</span><span class='line'>3    REJECT     tcp  --  0.0.0.0/0            0.0.0.0/0           tcp dpt:6666 reject-with icmp-port-unreachable 
-</span><span class='line'>
-</span><span class='line'>Chain FORWARD (policy ACCEPT)
-</span><span class='line'>num  target     prot opt source               destination         
-</span><span class='line'>
-</span><span class='line'>Chain OUTPUT (policy ACCEPT)
-</span><span class='line'>num  target     prot opt source               destination</span></code></pre></td></tr></table></div></figure>
-
-
-<p>这里使用的是iptables的filter功能，其filter是一种链式结构且有从前往后依次执行。满足某一条filter规则就不往下走了。因此基于这个原则，我们需要将最严格的规则放在最前面。</p>
-
-<p>删除某一条规则，其中的1就是iptables -L -n &ndash;line-number中的num号。如下会删除Chain INPUT中的编号为1的规则：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@... ~]sudo iptables -D INPUT 1</span></code></pre></td></tr></table></div></figure>
-
-
-<p>可以使用iptables -F 清空所有规则.</p>
-
-<h2 id="3.不需要Root权限">3.不需要Root权限</h2>
-
-
-<p>启动Memcached不需要Root权限，这样能避免Memcached被入侵而造成更大的危害。</p>
-
-<p>参考：
-<a href="http://blog.couchbase.com/memcached-security">http://blog.couchbase.com/memcached-security</a>
-<a href="http://serverfault.com/questions/424324/how-to-secure-memcached">http://serverfault.com/questions/424324/how-to-secure-memcached</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/11/18/libphonenumber/">Libphonenumber</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-11-18T18:52:58+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>18</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:52 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><ul>
-<li><a href="#1.%E7%AE%80%E4%BB%8B">1.简介</a></li>
-<li><a href="#2.%E4%BD%BF%E7%94%A8Demo">2.使用Demo</a></li>
-<li><a href="#3.%E6%B3%A8%E6%84%8F%E7%82%B9">3.注意点</a></li>
-</ul>
-
-
-<h2 id="1.简介">1.简介</h2>
-
-
-<p>最近项目中做短信发送相关的工作.涉及到国内手机和国际手机.因此第一步需要解析电话获取国家码.</p>
-
-<p>使用的库是Google提供的著名开源库libphonenumber.有的App的手机号码归属地等功能就是使用这个实现的。支持Java， C++ 和 JavaScript。</p>
-
-<p>libphonenumber是一个手机号码工具类,提供了手机号码的格式化,解析,校验等功能.典型的比如:</p>
-
-<ol>
-<li>解析手机号码,获取国际码;</li>
-<li>根据国家代码和手机号,判断手机号是否有效;</li>
-<li>根据国家代码和手机号,判断手机运营商</li>
-<li>根据国家代码和手机号,手机归属地</li>
-</ol>
-
-
-<p>Git地址： <a href="https://github.com/googlei18n/libphonenumber">https://github.com/googlei18n/libphonenumber</a></p>
-
-<p>国家码参考：<a href="http://country-code.cl/">http://country-code.cl/</a></p>
-
-<h2 id="2.使用Demo">2.使用Demo</h2>
-
-
-<p>Maven引入</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>    &lt;!--手机号解析--&gt;
-</span><span class='line'>    &lt;dependency&gt;
-</span><span class='line'>        &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
-</span><span class='line'>        &lt;artifactId&gt;libphonenumber&lt;/artifactId&gt;
-</span><span class='line'>        &lt;version&gt;7.2.1&lt;/version&gt;
-</span><span class='line'>    &lt;/dependency&gt;
-</span><span class='line'>    &lt;!--手机归属地定位相关--&gt;
-</span><span class='line'>    &lt;dependency&gt;
-</span><span class='line'>        &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
-</span><span class='line'>        &lt;artifactId&gt;geocoder&lt;/artifactId&gt;
-</span><span class='line'>        &lt;version&gt;2.9&lt;/version&gt;
-</span><span class='line'>    &lt;/dependency&gt;
-</span><span class='line'>    &lt;!-- 手机运营商相关 --&gt;
-</span><span class='line'>    &lt;dependency&gt;
-</span><span class='line'>        &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
-</span><span class='line'>        &lt;artifactId&gt;carrier&lt;/artifactId&gt;
-</span><span class='line'>        &lt;version&gt;1.21&lt;/version&gt;
-</span><span class='line'>    &lt;/dependency&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>简单代码如下</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-<span class='line-number'>108</span>
-<span class='line-number'>109</span>
-<span class='line-number'>110</span>
-<span class='line-number'>111</span>
-<span class='line-number'>112</span>
-<span class='line-number'>113</span>
-<span class='line-number'>114</span>
-<span class='line-number'>115</span>
-<span class='line-number'>116</span>
-<span class='line-number'>117</span>
-<span class='line-number'>118</span>
-<span class='line-number'>119</span>
-<span class='line-number'>120</span>
-<span class='line-number'>121</span>
-<span class='line-number'>122</span>
-<span class='line-number'>123</span>
-<span class='line-number'>124</span>
-<span class='line-number'>125</span>
-<span class='line-number'>126</span>
-<span class='line-number'>127</span>
-<span class='line-number'>128</span>
-<span class='line-number'>129</span>
-<span class='line-number'>130</span>
-<span class='line-number'>131</span>
-<span class='line-number'>132</span>
-<span class='line-number'>133</span>
-<span class='line-number'>134</span>
-<span class='line-number'>135</span>
-<span class='line-number'>136</span>
-<span class='line-number'>137</span>
-<span class='line-number'>138</span>
-<span class='line-number'>139</span>
-<span class='line-number'>140</span>
-<span class='line-number'>141</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class LibphonenumberUsage {
-</span><span class='line'>
-</span><span class='line'>    private static final PhoneNumberUtil phoneNumberUtil = PhoneNumberUtil.getInstance();
-</span><span class='line'>
-</span><span class='line'>    private static PhoneNumberToCarrierMapper carrier = PhoneNumberToCarrierMapper.getInstance();
-</span><span class='line'>
-</span><span class='line'>    private static PhoneNumberOfflineGeocoder geocoder = PhoneNumberOfflineGeocoder.getInstance();
-</span><span class='line'>
-</span><span class='line'>    private static final String DEFAULT_COUNTRY = "CN";
-</span><span class='line'>
-</span><span class='line'>    private static final String[] phoneCases = new String[] {
-</span><span class='line'>            "00861861****515",  //中国
-</span><span class='line'>            "008869****7718",   //台湾
-</span><span class='line'>            "00658****994",     //新加坡
-</span><span class='line'>            "1591****718",      //中国
-</span><span class='line'>            "00820****704546",  //Korea
-</span><span class='line'>            "1709****155"       //中国170
-</span><span class='line'>    };
-</span><span class='line'>
-</span><span class='line'>    private static final String[] countryCodes = new String[]{
-</span><span class='line'>            "886",      //台湾
-</span><span class='line'>            "65",       //新加坡
-</span><span class='line'>            "86",       //中国
-</span><span class='line'>            "82",       //Korea
-</span><span class='line'>            "86"        //中国170
-</span><span class='line'>    };
-</span><span class='line'>    private static final String[] phones = new String[]{
-</span><span class='line'>            "972****718",        //台湾
-</span><span class='line'>            "82****94",         //新加坡
-</span><span class='line'>            "1591****718",      //中国
-</span><span class='line'>            "1074****46",       //Korea
-</span><span class='line'>            "1709****155"       //中国170
-</span><span class='line'>    };
-</span><span class='line'>
-</span><span class='line'>    public static final Map&lt;String, String&gt; CHINESE_CARRIER_MAPPER = Maps.newHashMap();
-</span><span class='line'>    static {
-</span><span class='line'>        CHINESE_CARRIER_MAPPER.put("China Mobile", "中国移动");
-</span><span class='line'>        CHINESE_CARRIER_MAPPER.put("China Unicom", "中国联通");
-</span><span class='line'>        CHINESE_CARRIER_MAPPER.put("China Telecom", "中国电信");
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void main(String[] args) {
-</span><span class='line'>//        parsePhone();
-</span><span class='line'>
-</span><span class='line'>//        validPhone();
-</span><span class='line'>
-</span><span class='line'>//        phoneCarrierCase();
-</span><span class='line'>
-</span><span class='line'>        phoneGeoCase();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 电话解析case
-</span><span class='line'>     */
-</span><span class='line'>    private static void parsePhone() {
-</span><span class='line'>
-</span><span class='line'>
-</span><span class='line'>        for(String phone : phoneCases) {
-</span><span class='line'>            Phonenumber.PhoneNumber pn = doParse(phone);
-</span><span class='line'>            System.out.println(phone + " --&gt; " + pn.getCountryCode() + ", " + pn.getNationalNumber());
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 解析逻辑
-</span><span class='line'>     */
-</span><span class='line'>    private static final Phonenumber.PhoneNumber doParse(String phone) {
-</span><span class='line'>        try {
-</span><span class='line'>            return phoneNumberUtil.parse(phone, DEFAULT_COUNTRY);
-</span><span class='line'>        } catch (NumberParseException e) {
-</span><span class='line'>            throw new NumberFormatException("invalid phone number: " + phone);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 电话解析case
-</span><span class='line'>     */
-</span><span class='line'>    private static void validPhone() {
-</span><span class='line'>        for (int i = 0; i &lt; countryCodes.length; i++) {
-</span><span class='line'>            boolean valid = doValid(countryCodes[i], phones[i]);
-</span><span class='line'>            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + valid);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 手机校验逻辑
-</span><span class='line'>     */
-</span><span class='line'>    private static boolean doValid(String countryCode, String phoneNumber){
-</span><span class='line'>        int ccode = Integer.parseInt(countryCode);
-</span><span class='line'>        long phone = Long.parseLong(phoneNumber);
-</span><span class='line'>
-</span><span class='line'>        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
-</span><span class='line'>        pn.setCountryCode(ccode);
-</span><span class='line'>        pn.setNationalNumber(phone);
-</span><span class='line'>
-</span><span class='line'>        return phoneNumberUtil.isValidNumber(pn);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    private static void phoneCarrierCase() {
-</span><span class='line'>        for (int i = 0; i &lt; countryCodes.length; i++) {
-</span><span class='line'>            String carrier = doCarrier(countryCodes[i], phones[i]);
-</span><span class='line'>            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + (CHINESE_CARRIER_MAPPER.containsKey(carrier)?CHINESE_CARRIER_MAPPER.get(carrier):carrier));
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 手机运营商
-</span><span class='line'>     */
-</span><span class='line'>    private static String doCarrier(String countryCode, String phoneNumber){
-</span><span class='line'>        int ccode = Integer.parseInt(countryCode);
-</span><span class='line'>        long phone = Long.parseLong(phoneNumber);
-</span><span class='line'>
-</span><span class='line'>        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
-</span><span class='line'>        pn.setCountryCode(ccode);
-</span><span class='line'>        pn.setNationalNumber(phone);
-</span><span class='line'>
-</span><span class='line'>        //返回结果只有英文，自己转成成中文
-</span><span class='line'>        return carrier.getNameForNumber(pn, Locale.ENGLISH);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    private static void phoneGeoCase() {
-</span><span class='line'>        for (int i = 0; i &lt; countryCodes.length; i++) {
-</span><span class='line'>            String geo = doGeo(countryCodes[i], phones[i]);
-</span><span class='line'>            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + geo);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 手机归属地
-</span><span class='line'>     */
-</span><span class='line'>    public static String doGeo(String countryCode, String phoneNumber){
-</span><span class='line'>        int ccode = Integer.parseInt(countryCode);
-</span><span class='line'>        long phone = Long.parseLong(phoneNumber);
-</span><span class='line'>
-</span><span class='line'>        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
-</span><span class='line'>        pn.setCountryCode(ccode);
-</span><span class='line'>        pn.setNationalNumber(phone);
-</span><span class='line'>
-</span><span class='line'>        return geocoder.getDescriptionForNumber(pn, Locale.CHINESE);
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<h2 id="3.注意点">3.注意点</h2>
-
-
-<ol>
-<li><p>电话解析的时候需要加上00前缀才能解析成功，比如008615912345678能解析，但是8615912345678不能解析成功；</p></li>
-<li><p>libphonenumber的基础信息库也是不断更新，比如libphonenumber的7.0.2版本不能解析170号段的电话，7.0.3以后就支持了；</p></li>
-</ol>
-
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/09/09/lunecezheng-ti-jia-gou/">Lucene整体架构</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-09-09T22:19:51+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>9</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>10:19 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><ul>
-<li><a href="#1.%E6%BA%90%E7%A0%81%E7%BB%93%E6%9E%84">1.源码结构</a></li>
-<li><a href="#2.Lucene%E4%BD%BF%E7%94%A8Demo">2.Lucene使用Demo</a>
-
-<ul>
-<li><a href="#2.1%20%E4%B8%BB%E8%A6%81%E7%B1%BB">2.1 主要类</a></li>
-</ul>
-</li>
-<li><a href="#3.%E5%BB%BA%E7%AB%8B%E7%B4%A2%E5%BC%95%E6%B5%81%E7%A8%8B">3.建立索引流程</a></li>
-<li><a href="#4.%E6%90%9C%E7%B4%A2%E6%B5%81%E7%A8%8B">4.搜索流程</a></li>
-</ul>
-
-
-<p>根据上篇文章,我们大致知道Lucene创建索引和搜索的一个过程:</p>
-
-<p><img src="/images/lucene/Lucene_index_and_search.jpg"></p>
-
-<p>这里主要分析一下Lucene的代码结构,包括理由Lucene API实现一个简单建立索引和搜索的小例子.</p>
-
-<p>由于我们的服务器上crate是基于Lucene 4.10.3版本.所以我这里采用的Lucene版本也是4.10版本,小版本是4.10.4,是Lucene 4的最后一个版本,大约2014年9月推出,还比较新鲜.目前已经到了5.3版本.</p>
-
-<h2 id="1.源码结构">1.源码结构</h2>
-
-
-<p>首先看一下Lucene的源码结构,Lucene-core主要代码包结构如下:</p>
-
-<p><img src="/images/lucene/Lucene_source_struct.png"></p>
-
-<p>每个包下面都有package.html文件介绍包的作用.各个包的作用如下:</p>
-
-<pre><code>1.analysis
-分词模块,包含将文本转化为可索引化/可搜索化的词元(convert text into indexable/searchable tokens)的API和实现.包括org.apache.lucene.analysis.Analyzer和其相关类.
-2.codecs
-包含自定义底层索引的编码和索引结构的模块,还包括索引的压缩,索引版本管理等.
-3.document
-定义了被索引和搜索内容的用户层面的逻辑定义,就是我们熟悉的Document,各种类型的Filed及其属性定义等.同事也提供了一下org.apache.lucene.document.Document和org.apache.lucene.index.IndexableField相关的工具类.
-4.index
-包含了索引维护(创建,更新,删除)和访问(读)的逻辑.包括我们熟悉的IndexReader,IndexWriter等.
-5.search
-索引的搜索.包括相似度的定义(similarities包),权重计算,文档评分计算,布尔模型,搜索结果搜集等逻辑.
-6.store
-索引底层二进制数据的读写,包括索引文件的Buffered的流的实现等,还包括一些限流策略的实现(RateLimiter)等.
-7.util
-工具类,如排序器,数学工具类,优先级队列等工具的实现等.
-</code></pre>
-
-<p>包基本上和本文开头的图对应起来,其中的QueryParser再Lucene4中是一个单独的jar包:</p>
-
-<p><img src="/images/lucene/Lucene_code_package_usage.jpg"></p>
-
-<h2 id="2.Lucene使用Demo">2.Lucene使用Demo</h2>
-
-
-<p>首先上一个Lucene的简单的Demo,基本上是参考官网提供的Demo,自己手动修改了点,作用就是索引一个目录下的文本文件,在此基础上提供搜索服务.其中Indexer用于创建索引,Searcher作为搜索入口,接受用户输入的Query词并执行搜索.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-<span class='line-number'>108</span>
-<span class='line-number'>109</span>
-<span class='line-number'>110</span>
-<span class='line-number'>111</span>
-<span class='line-number'>112</span>
-<span class='line-number'>113</span>
-<span class='line-number'>114</span>
-<span class='line-number'>115</span>
-<span class='line-number'>116</span>
-<span class='line-number'>117</span>
-<span class='line-number'>118</span>
-<span class='line-number'>119</span>
-<span class='line-number'>120</span>
-<span class='line-number'>121</span>
-<span class='line-number'>122</span>
-<span class='line-number'>123</span>
-<span class='line-number'>124</span>
-<span class='line-number'>125</span>
-<span class='line-number'>126</span>
-<span class='line-number'>127</span>
-<span class='line-number'>128</span>
-<span class='line-number'>129</span>
-<span class='line-number'>130</span>
-<span class='line-number'>131</span>
-<span class='line-number'>132</span>
-<span class='line-number'>133</span>
-<span class='line-number'>134</span>
-<span class='line-number'>135</span>
-<span class='line-number'>136</span>
-<span class='line-number'>137</span>
-<span class='line-number'>138</span>
-<span class='line-number'>139</span>
-<span class='line-number'>140</span>
-<span class='line-number'>141</span>
-<span class='line-number'>142</span>
-<span class='line-number'>143</span>
-<span class='line-number'>144</span>
-<span class='line-number'>145</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * 创建索引
-</span><span class='line'> *
-</span><span class='line'> * @author: xiaobaoqiu  Date: 15-9-8 Time: 下午4:04
-</span><span class='line'> */
-</span><span class='line'>public final class Indexer {
-</span><span class='line'>
-</span><span class='line'>    public static void main(String[] args) {
-</span><span class='line'>        indexDocs(CommonConfig.SOURCE_FILE_DIR, CommonConfig.INDEX_FILE_DIR, true);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 构建磁盘索引
-</span><span class='line'>     *
-</span><span class='line'>     * @param dirPath 原始文件
-</span><span class='line'>     * @param indexPath 索引文件存放路径
-</span><span class='line'>     * @param create    创建or更新
-</span><span class='line'>     */
-</span><span class='line'>    public static void indexDocs(String dirPath, String indexPath, boolean create) {
-</span><span class='line'>        try {
-</span><span class='line'>            Directory dir = FSDirectory.open(new File(indexPath));
-</span><span class='line'>            Analyzer analyzer = new StandardAnalyzer(Version.LUCENE_4_10_0);
-</span><span class='line'>            IndexWriterConfig iwc = new IndexWriterConfig(Version.LUCENE_4_10_0, analyzer);
-</span><span class='line'>
-</span><span class='line'>            if (create) {
-</span><span class='line'>                iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
-</span><span class='line'>            } else {
-</span><span class='line'>                iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
-</span><span class='line'>            }
-</span><span class='line'>
-</span><span class='line'>            IndexWriter writer = new IndexWriter(dir, iwc);
-</span><span class='line'>            doIndexDocs(writer, new File(dirPath));
-</span><span class='line'>
-</span><span class='line'>            System.out.println("Build index finished...");
-</span><span class='line'>            writer.close();
-</span><span class='line'>        }catch (IOException ioe) {
-</span><span class='line'>            //do something...
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    static void doIndexDocs(IndexWriter writer, File file) throws IOException {
-</span><span class='line'>        if (!file.canRead()) {
-</span><span class='line'>            System.out.println("文件不可读:" + file.getAbsolutePath());
-</span><span class='line'>            return;
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        //文件夹则索引文件夹下的索引文件
-</span><span class='line'>        if (file.isDirectory()) {
-</span><span class='line'>            String[] files = file.list();
-</span><span class='line'>            if (files != null) {
-</span><span class='line'>                for (int i = 0; i &lt; files.length; i++) {
-</span><span class='line'>                    doIndexDocs(writer, new File(file, files[i]));
-</span><span class='line'>                }
-</span><span class='line'>            }
-</span><span class='line'>        } else {
-</span><span class='line'>            doIndexFile(writer, file);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 索引一个文件
-</span><span class='line'>     *
-</span><span class='line'>     * @param writer
-</span><span class='line'>     * @param file
-</span><span class='line'>     */
-</span><span class='line'>    private static void doIndexFile(IndexWriter writer, File file) throws IOException{
-</span><span class='line'>        //单个文件
-</span><span class='line'>        FileInputStream fis;
-</span><span class='line'>        try {
-</span><span class='line'>            fis = new FileInputStream(file);
-</span><span class='line'>        } catch (FileNotFoundException fnfe) {
-</span><span class='line'>            //do nothing
-</span><span class='line'>            return;
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        try {
-</span><span class='line'>            // 创建一个新的空的Document
-</span><span class='line'>            Document doc = new Document();
-</span><span class='line'>
-</span><span class='line'>            //文件路径字段
-</span><span class='line'>            doc.add(new StringField(CommonConfig.PATH_FIELD_NAME, file.getPath(), Field.Store.YES));
-</span><span class='line'>            //文件最后修改时间字段
-</span><span class='line'>            doc.add(new LongField(CommonConfig.MODIFIED_FIELD_NAME, file.lastModified(), Field.Store.NO));
-</span><span class='line'>            //文件内容,不存储原始串
-</span><span class='line'>            doc.add(new TextField(CommonConfig.CONTENTS_FIELD_NAME, new BufferedReader(new InputStreamReader(fis, StandardCharsets.UTF_8))));
-</span><span class='line'>
-</span><span class='line'>            //新建索引 or 更新索引
-</span><span class='line'>            if (writer.getConfig().getOpenMode() == IndexWriterConfig.OpenMode.CREATE) {
-</span><span class='line'>                writer.addDocument(doc);
-</span><span class='line'>            } else {
-</span><span class='line'>                writer.updateDocument(new Term("path", file.getPath()), doc);
-</span><span class='line'>            }
-</span><span class='line'>        } finally {
-</span><span class='line'>            fis.close();
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>/**
-</span><span class='line'> * 查询索引
-</span><span class='line'> * 接受用户输入作为Query词
-</span><span class='line'> *
-</span><span class='line'> * @author: xiaobaoqiu  Date: 15-9-8 Time: 下午4:09
-</span><span class='line'> */
-</span><span class='line'>public final class Searcher {
-</span><span class='line'>
-</span><span class='line'>    public static void main(String[] args) throws Exception {
-</span><span class='line'>        search(CommonConfig.INDEX_FILE_DIR, CommonConfig.CONTENTS_FIELD_NAME);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void search(String indexPath, String field) throws Exception {
-</span><span class='line'>        IndexReader reader = DirectoryReader.open(FSDirectory.open(new File(indexPath)));
-</span><span class='line'>        IndexSearcher searcher = new IndexSearcher(reader);
-</span><span class='line'>        Analyzer analyzer = new StandardAnalyzer(Version.LUCENE_4_10_0);
-</span><span class='line'>        QueryParser parser = new QueryParser(Version.LUCENE_4_10_0, field, analyzer);
-</span><span class='line'>
-</span><span class='line'>        //接受用户输入
-</span><span class='line'>        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
-</span><span class='line'>        String queryString = null;
-</span><span class='line'>        while (StringUtils.isNotEmpty(queryString = in.readLine())) {
-</span><span class='line'>            Query query = parser.parse(queryString.trim());
-</span><span class='line'>
-</span><span class='line'>            doSearch(searcher, query);
-</span><span class='line'>        }
-</span><span class='line'>        reader.close();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void doSearch(IndexSearcher searcher, Query query) throws IOException {
-</span><span class='line'>        // 搜索 CommonConfig.SEARCH_MAX_ITEM_COUNT 个数据
-</span><span class='line'>        TopDocs results = searcher.search(query, CommonConfig.SEARCH_MAX_ITEM_COUNT);
-</span><span class='line'>        ScoreDoc[] hits = results.scoreDocs;
-</span><span class='line'>        int numTotalHits = results.totalHits;
-</span><span class='line'>        System.out.println(numTotalHits + " total matching documents");
-</span><span class='line'>
-</span><span class='line'>        if (ArrayUtils.isEmpty(hits)) return;
-</span><span class='line'>
-</span><span class='line'>        for (ScoreDoc hit : hits) {
-</span><span class='line'>            System.out.println();
-</span><span class='line'>            Document hitDoc = searcher.doc(hit.doc);
-</span><span class='line'>            System.out.println(CommonConfig.PATH_FIELD_NAME + " = " + hitDoc.get(CommonConfig.PATH_FIELD_NAME) +
-</span><span class='line'>                    "\n" + CommonConfig.MODIFIED_FIELD_NAME + " = " + hitDoc.get(CommonConfig.MODIFIED_FIELD_NAME) +
-</span><span class='line'>                    "\n" + CommonConfig.CONTENTS_FIELD_NAME + " = " + hitDoc.get(CommonConfig.CONTENTS_FIELD_NAME));
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>输入的文件及生成的索引:</p>
-
-<p><img src="/images/lucene/Lucene_demo_input_output.png"></p>
-
-<p>建立索引的基本过程如下:</p>
-
-<pre><code>1.FSDirectory定义索引文件存放目录
-2.选择分词使用的Analyzer.
-3.选择索引文件版本信息Version,将其和Analyzer组成IndexWriterConfig.
-4.利用IndexWriterConfig生成一个IndexWriter,用于索引文件的变更;
-5.根据原始文件生成一些列的Document,每个文档中包含多个Field,设置每个Field是否分词,释放存储等属性;
-6.使用IndexWriter将文档写入索引文件.
-</code></pre>
-
-<p>搜索的基本过程如下:</p>
-
-<pre><code>1.根据索引文件的目录生成一个IndexReader,将索引文件读到内存中.
-2.生成一个IndexSearcher用于搜索;
-3.选择一个分词器;
-4.定义用户输入Query的解析器QueryParser;
-5.接受用户输入,执行搜索过程,得到搜索结果用TopDocs表示,其中包含了命中文档的数目以及命中文档的id集合;
-6.根据文档id获取对应的文档,从文档中获取各个Field信息;
-</code></pre>
-
-<h4 id="2.1 主要类">2.1 主要类</h4>
-
-
-<p>首先介绍一下其中涉及到的主要的类:</p>
-
-<ul>
-<li><p>FSDirectory
-Lucene文件操作都是通过Directory实现，其中有一个比较特殊的方法sync，用来保证任何对文件的写都能够得到永久保存。Lucene使用这个来保证正确提交索引数据变更，也能够防止机器或者操作系统级别的错误影响(corrupting)索引数据.</p></li>
-<li><p>Analyzer,StandardAnalyzer</p></li>
-<li>Version</li>
-<li>IndexWriterConfig</li>
-<li>IndexWriter</li>
-<li>Document</li>
-<li>StringField,LongField,TextField</li>
-<li>IndexReader,DirectoryReader</li>
-<li>IndexSearcher</li>
-<li>QueryParser</li>
-<li>Query</li>
-<li>TopDocs</li>
-<li>ScoreDoc</li>
-</ul>
-
-
-<h2 id="3.建立索引流程">3.建立索引流程</h2>
-
-
-
-
-<h2 id="4.搜索流程">4.搜索流程</h2>
-
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/09/03/luceneru-men/">Lucene入门</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-09-03T14:13:54+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>2:13 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>Crate再项目中扮演越来越重要的角色.但是很多时候我对Crate,包括其下层的ElasticSearch以及Lucene都是一知半解,甚至可以说是完全不懂.因为没看过源代码.所以这段时间会集中学习一下Lucene和ElasticSearch的源码.</p>
-
-<p>从Lucene开始.会包含以下内容:</p>
-
-<pre><code>1.Lucene简介;
-2.Lunece整体架构;
-3.Lucene的存储;
-4.Lucene的搜索;
-5.Lucene其他功能,如高亮等;
-</code></pre>
-
-<p>这里从Lucene简介开始.第一次使用Lucene已经是两年前入职的时候,写了个简单的爬虫,抓取999网的疾病信息并提供一个简单的搜索入口.这里主要弄懂以下几个问题:</p>
-
-<pre><code>1.信息检索
-2.Lucene是什么;
-3.Lucene建立索引的大致过程;
-4.Lucene搜索的大致过程;
-</code></pre>
-
-<p>Lucene官网: <a href="http://lucene.apache.org/">http://lucene.apache.org/</a></p>
-
-<p>在Lucene基础上衍生出很多搜索框架,下面是这些框架的对比:<a href="http://stackoverflow.com/questions/2271600/elasticsearch-sphinx-lucene-solr-xapian-which-fits-for-which-usage">http://stackoverflow.com/questions/2271600/elasticsearch-sphinx-lucene-solr-xapian-which-fits-for-which-usage</a></p>
-
-<h2>1.信息检索</h2>
-
-<p>信息检索简单讲就是从一堆数据中找到你需要的数据,数据的来源可能是文本或者网络,甚至别人说的话或者声波等等.比如:</p>
-
-<ul>
-<li>从一个Excel表格中找到你的名字;</li>
-<li>从学生成绩标表中找到不及格的学生;</li>
-<li>从图书馆里面找Java编程相关的书籍;</li>
-<li>从网络搜索Lucene相关知识;</li>
-<li>老师点名时候喊到;</li>
-</ul>
-
-
-<p>人类信息检索也是一个不断发展的过程,下面这个例子简单的诠释了信息检索的改善过程:</p>
-
-<ol>
-<li>一个书生想从书屋(假设1000本书)里找一本书他能做的就是,从第一本书开始一本一本的往后找,直到找到他要的那本书.如果很不幸,书屋里面每这本书,那么他就必须翻遍所以的书,很可能他找一遍需要10个小时;</li>
-<li>经历过几次这样痛苦的找书经历之后,书生开始想招了,将书分类(假设10个分类),文学类在第一个书架子,史学类再第二个书架子&hellip;从此以后,他找书比以前方便多了.找一本书最多只需要翻一个架子,时间缩短到1个小时;但是带来的成本是:必须将书正确的放在其正确的架子上;</li>
-<li>每次翻遍一个架子,书生觉得还是比较麻烦,于是他给每本书加了一个编号,将书按照编号排列好,并将所以的书名和编号的对应关系记录到一个单独的册子上.下次他找书只需要在册子上找就可以了(只需要看册子上的1000个书名),找到书名对应的编号,然后就能快速的找到书,时间只需要10分钟.成本是书必须按照需要排列;</li>
-<li>10分钟还是有点长,书生于是决定再改善,结合2和3的改进措施.书按照各种类型放在不同的架子,每个架子的书单独编号,比如文学1,文学2&hellip;.册子上也按照书种类进行分开登记.这样找一本书只需要看一个分类下的书名(100个),只需要1分钟.</li>
-</ol>
-
-
-<p>我们生活中的数据分为:结构化数据和非结构化数据.结构化数据指具有固定格式或有限长度的数据,如数据库或者Excel表等.非结构化数据指不定长或无固定格式的数据,如邮件,word文档等.</p>
-
-<p>计算机的产生对信息检索产生了质的变化,帮我们做了很多简单却耗时的工作.在计算机检索的世界里面我们已知了很多技术:</p>
-
-<pre><code>1.对链表的搜索,我们采用从头到位逐项比较,O(N)的时间复杂度;
-2.对于有序数组,我们可以采用二分搜索(其实就是二叉树,通常称之为二叉查找树),能够达到O(logN),底数是2;
-3.多叉数的查找比二叉树更快,参考Tire树,B树等数据结构,O(logN),底数大于2;
-4.Hash表的查找理论上是O(1)的时间复杂度;
-</code></pre>
-
-<p>除了顺序查找,其他几种检索都非常的快,但是这种快都是有维护成本的,比如二分搜索需要保证数据有序,因此新来的数据的插入成本会很高,包括删除数据的成本也会很高.但是其带来的检索效率的提升是非常大的.针对结构化数据,我们往往很简单的实现数据的快速搜索,比如数据库就是使用B树来达到快速搜索的目的.</p>
-
-<p>但是现实中99%以上的原始数据都是混乱无须的非结构化数据.当数据量很大的时候,检索成为一个极其困难的问题(量变导致质变),即使对于计算很快的计算机而言.比如一个简单的字符串查找,假设在1页书的内容(约1000字)中查找一个单词可能需要1毫秒,那么在一本书的内容中(约50W词)中查找一个名字可能需要0.5秒,在1W本书(约50亿个单词)中查找这个单词需要5000秒,也就是接近1个半小时;假设每分钟要找一次呢?不敢想象.</p>
-
-<p>在当今网络及其发达的今天,已经很多的公司的数据量超过了1W本书的信息量.这时候无序信息的全文检索显得极其重要.因此也催生了诸如Google,Yahoo和Baidu这些搜索巨头.</p>
-
-<p>索引是全文搜索的基础,也是现代搜索引擎的核心,建立索引的过程就是把源数据处理成非常方便查询的索引文件的过程.你可以把索引想象成这样一种数据结构,他能够使你快速的随机访问存储在索引中的关键词,进而找到该关键词所关联的文档.</p>
-
-<p>还是以书的例子来说,假设书前三页的内容:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>//page1:
-</span><span class='line'>如何使用Lucene完善搜索
-</span><span class='line'>
-</span><span class='line'>//page2
-</span><span class='line'>Lucene数据如何存储
-</span><span class='line'>
-</span><span class='line'>//page3
-</span><span class='line'>Lucene如何实现搜索
-</span><span class='line'>
-</span><span class='line'>//page4
-</span><span class='line'>作者:肖宝秋</span></code></pre></td></tr></table></div></figure>
-
-
-<p>我们首先使用分词软件见这四页的内容分词,得到以下结果:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>//page1:
-</span><span class='line'>如何, 使用, Lucene, 完善, 搜索
-</span><span class='line'>
-</span><span class='line'>//page2
-</span><span class='line'>Lucene, 数据, 如何, 存储
-</span><span class='line'>
-</span><span class='line'>//page3
-</span><span class='line'>Lucene, 如何, 实现, 搜索
-</span><span class='line'>作者, 肖宝秋</span></code></pre></td></tr></table></div></figure>
-
-
-<p>建立词&ndash;>文档的映射关系:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>如何 --&gt; page1, page2, page3
-</span><span class='line'>使用 --&gt; page1
-</span><span class='line'>Lucene --&gt; page1, page2, page3
-</span><span class='line'>完善 --&gt; page1
-</span><span class='line'>搜索 --&gt; page1, page3
-</span><span class='line'>数据 --&gt; page2
-</span><span class='line'>存储 --&gt; page2
-</span><span class='line'>实现 --&gt; page3
-</span><span class='line'>作者 --&gt; page4
-</span><span class='line'>肖宝秋 --&gt; page4</span></code></pre></td></tr></table></div></figure>
-
-
-<p>现在搜索"Lucene"的时候,我知道在page1,page2,page3中出现了.搜索"作者"的时候,我知道在page4出现了.</p>
-
-<p>另外一个支撑现代搜索理论的既定现实是:词的数量是有限的,而且非常有限.比如常用的中文词就几万个.</p>
-
-<h2>2.Lucene是什么</h2>
-
-<p>简单讲,Lucene是一个高效的,基于Java的全文检索工具包,它不是一个完整的搜索应用程序,而是为你的应用程序提供索引和搜索功能.Lucene是Apache家族中的一个开源项目.也是目前最为流行的基于 Java 开源全文检索工具包.</p>
-
-<p>Lucene 能够为文本类型的数据建立索引,所以你只要能把你要索引的数据格式转化的文本的,Lucene 就能对你的文档进行索引和搜索.比如你要对一些 HTML 文档,PDF 文档进行索引的话你只需要把 HTML 文档和 PDF 文档转化成文本格式的,然后将转化后的内容交给Lucene进行索引,然后把创建好的索引文件保存到磁盘或者内存中,最后根据用户输入的查询条件在索引文件上进行查询.不指定要索引的文档的格式也使Lucene能够几乎适用于所有的搜索应用程序.</p>
-
-<p>下图展示搜索应用程序和Lucene之间的关系,也描述了Lucene的两个核心过程:建立索引和通过索引检索</p>
-
-<p><img src="/images/lucene/lucene_and_application.jpg"></p>
-
-<h4>2.1 Lucene优点</h4>
-
-<p>Lucene作为一个全文搜索引擎,其具有如下突出的优点:</p>
-
-<ul>
-<li>1.索引文件格式独立于应用平台.Lucene定义了一套以八字节为基础的索引文件格式,使得兼容系统和不同平台的应用能够共享建立的索引文件.</li>
-<li>2.在传统全文检索引擎的倒序索引的基础上实现了分块索引,能够针对新的文件建立小文件索引,提升索引速度.然后通过与原有的索引的合并,达到优化的目的.</li>
-<li>3.优秀的面向对象的系统架构,使得对于Lucene扩展的学习难度降低,方便加入新功能.</li>
-<li>4.设计了独立于语言和文件格式的文本分析接口,索引器通过接受token流完成索引文件的创立,用户扩展新的语言和文件格式,只需要实现文本分析的接口.</li>
-<li>5.已经默认实现了一套强大的查询引擎,用户无须自己编写代码即可使系统获得强大的查询能力,Lucene的查询实现中默认实现了布尔操作、模糊查询、分组查询.</li>
-</ul>
-
-
-<p>参考: <a href="http://lucene.apache.org/core/index.html">http://lucene.apache.org/core/index.html</a></p>
-
-<h4>2.2 倒排索引</h4>
-
-<p>现代搜索引擎基本都是基于倒排索引(反向索引).因为搜索问题本质就是求解"哪文档包含搜索词"这个问题.</p>
-
-<p>简单讲一下什么是倒排索引,简单讲就是字符串到文件的映射关系.假设我的文档集合里面有100篇文档,为了方便表示,我们为文档编号从1到100,得到下面的结构:</p>
-
-<p><img src="/images/lucene/inverted_index.jpg"></p>
-
-<p>左边保存的是一系列字符串,称为词典.每个字符串都指向包含此字符串的文档(Document)链表,此文档链表称为倒排表.</p>
-
-<p>有了索引,便使保存的信息和要搜索的信息一致,可以大大加快搜索的速度.比如说,我们要寻找既包含字符串“lucene”又包含字符串“solr”的文档,我们只需要以下几步:</p>
-
-<ol>
-<li>取出包含字符串lucene的文档链表.</li>
-<li>取出包含字符串solr的文档链表.</li>
-<li>通过合并链表,找出既包含lucene又包含solr的文件.</li>
-</ol>
-
-
-<p><img src="/images/lucene/inverted_index_merge.jpg"></p>
-
-<h2>3.Lucene建立索引</h2>
-
-<p>Lucene的建立索引包括以下几个过程:</p>
-
-<h4>3.1.原始文档</h4>
-
-<p>一些要索引的原文档(Document).包括Html文档,PDF文档,MC Word文档等.而Lucene是只能处理文本文档.</p>
-
-<p>庆幸的是现在很多工具帮我们处理这些问题.如Apache的Tika, 官网:<a href="http://tika.apache.org/">http://tika.apache.org/</a></p>
-
-<h4>3.2.分词</h4>
-
-<p>确定输入的文本之后首先将文本传递给分词组件,分词组件(Tokenizer)会做以下几件事情(此过程称为Tokenize):</p>
-
-<pre><code>1. 将文档分成一个一个单独的单词;
-2. 去除标点符号;
-3. 去除停词(Stop word);
-</code></pre>
-
-<p>停词(Stop word)就是一种语言中最普通的一些单词,由于没有特别的意义,因而大多数情况下不能成为搜索的关键词,因而创建索引时,这种词会被去掉而减少索引的大小.英语中挺词(Stop word)如:the,a,this,is等.对于每一种语言的分词组件(Tokenizer),都有一个停词(stop word)集合.经过分词(Tokenizer)后得到的结果称为词元(Token).</p>
-
-<h4>3.3 语言处理</h4>
-
-<p>分词之后将词元传递给语言处理模块,语言处理组件(linguistic processor)主要是对得到的词元(Token)做一些同语言相关的处理.</p>
-
-<p>比如对于英语,语言处理组件(Linguistic Processor)一般做以下几点:</p>
-
-<pre><code>1. 变为小写(Lowercase).
-2. 将单词缩减为词根形式,如cars到car等.这种操作称为:stemming.
-3. 将单词转变为词根形式,如“drove”到“drive”等.这种操作称为:lemmatization.
-</code></pre>
-
-<p>语言处理组件(linguistic processor)的结果称为词(Term).</p>
-
-<h4>3.4 索引</h4>
-
-<p>语言处理之后将词给索引模块,索引模块主要做以下几个事情:</p>
-
-<pre><code>1. 利用得到的词(Term)创建一个字典.
-即Term1--&gt;doc1, Term2--&gt;doc1这种映射关系
-2. 对字典按字母顺序进行排序.
-3. 合并相同的词(Term)成为文档倒排链表.
-</code></pre>
-
-<p>倒排链表的格式如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Term1,Document Frequency  --&gt; Doc1,Frequency1 ; Doc2,Frequency2</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Document Frequency 即文档频次,表示总共有多少文件包含此词(Term),即链表中文档数目.
-Frequency 即词频率,表示此文件中包含了几个此词(Term).</p>
-
-<p>下面是一个建立索引的例子,输入文本如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>文件一:Students should be allowed to go out with their friends, but not allowed to drink beer.
-</span><span class='line'>文件二:My friend Jerry went to school to see his students but found them drunk which is not allowed.</span></code></pre></td></tr></table></div></figure>
-
-
-<p>经过分词(Tokenizer)后得到的结果称为词元(Token):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Students,allowed,go,their,friends,allowed,drink,beer,My,friend,Jerry,went,school,see,his,students,found,them,drunk,allowed</span></code></pre></td></tr></table></div></figure>
-
-
-<p>经过语言处理,得到的词(Term)如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>student,allow,go,their,friend,allow,drink,beer,my,friend,jerry,go,school,see,his,student,find,them,drink,allow</span></code></pre></td></tr></table></div></figure>
-
-
-<p>最后得到的倒排索引表如下:</p>
-
-<p><img src="/images/lucene/posting_list.jpg"></p>
-
-<p>所以对词allow来讲,总共有两篇文档包含此词(Term),从而词(Term)后面的文档链表总共有两项,第一项表示包含allow的第一篇文档,即1号文档,此文档中,allow出现了2次,第二项表示包含allow的第二个文档,是2号文档,此文档中,allow出现了1次.</p>
-
-<h2>4.Lucene搜索</h2>
-
-<p>有了倒排索引,我们就可以做搜索了,但是事实上Lucene的搜索过程也不简单.</p>
-
-<p>简单来讲,搜索解决的问题是:找到和搜索词相关性最好的文档.细分的这个问题:</p>
-
-<pre><code>1.找到相关文档;
-2.评价搜索词和文档的相关性;
-</code></pre>
-
-<p>Lucene的搜索包括以下几个过程.</p>
-
-<h4>3.1.用户输入</h4>
-
-<p>查询语句同我们普通的语言一样,也是有一定语法的.查询语句的语法根据全文检索系统的实现而不同.最基本的有比如:AND, OR, NOT等.举个例子,用户输入语句:lucene AND learned NOT hadoop.说明用户想找一个包含lucene和learned然而不包括hadoop的文档.</p>
-
-<p>目前看来,Google和Baidu都不支出这种语法:</p>
-
-<p><img src="/images/lucene/Google_Search.png"></p>
-
-<p><img src="/images/lucene/Baidu_Search.png"></p>
-
-<h4>3.2.词法分析,语法分析,语言处理</h4>
-
-<p>由于查询语句有语法,因而也要进行语法分析,语法分析及语言处理.</p>
-
-<ul>
-<li><p>词法分析主要用来切词,识别单词和关键字.通常建立索引的切词组件和对搜索词的切词组件一致.</p></li>
-<li><p>语法分析主要是根据查询语句的语法规则来形成一棵语法树.比如例子:lucene AND learned NOT hadoop形成的语法树如下:</p>
-
-<p>  <img src="/images/lucene/Token_tree.jpg"></p></li>
-<li><p>语言处理同索引过程中的语言处理几乎相同.如learned变成learn等.经过第三步,我们得到一棵经过语言处理的语法树.</p>
-
-<p> <img src="/images/lucene/Term_Tree.jpg"></p></li>
-</ul>
-
-
-<h4>3.3 搜索索引</h4>
-
-<p>此步骤有分几小步:</p>
-
-<ul>
-<li>在反向索引表中,分别找出包含lucene,learn,hadoop的文档链表.</li>
-<li>对包含lucene,learn的链表进行合并操作,得到既包含lucene又包含learn的文档链表.</li>
-<li>将此链表与hadoop的文档链表进行差操作,去除包含hadoop的文档,从而得到既包含lucene又包含learn而且不包含hadoop的文档链表.此文档链表就是我们要找的文档.</li>
-</ul>
-
-
-<h4>3.4 结果文档排序</h4>
-
-<p>虽然在上一步,我们得到了想要的文档,然而对于查询结果应该按照与查询语句的相关性进行排序,越相关者越靠前.</p>
-
-<p>通常会把查询语句看作一片短小的文档,对文档与文档之间的相关性(relevance)进行打分(scoring),分数高的相关性好,就应该排在前面.</p>
-
-<p>对于文档之间的关系,不同的Term重要性不同,比如对于本篇文档,search, Lucene, full-text就相对重要一些,this, a , what可能相对不重要一些.所以如果两篇文档都包含search, Lucene,fulltext,这两篇文档的相关性好一些,然而就算一篇文档包含this, a, what,另一篇文档不包含this, a, what,也不能影响两篇文档的相关性.</p>
-
-<p>找出词(Term)对文档的重要性的过程称为计算词的权重(Term weight)的过程.计算词的权重(term weight)有两个参数,第一个是词(Term),第二个是文档(Document).词的权重(Term weight)表示此词(Term)在此文档中的重要程度,越重要的词(Term)有越大的权重(Term weight),因而在计算文档之间的相关性中将发挥更大的作用.</p>
-
-<p>下面分析这两个过程:</p>
-
-<ul>
-<li>计算权重(Term weight).</li>
-</ul>
-
-
-<p>影响一个词(Term)在一篇文档中的重要性主要有两个因素:</p>
-
-<pre><code>1.Term Frequency (tf):即此Term在此文档中出现了多少次. tf越大说明越重要.
-2.Document Frequency (df):即有多少文档包含次Term. df越大说明越不重要.
-</code></pre>
-
-<p>很容易理解,词(Term)在文档中出现的次数越多,说明此词(Term)对该文档越重要,如“搜索”这个词,在本文档中出现的次数很多,说明本文档主要就是讲这方面的事的.然而在一篇英语文档中,this出现的次数更多,就说明越重要吗？不是的,这是由第二个因素进行调整,第二个因素说明,有越多的文档包含此词(Term), 说明此词(Term)太普通,不足以区分这些文档,因而重要性越低.</p>
-
-<p>简单公式如下:</p>
-
-<p><img src="/images/lucene/Term_Weight.png"></p>
-
-<ul>
-<li>根据Term之间的关系得到文档相关性.</li>
-</ul>
-
-
-<p>我们把文档看作一系列词(Term),每一个词(Term)都有一个权重(Term weight),不同的词(Term)根据自己在文档中的权重来影响文档相关性的打分计算.</p>
-
-<p>于是我们把所有此文档中词(term)的权重(term weight) 看作一个向量.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Document = {term1, term2, …… ,term N}
-</span><span class='line'>Document Vector = {weight1, weight2, …… ,weight N}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>同样我们把查询语句看作一个简单的文档,也用向量来表示.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Query = {term1, term 2, …… , term N}
-</span><span class='line'>Query Vector = {weight1, weight2, …… , weight N}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>我们把所有搜索出的文档向量及查询向量放到一个N维空间中,每个词(term)是一维:</p>
-
-<p><img src="/images/lucene/document_relative_vsm.jpg"></p>
-
-<p>我们认为两个向量之间的夹角越小,相关性越大.所以我们计算夹角的余弦值作为相关性的打分,夹角越小,余弦值越大,打分越高,相关性越大.</p>
-
-<p>需要注意的是,查询语句一般是很短的,包含的词(Term)是很少的,因而查询向量的维数很小,而文档很长,包含词(Term)很多,文档向量维数很大, 但是需要放到相同的向量空间,因此要保证二者维数是相同的.处理方式很简单,维数不同时,取二者的并集,如果不含某个词(Term)时,则权重(Term Weight)为0.</p>
-
-<p>相关性打分公式如下:</p>
-
-<p><img src="/images/lucene/documet_relative_caculate.png"></p>
-
-<p>举个例子,查询语句有11个Term,共有三篇文档搜索出来.其中各自的权重(Term weight),如下:</p>
-
-<p><img src="/images/lucene/document_score.png"></p>
-
-<p>于是计算,三篇文档同查询语句的相关性打分分别为:</p>
-
-<p><img src="/images/lucene/score_example.png"></p>
-
-<p>于是文档二相关性最高,先返回,其次是文档一,最后是文档三.到此为止,我们可以找到我们最想要的文档了.</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/4">&larr; Older</a>
@@ -1541,6 +1318,22 @@ Frequency 即词频率,表示此文件中包含了几个此词(Term).</p>
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/12/29/activitishi-jian-chu-li/">Activiti事件处理</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing/">Activiti任务增加属性</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/12/16/activitibiao/">Activiti表</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/11/28/ni-zhen-de-liao-jie-stringma/">你真的了解String吗</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/08/20/cratewen-dang-fan-yi/">Crate文档翻译</a>
@@ -1566,22 +1359,6 @@ Frequency 即词频率,表示此文件中包含了几个此词(Term).</p>
         <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/02/03/strace/">Strace</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2016/01/28/who-eat-jvms-memory/">Who Eats JVM's Memory</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1593,7 +1370,7 @@ Frequency 即词频率,表示此文件中包含了几个此词(Term).</p>
 <li><a class='list-group-item' href='/blog/categories/druid/'>druid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
-<li><a class='list-group-item' href='/blog/categories/java/'>java (24)</a></li>
+<li><a class='list-group-item' href='/blog/categories/java/'>java (25)</a></li>
 <li><a class='list-group-item' href='/blog/categories/library/'>library (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (13)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
@@ -1612,7 +1389,7 @@ Frequency 即词频率,表示此文件中包含了几个此词(Term).</p>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (4)</a></li>
  
   </div>
 </section>

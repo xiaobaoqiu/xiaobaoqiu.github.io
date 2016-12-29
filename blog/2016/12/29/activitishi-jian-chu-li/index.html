@@ -1,0 +1,440 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Activiti事件处理 - xiaobaoqiu Blog</title>
+  <meta name="author" content="xiaobaoqiu">
+
+  
+  <meta name="description" content="1.事件处理 1.事件处理 Activiti 内部充斥着各种各样的事件，详见：org.activiti.engine.delegate.event.ActivitiEventType的定义。 在 Activiti 5.15 以前，处理事件需要在流程设计的时候显示的加入各种Listener，比如 &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2016/12/29/activitishi-jian-chu-li/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  
+
+  <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <!-- <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script> -->
+  <script src="/javascripts/libs/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<!--
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+-->
+
+  
+
+  
+  <meta name="baidu-site-verification" content="5oIt2xaFFz" />
+  <meta name="google-site-verification" content="U9Avd5Yqzpetvn_zxo1KaK2iqYNwSlLon27veprwBRY" />
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">xiaobaoqiu Blog</a></h1>
+  
+    <h2>Think More, Code Less</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss email">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+    <li><a href="xiaobaoqiu@163.com" rel="subscribe-email" title="subscribe via email">Email</a></li>
+  
+</ul>
+  
+<form action="https://www.google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="xiaobaoqiu.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">首页</a></li>
+  <li><a href="/blog/archives">所有博文</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Activiti事件处理</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-12-29T18:39:59+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>29</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>6:39 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><ul>
+<li><a href="#1.%E4%BA%8B%E4%BB%B6%E5%A4%84%E7%90%86">1.事件处理</a></li>
+</ul>
+
+
+<h2 id="1.事件处理">1.事件处理</h2>
+
+
+<p>Activiti 内部充斥着各种各样的事件，详见：org.activiti.engine.delegate.event.ActivitiEventType的定义。</p>
+
+<p>在 Activiti 5.15 以前，处理事件需要在流程设计的时候显示的加入各种Listener，比如：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>    &lt;userTask id="leaderVerifyTask" activiti:taskType="2"&gt;
+</span><span class='line'>        &lt;extensionElements&gt;
+</span><span class='line'>            &lt;activiti:taskListener event="create" delegateExpression="${taskCreateListener}"/&gt;
+</span><span class='line'>            &lt;activiti:taskListener event="assignment" delegateExpression="${taskAssignmentListener}"/&gt;
+</span><span class='line'>            &lt;activiti:taskListener event="complete" delegateExpression="${taskCompleteListener}"/&gt;
+</span><span class='line'>        &lt;/extensionElements&gt;
+</span><span class='line'>    &lt;/userTask&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Spring会注入 taskCreateListener 这个bean来作为 leaderVerifyTask 这个任务的创建事件响应逻辑。
+这种方式的问题在于，流程设计的时候需要知道 代码中具体的类或者bean的名称，因此无法做到将流程的设计交与开发人员之外的人来做。</p>
+
+<p> 在 Activiti 5.15 中加入了全局的事件监听器 ActivitiEventListener，我们只需要实现一个自己的全局的事件处理器，然后自定义各种事件的处理器。</p>
+
+<pre><code class="`"> /**
+ * 流程服务的全局 Listener
+ *
+ * @author xiaobaoqiu  Date: 16-12-19 Time: 下午7:16
+ */
+public class GlobalProcessEventListener implements ActivitiEventListener {
+
+    /**
+     * 各类 Event 的处理器
+     * 其中事件类型参见 ActivitiEventType 定义
+     *
+     * @see org.activiti.engine.delegate.event.ActivitiEventType
+     */
+    private Map&lt;ActivitiEventType, ProcessEventHandler&gt; handlers = new HashMap&lt;&gt;();
+
+    @Override
+    public void onEvent(ActivitiEvent event) {
+        ProcessEventHandler handler = handlers.get(event.getType());
+        if (handler != null) {
+            handler.handle(event);
+        }
+    }
+
+    @Override
+    public boolean isFailOnException() {
+        return false;
+    }
+
+    public Map&lt;ActivitiEventType, ProcessEventHandler&gt; getHandlers() {
+        return handlers;
+    }
+
+    public void setHandlers(Map&lt;ActivitiEventType, ProcessEventHandler&gt; handlers) {
+        this.handlers = handlers;
+    }
+}
+
+/**
+ * 流程事件处理
+ *
+ * @author xiaobaoqiu  Date: 16-12-21 Time: 下午1:33
+ */
+public interface ProcessEventHandler {
+
+    void handle(ActivitiEvent event);
+}
+</code></pre>
+
+<p>ActivitiEventListener能做到和流程设计无关，只需要在配置 Activiti 的时候将其注入，并且可以在其中配置能处理哪些类型的事件：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;bean id="processEngineConfiguration" class="org.activiti.spring.SpringProcessEngineConfiguration"&gt;
+</span><span class='line'>    &lt;property 其他配置 /&gt;
+</span><span class='line'>    &lt;property name="eventListeners"&gt;
+</span><span class='line'>        &lt;list&gt;
+</span><span class='line'>            &lt;ref bean="globalProcessEventListener"/&gt;
+</span><span class='line'>        &lt;/list&gt;
+</span><span class='line'>    &lt;/property&gt;
+</span><span class='line'>&lt;/bean&gt;
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>&lt;!--流程全局事件处理器--&gt;
+</span><span class='line'>&lt;bean id="globalProcessEventListener" class="com.qunar.scm.ct.biz.process.event.GlobalProcessEventListener"&gt;
+</span><span class='line'>    &lt;property name="handlers"&gt;
+</span><span class='line'>        &lt;map&gt;
+</span><span class='line'>            &lt;entry key="TASK_CREATED"&gt;
+</span><span class='line'>                &lt;bean class="com.qunar.xxx.ProcessProcessTaskCreateListener"/&gt;
+</span><span class='line'>            &lt;/entry&gt;
+</span><span class='line'>            &lt;entry key="TASK_COMPLETED"&gt;
+</span><span class='line'>                &lt;bean class="com.qunar.xxx.ProcessProcessTaskCompleteListener"/&gt;
+</span><span class='line'>            &lt;/entry&gt;
+</span><span class='line'>            &lt;entry key="TASK_ASSIGNED"&gt;
+</span><span class='line'>                &lt;bean class="com.qunar.xxx.ProcessProcessTaskAssignmentListener"/&gt;
+</span><span class='line'>            &lt;/entry&gt;
+</span><span class='line'>        &lt;/map&gt;
+</span><span class='line'>    &lt;/property&gt;
+</span><span class='line'>&lt;/bean&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>参考：
+<a href="https://www.activiti.org/userguide/index.html#eventDispatcherConfiguration">https://www.activiti.org/userguide/index.html#eventDispatcherConfiguration</a></p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">xiaobaoqiu</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2016-12-29T18:39:59+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>29</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>6:39 pm</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/workflow/'>workflow</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2016/12/29/activitishi-jian-chu-li/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2016/12/29/activitishi-jian-chu-li/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing/" title="Previous Post: Activiti任务增加属性">&laquo; Activiti任务增加属性</a>
+      
+      
+    </p>
+  </footer>
+</article>
+<!-- 
+  <section>
+    <h1>评论(Comments)</h1>
+    <div id="disqus_thread" aria-live="polite"><div id="disqus_thread"></div>
+<script type="text/javascript">
+    /* * * CONFIGURATION VARIABLES: EDIT BEFORE PASTING INTO YOUR WEBPAGE * * */
+    var disqus_shortname = 'xiaobaoqiugithubio'; // required: replace example with your forum shortname 这个地方需要改成你配置的网站名
+
+    /* * * DON'T EDIT BELOW THIS LINE * * */
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = 'http://' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">blog comments powered by <span class="logo-disqus">Disqus</span></a>
+</div>
+  </section>
+ -->
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <div class="panel-heading">
+    <h1 class="panel-title">最新文章</h3>
+  </div>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/12/29/activitishi-jian-chu-li/">Activiti事件处理</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing/">Activiti任务增加属性</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/12/16/activitibiao/">Activiti表</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/11/28/ni-zhen-de-liao-jie-stringma/">你真的了解String吗</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/08/20/cratewen-dang-fan-yi/">Crate文档翻译</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/07/22/%5B%3F%5D-ge-si-suo-wen-ti/">一个死锁问题</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务2-AOP</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
+      </li>
+    
+  </ul>
+</section>
+<section class="panel panel-default">
+  <div  class="panel-heading">
+    <h1 class="panel-title">文章分类</h1>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <li><a class='list-group-item' href='/blog/categories/algorithm/'>algorithm (5)</a></li>
+<li><a class='list-group-item' href='/blog/categories/druid/'>druid (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/java/'>java (25)</a></li>
+<li><a class='list-group-item' href='/blog/categories/library/'>library (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/linux/'>linux (13)</a></li>
+<li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/memcached/'>memcached (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/mybatis/'>mybatis (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/mysql/'>mysql (12)</a></li>
+<li><a class='list-group-item' href='/blog/categories/octopress/'>octopress (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/postgresql/'>postgresql (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/protocol/'>protocol (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
+<li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
+<li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
+<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (4)</a></li>
+ 
+  </div>
+</section>
+<section class="panel panel-default">
+  <div  class="panel-heading">
+    <h1 class="panel-title">友情链接</h3>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <a class='list-group-item' href='http://wenzhang.baidu.com/'>百度文章</a>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <a class='list-group-item' href='https://github.com/xiaobaoqiu/leetcode'>LeetCode Solution</a>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <a class='list-group-item' href='http://youdang.github.io/'>Youdang's Blog</a>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <a class='list-group-item' href='http://blog.csdn.net/ghsau'>Gaoshuang's Blog</a>
+  </div>
+  <div id="categories_list_div" class="list-group">
+    <a class='list-group-item' href='http://kriszhang.com/'>kriszhang's Blog</a>
+  </div>
+</section>
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2016 - xiaobaoqiu -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+<!--  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script> -->
+
+
+
+
+
+</body>
+</html>

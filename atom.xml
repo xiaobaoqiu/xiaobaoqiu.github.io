@@ -4,7 +4,7 @@
   <title><![CDATA[xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2016-11-08T10:36:57+08:00</updated>
+  <updated>2016-12-29T19:08:19+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,776 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Activiti事件处理]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2016/12/29/activitishi-jian-chu-li/"/>
+    <updated>2016-12-29T18:39:59+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2016/12/29/activitishi-jian-chu-li</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.%E4%BA%8B%E4%BB%B6%E5%A4%84%E7%90%86">1.事件处理</a></li>
+</ul>
+
+
+<h2 id="1.事件处理">1.事件处理</h2>
+
+
+<p>Activiti 内部充斥着各种各样的事件，详见：org.activiti.engine.delegate.event.ActivitiEventType的定义。</p>
+
+<p>在 Activiti 5.15 以前，处理事件需要在流程设计的时候显示的加入各种Listener，比如：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>    &lt;userTask id="leaderVerifyTask" activiti:taskType="2"&gt;
+</span><span class='line'>        &lt;extensionElements&gt;
+</span><span class='line'>            &lt;activiti:taskListener event="create" delegateExpression="${taskCreateListener}"/&gt;
+</span><span class='line'>            &lt;activiti:taskListener event="assignment" delegateExpression="${taskAssignmentListener}"/&gt;
+</span><span class='line'>            &lt;activiti:taskListener event="complete" delegateExpression="${taskCompleteListener}"/&gt;
+</span><span class='line'>        &lt;/extensionElements&gt;
+</span><span class='line'>    &lt;/userTask&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Spring会注入 taskCreateListener 这个bean来作为 leaderVerifyTask 这个任务的创建事件响应逻辑。
+这种方式的问题在于，流程设计的时候需要知道 代码中具体的类或者bean的名称，因此无法做到将流程的设计交与开发人员之外的人来做。</p>
+
+<p> 在 Activiti 5.15 中加入了全局的事件监听器 ActivitiEventListener，我们只需要实现一个自己的全局的事件处理器，然后自定义各种事件的处理器。</p>
+
+<pre><code class="`"> /**
+ * 流程服务的全局 Listener
+ *
+ * @author xiaobaoqiu  Date: 16-12-19 Time: 下午7:16
+ */
+public class GlobalProcessEventListener implements ActivitiEventListener {
+
+    /**
+     * 各类 Event 的处理器
+     * 其中事件类型参见 ActivitiEventType 定义
+     *
+     * @see org.activiti.engine.delegate.event.ActivitiEventType
+     */
+    private Map&lt;ActivitiEventType, ProcessEventHandler&gt; handlers = new HashMap&lt;&gt;();
+
+    @Override
+    public void onEvent(ActivitiEvent event) {
+        ProcessEventHandler handler = handlers.get(event.getType());
+        if (handler != null) {
+            handler.handle(event);
+        }
+    }
+
+    @Override
+    public boolean isFailOnException() {
+        return false;
+    }
+
+    public Map&lt;ActivitiEventType, ProcessEventHandler&gt; getHandlers() {
+        return handlers;
+    }
+
+    public void setHandlers(Map&lt;ActivitiEventType, ProcessEventHandler&gt; handlers) {
+        this.handlers = handlers;
+    }
+}
+
+/**
+ * 流程事件处理
+ *
+ * @author xiaobaoqiu  Date: 16-12-21 Time: 下午1:33
+ */
+public interface ProcessEventHandler {
+
+    void handle(ActivitiEvent event);
+}
+</code></pre>
+
+<p>ActivitiEventListener能做到和流程设计无关，只需要在配置 Activiti 的时候将其注入，并且可以在其中配置能处理哪些类型的事件：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;bean id="processEngineConfiguration" class="org.activiti.spring.SpringProcessEngineConfiguration"&gt;
+</span><span class='line'>    &lt;property 其他配置 /&gt;
+</span><span class='line'>    &lt;property name="eventListeners"&gt;
+</span><span class='line'>        &lt;list&gt;
+</span><span class='line'>            &lt;ref bean="globalProcessEventListener"/&gt;
+</span><span class='line'>        &lt;/list&gt;
+</span><span class='line'>    &lt;/property&gt;
+</span><span class='line'>&lt;/bean&gt;
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>&lt;!--流程全局事件处理器--&gt;
+</span><span class='line'>&lt;bean id="globalProcessEventListener" class="com.qunar.scm.ct.biz.process.event.GlobalProcessEventListener"&gt;
+</span><span class='line'>    &lt;property name="handlers"&gt;
+</span><span class='line'>        &lt;map&gt;
+</span><span class='line'>            &lt;entry key="TASK_CREATED"&gt;
+</span><span class='line'>                &lt;bean class="com.qunar.xxx.ProcessProcessTaskCreateListener"/&gt;
+</span><span class='line'>            &lt;/entry&gt;
+</span><span class='line'>            &lt;entry key="TASK_COMPLETED"&gt;
+</span><span class='line'>                &lt;bean class="com.qunar.xxx.ProcessProcessTaskCompleteListener"/&gt;
+</span><span class='line'>            &lt;/entry&gt;
+</span><span class='line'>            &lt;entry key="TASK_ASSIGNED"&gt;
+</span><span class='line'>                &lt;bean class="com.qunar.xxx.ProcessProcessTaskAssignmentListener"/&gt;
+</span><span class='line'>            &lt;/entry&gt;
+</span><span class='line'>        &lt;/map&gt;
+</span><span class='line'>    &lt;/property&gt;
+</span><span class='line'>&lt;/bean&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>参考：
+<a href="https://www.activiti.org/userguide/index.html#eventDispatcherConfiguration">https://www.activiti.org/userguide/index.html#eventDispatcherConfiguration</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Activiti任务增加属性]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing/"/>
+    <updated>2016-12-29T18:18:20+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.%E4%BB%BB%E5%8A%A1%E5%A2%9E%E5%8A%A0%E5%B1%9E%E6%80%A7">1.任务增加属性</a></li>
+</ul>
+
+
+<p>最近逐步将组内的审核业务迁移到 Activiti 上，为了适配已有业务，需要原生的 Activiti 的用户任务上增加一些属性，比如用户任务(UserTask)增加类型属性等。
+Activiti版本为：5.22.0</p>
+
+<h2 id="1.任务增加属性">1.任务增加属性</h2>
+
+
+<p>下面以增加任务类型为例子，记录修改点：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1.修改表结构，ACT_RU_TASK表增加 TASK_TYPE_ 字段
+</span><span class='line'>在 activiti-engine 包下，找自己对应的数据库的文件(mysql版本...)
+</span><span class='line'>
+</span><span class='line'>1.UserTask增加taskType属性
+</span><span class='line'>包路径：org.activiti.bpmn.model.UserTask
+</span><span class='line'>
+</span><span class='line'>3.Task接口增加setTaskType方法
+</span><span class='line'>包路径：org.activiti.engine.task.Task
+</span><span class='line'>
+</span><span class='line'>4.TaskEntity增加taskType属性
+</span><span class='line'>包路径：org.activiti.engine.impl.persistence.entity.TaskEntity
+</span><span class='line'>
+</span><span class='line'>5.DelegateTask借口增加 getTaskType 和 setTaskType
+</span><span class='line'>包路径：org.activiti.engine.delegate.DelegateTask
+</span><span class='line'>
+</span><span class='line'>6.TaskDefinition增加taskTypeExpression
+</span><span class='line'>包路径：org.activiti.engine.impl.task.TaskDefinition
+</span><span class='line'>
+</span><span class='line'>7.DynamicBpmnConstants增加USER_TASK_TYPE
+</span><span class='line'>包路径：org.activiti.engine.DynamicBpmnConstants
+</span><span class='line'>
+</span><span class='line'>8.UserTaskActivityBehavior设置taskType属性
+</span><span class='line'>包路径：org.activiti.engine.impl.bpmn.behavior.UserTaskActivityBehavior
+</span><span class='line'>
+</span><span class='line'>9.UserTaskParseHandler解析taskType属性
+</span><span class='line'>包路径：org.activiti.engine.impl.bpmn.parser.handler.UserTaskParseHandler
+</span><span class='line'>
+</span><span class='line'>10.BpmnXMLConstants增加 ATTRIBUTE_TASK_USER_TYPE
+</span><span class='line'>包路径：org.activiti.bpmn.constants.BpmnXMLConstants
+</span><span class='line'>
+</span><span class='line'>11.UserTaskXMLConverter注册 ATTRIBUTE_TASK_USER_TYPE
+</span><span class='line'>包路径：org.activiti.bpmn.converter.UserTaskXMLConverter
+</span><span class='line'>
+</span><span class='line'>12. Semantic.xsd 文件
+</span><span class='line'>包括各个版本的 XSD 文件(XML结构定义)
+</span><span class='line'>
+</span><span class='line'>13. HistoricTaskWrapper 增加 taskType
+</span><span class='line'>包路径：org.activiti.explorer.ui.task.data.HistoricTaskWrapper
+</span><span class='line'>
+</span><span class='line'>14.HistoricTaskInstanceEntity 增加 taskType
+</span><span class='line'>包路径：org.activiti.engine.impl.persistence.entity.HistoricTaskInstanceEntity
+</span><span class='line'>
+</span><span class='line'>15. 更多...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在自己的API中定义任务类型，然后我们可以修改 activiti-modeler 的相关代码，使得Activiti支持画图时候指定任务类型。</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Activiti表]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2016/12/16/activitibiao/"/>
+    <updated>2016-12-16T16:31:34+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2016/12/16/activitibiao</id>
+    <content type="html"><![CDATA[<p>整理 Activiti 中的表含义，以及一些重要表的字段。本文的 Activiti 版本为 5.22.0</p>
+
+<ul>
+<li><a href="#1.%E8%A1%A8%E5%90%AB%E4%B9%89">1.表含义</a></li>
+</ul>
+
+
+<h2 id="1.表含义">1.表含义</h2>
+
+
+<p>Activiti 中表定义 activiti-engine 这个 module 下，具体位置 /resources/org.activiti/db/create 下，包括各种类型数据库的建表语句，这里我们以Mysql为DB。</p>
+
+<p>首先简单介绍表的前缀的含义，参考官网：<a href="http://www.activiti.org/userguide/index.html#database.tables.explained">http://www.activiti.org/userguide/index.html#database.tables.explained</a></p>
+
+<p>表名称包含三个部分，第一个为所有的表共有的ACT_表示Activiti，第二部分表示表的使用场景</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>
+</span><span class='line'>ACT_RE_*: RE表示repository，这个前缀的表包含了流程定义和流程静态资源
+</span><span class='line'>ACT_RU_*: RU表示runtime，这些运行时的表，包含流程实例，任务，变量，异步任务等运行中的数据。Activiti只在流程实例执行过程中保存这些数据， 在流程结束时就会删除这些记录。
+</span><span class='line'>ACT_ID_*: ID表示identity，这些表包含身份信息，比如用户，组等。
+</span><span class='line'>ACT_HI_*: HI表示history，这些表包含历史数据，比如历史流程实例， 变量，任务等。
+</span><span class='line'>ACT_GE_*: 通用数据， 用于不同场景下。
+</span><span class='line'>ACT_EVT_*: EVT表示EVENT，目前只有一张表ACT_EVT_LOG，存储事件处理日志，方便管理员跟踪处理。</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面是各个表的大致意义：</p>
+
+<table>
+<thead>
+<tr>
+<th style="text-align:center;">表 </th>
+<th style="text-align:left;"> 意义 </th>
+<th style="text-align:left;"> 备注 </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">ACT_EVT_LOG         </td>
+<td style="text-align:left;"> 事件处理日志 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_GE_BYTEARRAY    </td>
+<td style="text-align:left;"> 二进制数据表 </td>
+<td style="text-align:left;"> 保存流程定义图片和xml </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_GE_PROPERTY     </td>
+<td style="text-align:left;"> 属性数据表存储整个流程引擎级别的数据 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_ACTINST      </td>
+<td style="text-align:left;"> 历史节点表 </td>
+<td style="text-align:left;"> 只记录usertask内容 </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_ATTACHMENT   </td>
+<td style="text-align:left;"> 历史附件表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_COMMENT      </td>
+<td style="text-align:left;"> 历史意见表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_DETAIL       </td>
+<td style="text-align:left;"> 历史详情表，提供历史变量的查询 </td>
+<td style="text-align:left;"> 流程中产生的变量详细，包括控制流程流转的变量等</td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_IDENTITYLINK </td>
+<td style="text-align:left;"> 历史流程人员表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_PROCINST     </td>
+<td style="text-align:left;"> 历史流程实例表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_TASKINST     </td>
+<td style="text-align:left;"> 历史任务实例表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_HI_VARINST      </td>
+<td style="text-align:left;"> 历史变量表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_ID_GROUP        </td>
+<td style="text-align:left;"> 用户组信息表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_ID_INFO         </td>
+<td style="text-align:left;"> 用户扩展信息表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_ID_MEMBERSHIP   </td>
+<td style="text-align:left;"> 用户与用户组对应信息表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_ID_USER         </td>
+<td style="text-align:left;"> 用户信息表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_PROCDEF_INFO    </td>
+<td style="text-align:left;">  </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RE_DEPLOYMENT   </td>
+<td style="text-align:left;"> 部署信息表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RE_MODEL        </td>
+<td style="text-align:left;"> 流程设计模型部署表 </td>
+<td style="text-align:left;"> 流程设计器设计流程后，保存数据到该表 </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RE_PROCDEF      </td>
+<td style="text-align:left;"> 流程定义数据表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RU_EVENT_SUBSCR </td>
+<td style="text-align:left;"> throwEvent，catchEvent时间监听信息表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RU_EXECUTION    </td>
+<td style="text-align:left;"> 运行时流程执行实例表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RU_IDENTITYLINK </td>
+<td style="text-align:left;"> 运行时流程人员表，主要存储任务节点与参与者的相关信息 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RU_JOB          </td>
+<td style="text-align:left;"> 运行时定时任务数据表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RU_TASK         </td>
+<td style="text-align:left;"> 运行时任务节点表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+<tr>
+<td style="text-align:center;">ACT_RU_VARIABLE     </td>
+<td style="text-align:left;"> 运行时流程变量数据表 </td>
+<td style="text-align:left;"> </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>参考：<a href="http://craft6.cn/detail/activiti_research_database.do">http://craft6.cn/detail/activiti_research_database.do</a>
+<a href="http://blog.csdn.net/flygoa/article/details/51895228">http://blog.csdn.net/flygoa/article/details/51895228</a></p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[你真的了解String吗]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2016/11/28/ni-zhen-de-liao-jie-stringma/"/>
+    <updated>2016-11-28T21:01:06+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2016/11/28/ni-zhen-de-liao-jie-stringma</id>
+    <content type="html"><![CDATA[<p>String是Java中最重要最常用的类，没有之一。但是我们很多人可能只知道String的存在和简单使用，并不了解其背后的实现以及为什么这么实现。
+这里我就简单的挑选几个重要的节点讲解。</p>
+
+<p>本文基于JDK 1.7</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~ java -version
+</span><span class='line'>java version "1.7.0_80"
+</span><span class='line'>Java(TM) SE Runtime Environment (build 1.7.0_80-b15)
+</span><span class='line'>Java HotSpot(TM) 64-Bit Server VM (build 24.80-b11, mixed mode)</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>实现</h1>
+
+<p>Java其实就是char数组的一个包装,String真实的内容就是存储在char数组中，数组的一个特性就是在逻辑和存储上都是连续的、可随机访问的。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/** The value is used for character storage. */
+</span><span class='line'>private final char value[];</span></code></pre></td></tr></table></div></figure>
+
+
+<p>String的操作其实都是围绕底层的char数组来的，比如trim实现，trim的其实是value的内容</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public String trim() {
+</span><span class='line'>    int len = value.length;
+</span><span class='line'>    int st = 0;
+</span><span class='line'>    char[] val = value;    /* avoid getfield opcode */
+</span><span class='line'>
+</span><span class='line'>    while ((st &lt; len) && (val[st] &lt;= ' ')) {
+</span><span class='line'>        st++;
+</span><span class='line'>    }
+</span><span class='line'>    while ((st &lt; len) && (val[len - 1] &lt;= ' ')) {
+</span><span class='line'>        len--;
+</span><span class='line'>    }
+</span><span class='line'>    return ((st &gt; 0) || (len &lt; value.length)) ? substring(st, len) : this;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>需要注意的是，String中的很多实现都是使用 System.arraycopy 来实现数组数据的快速拷贝,System.arraycopy是一个native方法:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public char[] toCharArray() {
+</span><span class='line'>    char result[] = new char[value.length];
+</span><span class='line'>    System.arraycopy(value, 0, result, 0, value.length);
+</span><span class='line'>    return result;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>final &amp; immutable</h1>
+
+<p>String基本约定中最重要的一条是Immutable，Immutable的意思就是对String的每次修改都是生成一个新的String，原始对象不受影响，类似于copy-on-write的思想。</p>
+
+<p>先具体看一下什么是Immutable。String不可变很简单，如下图，给一个已有字符串"abcd"，第二次赋值成"abcedl"，不是在原内存地址上修改数据，而是重新指向一个新对象，新地址。</p>
+
+<p><img src="http://xiaobaoqiu.github.io/images/java/java_immutable.png"></p>
+
+<p> 那String怎么做到不可变？主要通过三个手段
+ (1).String类声明为final(不会被继承改掉这种Immutable特性)；
+ (2).底层的value数组声明为final(value这个引用地址不可变)；
+(3).所有String的方法里很小心的没有去动value数组里的元素，没有暴露内部成员字段；</p>
+
+<p>其实String是不可变的关键都在底层的实现，而不是一个final修饰符。</p>
+
+<p>不可变对象带来的最大好处就是线程安全，因为不会被改写。</p>
+
+<h1>hashcode</h1>
+
+<p>String内部属性除了value数组外，还有一个 hash，用于记录String的hash值。
+String能这样讲hash值cache下来的原因就是上面提到的</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/** Cache the hash code for the string */
+</span><span class='line'>private int hash; // Default to 0</span></code></pre></td></tr></table></div></figure>
+
+
+<p>每次调用hashCode，先检测 hash 是否已经计算好了，如果计算了，就不要重新计算。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public int hashCode() {
+</span><span class='line'>    int h = hash;
+</span><span class='line'>    if (h == 0 && value.length &gt; 0) {
+</span><span class='line'>        char val[] = value;
+</span><span class='line'>
+</span><span class='line'>        for (int i = 0; i &lt; value.length; i++) {
+</span><span class='line'>            h = 31 * h + val[i];
+</span><span class='line'>        }
+</span><span class='line'>        hash = h;
+</span><span class='line'>    }
+</span><span class='line'>    return h;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>hash32</h1>
+
+<p>String中有一个hash32()的方法，它的结果被缓存在成员变量int hash32 中。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Cached value of the alternative hashing algorithm result
+</span><span class='line'> */
+</span><span class='line'>private transient int hash32 = 0;</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Calculates a 32-bit hash value for this string.
+</span><span class='line'> *
+</span><span class='line'> * @return a 32-bit hash value for this string.
+</span><span class='line'> */
+</span><span class='line'>int hash32() {
+</span><span class='line'>    int h = hash32;
+</span><span class='line'>    if (0 == h) {
+</span><span class='line'>       // harmless data race on hash32 here.
+</span><span class='line'>       h = sun.misc.Hashing.murmur3_32(HASHING_SEED, value, 0, value.length);
+</span><span class='line'>
+</span><span class='line'>       // ensure result is not zero to avoid recalcing
+</span><span class='line'>       h = (0 != h) ? h : 1;
+</span><span class='line'>
+</span><span class='line'>       hash32 = h;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    return h;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>关于 hash32 为什么存在，可以看下面官网的说明：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Java SE 7u6 introduces an improved, alternative hash function for the following map and map-derived collection implementations:
+</span><span class='line'>
+</span><span class='line'>HashMap
+</span><span class='line'>Hashtable
+</span><span class='line'>HashSet
+</span><span class='line'>LinkedHashMap
+</span><span class='line'>LinkedHashSet
+</span><span class='line'>WeakHashMap
+</span><span class='line'>ConcurrentHashMap
+</span><span class='line'>
+</span><span class='line'>The alternative hash function improves the performance of these map implementations when a large number of key hash collisions are encountered.
+</span><span class='line'>
+</span><span class='line'>For Java SE 7u6, this alternative hash function is implemented as follows:
+</span><span class='line'>
+</span><span class='line'>The alternative hash function is only applied to maps with a capacity larger than a specified threshold size. By default, the threshold is -1. This value disables the alternative hash function. To enable the alternative hash function, set the jdk.map.althashing.threshold system property to a different value. The recommended value is 512. Setting this system property to 512 causes all maps with a capacity larger than 512 entries to use the alternative hash function. You can set this system property to 0, which causes all maps to use the alternative hash function.
+</span><span class='line'>
+</span><span class='line'>The following describes the jdk.map.althashing.threshold system property in more detail:
+</span><span class='line'>
+</span><span class='line'>Value type: Integer
+</span><span class='line'>Value default: -1
+</span><span class='line'>Value range: From -1 to 2147483647, inclusive
+</span><span class='line'>Description: Threshold capacity at which maps use the alternative hash function. The value -1 is a synonym for 2147483647 (which is easier to remember). All other values correspond to threshold capacity.
+</span><span class='line'>For example, the following command runs the Java application MyApplication and sets the jdk.map.althashing.threshold system property to 512:
+</span><span class='line'>
+</span><span class='line'>java -Djdk.map.althashing.threshold=512 MyApplication
+</span><span class='line'>If the alternative hash function is being used, then the iteration order of keys, values, and entities vary for each instance of HashMap, Hashtable, HashSet, and ConcurrentHashMap. This change in iteration order may cause compatibility issues with some programs. This is the reason that the alternative hash function is disabled by default. Hashing improvements will be investigated in future releases. In the meantime, the system property jdk.map.althashing.threshold is experimental. It is strongly recommended that you test your applications with the alternative hashing function enabled (by setting jdk.map.althashing.threshold to 0) to determine if your applications are affected by iteration order. If there is an impact, you should fix your applications as soon as possible because there is no guarantee of iteration order.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>简单说就是为了解决 HashMap 这种hash 碰撞严重时候的性能，因为HashMap使用链地址法解决Hash碰撞，当链很长的时候，性能会受影响。
+但是这个问题在Java 8 中已经解决了，因为Java 8中引入一个新的策略，当链比较长的时候(默认阈值10)，会转化为采用红黑树实现后面的链表，可以讲时间从O(N)降到O(lgN).</p>
+
+<p>参考：
+<a href="http://stackoverflow.com/questions/23716836/what-is-use-of-hash32-in-string-class">http://stackoverflow.com/questions/23716836/what-is-use-of-hash32-in-string-class</a>
+<a href="http://docs.oracle.com/javase/7/docs/technotes/guides/collections/changes7.html">http://docs.oracle.com/javase/7/docs/technotes/guides/collections/changes7.html</a>
+<a href="http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object">http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object</a>
+<a href="http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object/23926405#23926405">http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object/23926405#23926405</a></p>
+
+<p>hash32这个方法最大的变化是，同一个字符串在不同的JVM上执行hash32()的结果可能不同（确切的说，多数情况下都会不同，因为其内部分别调用了一次System.currentTimeMillis()和两次System.nanoTime()用于初始化seed）。因此，某些容器在每次运行程序时迭代顺序都不同。</p>
+
+<h1>CaseInsensitiveComparator</h1>
+
+<p>在String中，有一个护额略大小写的比较方法，它的实现就是我们这里要说的CaseInsensitiveComparator</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public int compareToIgnoreCase(String str) {
+</span><span class='line'>    return CASE_INSENSITIVE_ORDER.compare(this, str);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public static final Comparator&lt;String&gt; CASE_INSENSITIVE_ORDER = new CaseInsensitiveComparator();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>CaseInsensitiveComparator的实现如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private static class CaseInsensitiveComparator implements Comparator&lt;String&gt;, java.io.Serializable {
+</span><span class='line'>    // use serialVersionUID from JDK 1.2.2 for interoperability
+</span><span class='line'>    private static final long serialVersionUID = 8575799808933029326L;
+</span><span class='line'>
+</span><span class='line'>    public int compare(String s1, String s2) {
+</span><span class='line'>        int n1 = s1.length();
+</span><span class='line'>        int n2 = s2.length();
+</span><span class='line'>        int min = Math.min(n1, n2);
+</span><span class='line'>        for (int i = 0; i &lt; min; i++) {
+</span><span class='line'>            char c1 = s1.charAt(i);
+</span><span class='line'>            char c2 = s2.charAt(i);
+</span><span class='line'>            if (c1 != c2) {
+</span><span class='line'>                c1 = Character.toUpperCase(c1);
+</span><span class='line'>                c2 = Character.toUpperCase(c2);
+</span><span class='line'>                if (c1 != c2) {
+</span><span class='line'>                    c1 = Character.toLowerCase(c1);
+</span><span class='line'>                    c2 = Character.toLowerCase(c2);
+</span><span class='line'>                    if (c1 != c2) {
+</span><span class='line'>                        // No overflow because of numeric promotion
+</span><span class='line'>                        return c1 - c2;
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>        return n1 - n2;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们发现比较时候需要现将字符转化为大小比较，再转化为小写比较。</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Crate文档翻译]]></title>
@@ -6001,877 +6771,6 @@ RIGHT JOIN: 与 LEFT JOIN 相反，取得右表完全记录，即使左表并无
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 </pre></td><td class='code'><pre><code class=''><span class='line'>SELECT article.aid,article.title,user.username FROM article NATURAL JOIN user</span></code></pre></td></tr></table></div></figure>
-
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[在线诊断工具]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/08/27/zai-xian-zhen-duan-gong-ju/"/>
-    <updated>2015-08-27T19:54:38+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/08/27/zai-xian-zhen-duan-gong-ju</id>
-    <content type="html"><![CDATA[<p>Java诊断我相信再日常开发中都十分需要.相信大家都使用过以下几种诊断方式:</p>
-
-<pre><code>1.肉眼诊断
-就是出现问题时候企图通过肉眼来发现代码问题.通常很明显的问题有效;
-2.日志诊断
-通过给出问题的代码入参或者上下游加上日志,或者出问题的时候加上日志来诊断;这种方式的问题就是出现问题你需要重新拉分支,加日志,本地测试再上限这一系列流程.另外一个问题是过多的日志会影响应用性能;
-3.监控诊断
-通过完善的监控,通常包括完善且精确的异常划分.对不同的异常情况有独立的监控.加上完善的报警机制.这是最理想的情况.其优势是能快速定位问题点,问题是建立这一套完善的机制需要很长时间.并且监控只能发现问题类型,比如监控发现是数据错误,但是到底那条数据错误还是需要日志等手段来定位.
-4.在线诊断工具
-在不需要重新发布的情况下,在线诊断应用的问题所在.通常还可以用于定位接口瓶颈等问题;
-</code></pre>
-
-<p>这里简单介绍一下最近找到的几个在线诊断工具.它们都是非侵入式的,即不需要修改原始应用的代码再重新发布上线这个过程.</p>
-
-<p>常用包括几个诊断工具包括,这里做一个简单的介绍:</p>
-
-<pre><code>1.BTrace
-2.HouseMD
-3.Greys-Anatomy
-</code></pre>
-
-<p>参考: <a href="http://www.infoq.com/cn/articles/java-profiling-with-open-source/">http://www.infoq.com/cn/articles/java-profiling-with-open-source/</a></p>
-
-<h2>. 1.BTrace</h2>
-
-<p>Btrace(bytecode trace)是Kenai在2009年开发的一个开源项目(<a href="https://kenai.com/projects/btrace/">https://kenai.com/projects/btrace/</a>)，是一个动态跟踪分析JAVA源代码的工具。
-它可以用来帮我们做运行时的JAVA程序分析，追踪，监控等.</p>
-
-<p>官网: <a href="https://kenai.com/projects/btrace/">https://kenai.com/projects/btrace/</a></p>
-
-<p>用户手册: <a href="https://kenai.com/projects/btrace/pages/UserGuide">https://kenai.com/projects/btrace/pages/UserGuide</a></p>
-
-<p>samples下有很多使用例子.参考网上的一个例子:
-<a href="http://mgoann.iteye.com/blog/1409685">http://mgoann.iteye.com/blog/1409685</a></p>
-
-<p>参考: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=56198121">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=56198121</a></p>
-
-<h4>1.1使用场景:</h4>
-
-<p>1.数据采样
-比如我们要优化某块代码，就可以先写一个btrace脚本，丢到线上服务器上跑一段时间；
-这样可以收集到最真实的数据，而且不用发布之类的；
-然后根据收集到的数据，做有目的的优化，优化之后，还可以对比出优化的效果。
-2.排查问题
-3.性能监控</p>
-
-<h4>1.2优点</h4>
-
-<p>1.跟踪任何java代码的调用（包括第三方类库中的，甚至jdk中的），比如统计某方法的调用次数，耗时。
-2.可以监控的维度有很多，比如异常，同步块，内存申请，数组声明，甚至可以精确到行
-3.完全不侵入业务代码，不需要重启服务
-4.安全，对于应用内的数据来说是只读的。</p>
-
-<h4>1.3缺点</h4>
-
-<ol>
-<li>有较多的使用限制，如只能调用用BtraceUtils中的方法、不能写实例变量；
-（见docs/usersguide.html中的BTrace Restrictions条目）
-所以刚编写脚本的时候，可能会有各种不习惯，但其实大多会用到的方法，BtraceUtils里都有封装
-（其实个人感觉这个不算缺点，只是这个工具定位在追踪和监控，所以出于安全考虑，做了这个限制）</li>
-<li>监控基本上只能单点，集群环境没法玩</li>
-<li>被监控的服务重启，btrace也需要跟着重启
-4.有影响原始应用的风险,严重可能导致JVM Crash.</li>
-</ol>
-
-
-<h4>1.4使用方式</h4>
-
-<ul>
-<li><p>Boot方式启动
-追踪已启动的jvm进程
-命令：btrace/bin/btrace 12345 SomeScript.java
-注意，下载下来后bin下的文件都不可执行，需要chmod u+x，并且需要和目标进程是同一个用户来启动</p></li>
-<li><p>Agent方式启动
-与目标jvm同时启动
-配置jvm参数：-javaagent:btrace-agent.jar=script=SqlMapTracer.class
-注意：agent方式启动只能使用编译过的脚本
-使用btrace/bin/btracec SqlMapTracer.java 编译
-agent方式启动的btrace的标准输出位于你的SqlMapTracer.class所在目录下的SqlMapTracer.class.btrace文件</p></li>
-</ul>
-
-
-<p>boot方式灵活，但是当要求追踪结果精确时，就不太好用了。因为不知道btrace启动之前，目标进程已经执行了多少代码。agent方式是和目标进程同时启动的，可以保证结果精确。</p>
-
-<h4>1.5原理</h4>
-
-<p>主要就是使用ASM来实现对类的修改,再使用Instumentation实现类的内存替换.</p>
-
-<p>btrace原理: <a href="http://victorzhzh.iteye.com/blog/965789">http://victorzhzh.iteye.com/blog/965789</a></p>
-
-<p>btrace源码分析: <a href="http://agapple.iteye.com/blog/1005918">http://agapple.iteye.com/blog/1005918</a></p>
-
-<h2>. 2.HouseMD</h2>
-
-<p>高负载服务器端Java程序 诊断工具的特性要求有:</p>
-
-<pre><code>1.命令行接口, 能够方便在服务器环境中运行;
-2.支持常用诊断调式手段, 能够在其中快速来回切换;
-3.容易定位跟踪目标, 且不易出错;
-4.弱侵入, 目标Java程序无需任何修改, 不用重新部署或重启;
-5.有效控制给目标进程带来的资源消耗;
-6.不遗留任何"代码垃圾"等后遗症.
-</code></pre>
-
-<p>使用手册: <a href="https://github.com/CSUG/HouseMD/wiki/UserGuideCN">https://github.com/CSUG/HouseMD/wiki/UserGuideCN</a></p>
-
-<h4>. 2.1安装</h4>
-
-<p>首先安装jenv:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Tools/HouseMD$ curl -L -s get.jenv.io | bash
-</span><span class='line'>...
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Tools/HouseMD$ source /home/xiaobaoqiu/.jenv/bin/jenv-init.sh
-</span><span class='line'>...
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Tools/HouseMD$ jenv help
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<p>再安装HouseMD就很简单:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Tools/HouseMD$ jenv install housemd
-</span><span class='line'>Installing: housemd 0.2.7
-</span><span class='line'>Parsing http://jenv.mvnsearch.org/candidate/housemd/download/0.2.7/Linux/x86_64
-</span><span class='line'>
-</span><span class='line'>Downloading: housemd 0.2.7
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>. 3.Greys-Anatomy</h2>
-
-<p>Greys是一个java进程执行过程中的异常诊断工具。 在不中断程序执行的情况下轻松完成问题排查工作.</p>
-
-<p>源码: <a href="https://github.com/oldmanpushcart/greys-anatomy">https://github.com/oldmanpushcart/greys-anatomy</a></p>
-
-<p>使用范例: <a href="https://github.com/oldmanpushcart/greys-anatomy/wiki/Getting-Start">https://github.com/oldmanpushcart/greys-anatomy/wiki/Getting-Start</a></p>
-
-<p>交互方式: 命令行交互</p>
-
-<p>功能:</p>
-
-<pre><code>1.查看加载类，方法信息
-2.方法执行监控（调用量，成功失败率，响应时间）
-3.方法执行数据观测（参数，返回结果，异常信息等）
-4.方法执行数据记录
-5.性能开销渲染
-6.方法执行数据自定义观测（js脚本）
-7.查看方法调用堆栈
-</code></pre>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[处理sql超时]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/08/22/chu-li-sqlchao-shi/"/>
-    <updated>2015-08-22T14:18:23+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/08/22/chu-li-sqlchao-shi</id>
-    <content type="html"><![CDATA[<p>最近组内又出现一次因为SQL慢查询导致业务整体雪崩的情况.很惭愧的是,那个慢查询SQL是我大概一年之前写的(一个统计的SQL,数据量又比较大),那时还很稚嫩.</p>
-
-<p>之前组内出现这种情况一般是让DBA上一个慢查询脚本,直接暴力kill那些慢查询.</p>
-
-<p>其实各个JDBC driver实现java.sql.Statement的时候都需要实现setQueryTimeout这个函数,其作用就是设置SQL的执行超时时间,当SQL超时会直接被取消掉并且抛出QLTimeoutException异常.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'>     * Sets the number of seconds the driver will wait for a
-</span><span class='line'>     * &lt;code&gt;Statement&lt;/code&gt; object to execute to the given number of seconds.
-</span><span class='line'>     *By default there is no limit on the amount of time allowed for a running
-</span><span class='line'>     * statement to complete. If the limit is exceeded, an
-</span><span class='line'>     * &lt;code&gt;SQLTimeoutException&lt;/code&gt; is thrown.
-</span><span class='line'>     * A JDBC driver must apply this limit to the &lt;code&gt;execute&lt;/code&gt;,
-</span><span class='line'>     * &lt;code&gt;executeQuery&lt;/code&gt; and &lt;code&gt;executeUpdate&lt;/code&gt; methods.
-</span><span class='line'>     * &lt;p&gt;
-</span><span class='line'>     * &lt;strong&gt;Note:&lt;/strong&gt; JDBC driver implementations may also apply this
-</span><span class='line'>     * limit to {@code ResultSet} methods
-</span><span class='line'>     * (consult your driver vendor documentation for details).
-</span><span class='line'>     * &lt;p&gt;
-</span><span class='line'>     * &lt;strong&gt;Note:&lt;/strong&gt; In the case of {@code Statement} batching, it is
-</span><span class='line'>     * implementation defined as to whether the time-out is applied to
-</span><span class='line'>     * individual SQL commands added via the {@code addBatch} method or to
-</span><span class='line'>     * the entire batch of SQL commands invoked by the {@code executeBatch}
-</span><span class='line'>     * method (consult your driver vendor documentation for details).
-</span><span class='line'>     *
-</span><span class='line'>     * @param seconds the new query timeout limit in seconds; zero means
-</span><span class='line'>     *        there is no limit
-</span><span class='line'>     * @exception SQLException if a database access error occurs,
-</span><span class='line'>     * this method is called on a closed &lt;code&gt;Statement&lt;/code&gt;
-</span><span class='line'>     *            or the condition seconds &gt;= 0 is not satisfied
-</span><span class='line'>     * @see #getQueryTimeout
-</span><span class='line'>     */
-</span><span class='line'>    void setQueryTimeout(int seconds) throws SQLException;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>默认情况下都不设置超时时间(即默认值0).即永远不超时.Druid的Filter机制很容易的让我们设置这个查询超时时间.</p>
-
-<h2>1.SQL超时时间Filter实现</h2>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * 设置SQL执行时间
-</span><span class='line'> * 如果超时,查询被cancel,并抛出SQLTimeoutException异常
-</span><span class='line'> *
-</span><span class='line'> * @author: xiaobaoqiu  Date: 15-8-22 Time: 下午1:55
-</span><span class='line'> */
-</span><span class='line'>public class SqlTimeOutFilter extends FilterEventAdapter {
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 默认超时时间,单位秒
-</span><span class='line'>     * 注意不要设置太小
-</span><span class='line'>     */
-</span><span class='line'>    private static final int QUERY_TIMEOUT_THRESHOLD_SECOND = 100;
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 超时时间,默认为QUERY_TIMEOUT_THRESHOLD_SECOND
-</span><span class='line'>     */
-</span><span class='line'>    private int timeoutThreshold = QUERY_TIMEOUT_THRESHOLD_SECOND;
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    protected void statementExecuteBefore(StatementProxy statement, String sql) {
-</span><span class='line'>        setQueryTimeout(statement);
-</span><span class='line'>        super.statementExecuteBefore(statement, sql);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    protected void statementExecuteBatchBefore(StatementProxy statement) {
-</span><span class='line'>        setQueryTimeout(statement);
-</span><span class='line'>        super.statementExecuteBatchBefore(statement);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    protected void statementExecuteUpdateBefore(StatementProxy statement, String sql) {
-</span><span class='line'>        setQueryTimeout(statement);
-</span><span class='line'>        super.statementExecuteUpdateBefore(statement, sql);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    protected void statementExecuteQueryBefore(StatementProxy statement, String sql) {
-</span><span class='line'>        setQueryTimeout(statement);
-</span><span class='line'>        super.statementExecuteQueryBefore(statement, sql);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 设置Statement超时时间,
-</span><span class='line'>     * statement.setQueryTimeout单位是秒,0表示没有限制.这个函数可能会抛出SQLException异常,场景:
-</span><span class='line'>     *      1.数据库访问错误
-</span><span class='line'>     *      2.在一个已经关闭的Statement上调用这个方法
-</span><span class='line'>     *      3.超时时间不满足seconds &gt;= 0的条件
-</span><span class='line'>     *
-</span><span class='line'>     * @param statement
-</span><span class='line'>     */
-</span><span class='line'>    private void setQueryTimeout(StatementProxy statement) {
-</span><span class='line'>        try {
-</span><span class='line'>            statement.setQueryTimeout(timeoutThreshold);
-</span><span class='line'>        }catch (SQLException se) {
-</span><span class='line'>            //TODO: do something
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public int getTimeoutThreshold() {
-</span><span class='line'>        return timeoutThreshold;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setTimeoutThreshold(int timeoutThreshold) {
-</span><span class='line'>        this.timeoutThreshold = timeoutThreshold;
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>2.SQL超时时间Filter使用</h2>
-
-<p>默认的DruidDataSource就支持设置设置Filter:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public void setProxyFilters(List&lt;Filter&gt; filters) {
-</span><span class='line'>        if (filters != null) {
-</span><span class='line'>            this.filters.addAll(filters);
-</span><span class='line'>        }
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>我们可以实现DataSourceFactory(参考默认实现DefaultDataSourceFactory),在创建DataSource的时候调用setProxyFilters加上我们自己写的Filter:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class DruidDataSourceFactory implements DataSourceFactory {
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public DataSource create(String host, int port, String username, String password, String dbName, int corePoolSize,
-</span><span class='line'>                             int maxPoolSize, String jdbcUrlOption, boolean autoCommit) throws ResourceException {
-</span><span class='line'>        DruidDataSource dataSource = new DruidDataSource();//使用默认实现DruidDataSource
-</span><span class='line'>        //设置dataSource参数, username等
-</span><span class='line'>
-</span><span class='line'>        //设置dataSource的Filter
-</span><span class='line'>        List&lt;Filter&gt; filters = Lists.newArrayList();
-</span><span class='line'>        SqlTimeOutFilter timeOutFilter = new SqlTimeOutFilter();
-</span><span class='line'>        filters.add(timeOutFilter);
-</span><span class='line'>        dataSource.setProxyFilters(filters);
-</span><span class='line'>        
-</span><span class='line'>        //dataSource初始化等操作
-</span><span class='line'>        ...
-</span><span class='line'>
-</span><span class='line'>        return dataSource;
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>关于超时时间设置的一篇博文,很全面:</p>
-
-<p><a href="http://www.importnew.com/2466.html">http://www.importnew.com/2466.html</a></p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[MyBatis空where拦截器]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/08/22/mybatiskong-wherelan-jie-qi/"/>
-    <updated>2015-08-22T12:37:48+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/08/22/mybatiskong-wherelan-jie-qi</id>
-    <content type="html"><![CDATA[<p>最近项目中出现了至少两次因为Mybatis的动态where条件不满足导致实际sql语句的where条件为空,进而查询全表,当数据量比较大的时候,导致OOM的情况.</p>
-
-<p>如何禁止这种情况,个人觉得三种措施:</p>
-
-<ul>
-<li>1.在逻辑层面加充分的参数有效性检查;</li>
-<li>2.在where条件中如果索引条件都不满足,加上1=2这种必然失败的条件;</li>
-</ul>
-
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;where&gt;
-</span><span class='line'>    &lt;choose&gt;
-</span><span class='line'>        &lt;when test="id != null"&gt;
-</span><span class='line'>            ...
-</span><span class='line'>        &lt;/when&gt;
-</span><span class='line'>        ...
-</span><span class='line'>        &lt;otherwise&gt;
-</span><span class='line'>        and 1=2
-</span><span class='line'>        &lt;/otherwise&gt;
-</span><span class='line'>    &lt;/choose&gt;
-</span><span class='line'>&lt;/where&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<ul>
-<li>3.Mybatis拦截器;</li>
-</ul>
-
-
-<p>前两种措施都是依赖人,从这个层面讲,是不靠谱的,即一个策略不是强制的,就是不靠谱的.相对而言,第三种是不依赖程序员的自觉性,是最靠谱的.乘周六有时间,实现一个简单的Mybatis拦截器来拦截where条件为空的SQL语句.</p>
-
-<h1>1.实现</h1>
-
-<p>先上代码,这里拦截了SqlCommandType为select,update,delete这三种类型.出现情况目前只是打日志.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * Mybatis拦截器, 拦截:
-</span><span class='line'> *      select语句where条件为空
-</span><span class='line'> *      update语句where条件为空
-</span><span class='line'> *      delete语句where条件为空
-</span><span class='line'> *
-</span><span class='line'> * 处理: 目前只是打warning日志,因为项目中存在数据量很少的表读全表的情况(比如加载数据进缓存)
-</span><span class='line'> *      TODO:后续考虑设置拦截器的白名单,不在白名单的触发where条件为空的直接抛出异常.
-</span><span class='line'> *
-</span><span class='line'> * @author: xiaobaoqiu  Date: 15-8-22 Time: 上午10:26
-</span><span class='line'> */
-</span><span class='line'>@Intercepts({ @Signature(
-</span><span class='line'>        type = StatementHandler.class,
-</span><span class='line'>        method = "prepare",
-</span><span class='line'>        args = { Connection.class }) })
-</span><span class='line'>public class EmptyWhereInterceptor implements Interceptor {
-</span><span class='line'>
-</span><span class='line'>    private static final Logger logger = LoggerFactory.getLogger(EmptyWhereInterceptor.class);
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 拦截的 COMMAND 类型
-</span><span class='line'>     */
-</span><span class='line'>    private static final Set&lt;String&gt; INTERCEPTOR_COMMAND = Sets.newHashSet("select", "update", "delete");
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public Object intercept(Invocation invocation) throws Throwable {
-</span><span class='line'>        StatementHandler handler = (StatementHandler) invocation.getTarget();
-</span><span class='line'>
-</span><span class='line'>        //获取实际的StatementHandler
-</span><span class='line'>        if (handler instanceof RoutingStatementHandler) {
-</span><span class='line'>            handler = (BaseStatementHandler) ReflectUtil.getFieldValue(handler, "delegate");
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        //获取SqlCommandType
-</span><span class='line'>        String commandType = getCommandType(handler);
-</span><span class='line'>
-</span><span class='line'>        if (INTERCEPTOR_COMMAND.contains(commandType)) {
-</span><span class='line'>            String originSql = handler.getBoundSql().getSql().toLowerCase();  //获取sql
-</span><span class='line'>            if (!originSql.contains("where")) {
-</span><span class='line'>                logger.warn("禁止使用不带where条件的SQL语句.原始SQL={}", originSql);
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        return invocation.proceed();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public Object plugin(Object target) {
-</span><span class='line'>        return Plugin.wrap(target, this);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public void setProperties(Properties properties) {
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 获取Command类型,小写化返回
-</span><span class='line'>     *
-</span><span class='line'>     * @param handler
-</span><span class='line'>     * @return
-</span><span class='line'>     */
-</span><span class='line'>    private String getCommandType(StatementHandler handler) {
-</span><span class='line'>        MappedStatement mappedStatement = (MappedStatement) ReflectUtil.getFieldValue(handler, "mappedStatement");
-</span><span class='line'>        return mappedStatement.getSqlCommandType().toString().toLowerCase();
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>包括一个简单反射工具的实现:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * 反射工具
-</span><span class='line'> *
-</span><span class='line'> * @author: xiaobaoqiu  Date: 15-8-22 Time: 上午11:52
-</span><span class='line'> */
-</span><span class='line'>public class ReflectUtil {
-</span><span class='line'>    public ReflectUtil() {
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 改变 Accessible,便于访问private等属性
-</span><span class='line'>     * @param field
-</span><span class='line'>     */
-</span><span class='line'>    private static void makeAccessible(Field field) {
-</span><span class='line'>        if(!Modifier.isPublic(field.getModifiers())) {
-</span><span class='line'>            field.setAccessible(true);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 获取 object 的字段,字段名称为filedName,获取不到返回null
-</span><span class='line'>     * @param object
-</span><span class='line'>     * @param filedName
-</span><span class='line'>     * @return
-</span><span class='line'>     */
-</span><span class='line'>    private static Field getDeclaredField(Object object, String filedName) {
-</span><span class='line'>        Class superClass = object.getClass();
-</span><span class='line'>
-</span><span class='line'>        while(superClass != Object.class) {
-</span><span class='line'>            try {
-</span><span class='line'>                return superClass.getDeclaredField(filedName);
-</span><span class='line'>            } catch (NoSuchFieldException var4) {
-</span><span class='line'>                superClass = superClass.getSuperclass();
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        return null;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 获取object字段fieldName的值,如果字段不存在直接抛异常
-</span><span class='line'>     *
-</span><span class='line'>     * @param object
-</span><span class='line'>     * @param fieldName
-</span><span class='line'>     * @return
-</span><span class='line'>     */
-</span><span class='line'>    public static Object getFieldValue(Object object, String fieldName) {
-</span><span class='line'>        Field field = getDeclaredField(object, fieldName);
-</span><span class='line'>        if(field == null) {
-</span><span class='line'>            throw new IllegalArgumentException("Could not find field [" + fieldName + "] on target [" + object + "]");
-</span><span class='line'>        } else {
-</span><span class='line'>            makeAccessible(field);
-</span><span class='line'>            Object result = null;
-</span><span class='line'>
-</span><span class='line'>            try {
-</span><span class='line'>                result = field.get(object);
-</span><span class='line'>            } catch (IllegalAccessException var5) {
-</span><span class='line'>                var5.printStackTrace();
-</span><span class='line'>            }
-</span><span class='line'>
-</span><span class='line'>            return result;
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 设置object字段fieldName的值,如果字段不存在直接抛异常
-</span><span class='line'>     *
-</span><span class='line'>     * @param object
-</span><span class='line'>     * @param fieldName
-</span><span class='line'>     * @param value
-</span><span class='line'>     */
-</span><span class='line'>    public static void setFieldValue(Object object, String fieldName, Object value) {
-</span><span class='line'>        Field field = getDeclaredField(object, fieldName);
-</span><span class='line'>        if(field == null) {
-</span><span class='line'>            throw new IllegalArgumentException("Could not find field [" + fieldName + "] on target [" + object + "]");
-</span><span class='line'>        } else {
-</span><span class='line'>            makeAccessible(field);
-</span><span class='line'>
-</span><span class='line'>            try {
-</span><span class='line'>                field.set(object, value);
-</span><span class='line'>            } catch (IllegalAccessException var5) {
-</span><span class='line'>                var5.printStackTrace();
-</span><span class='line'>            }
-</span><span class='line'>
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.Mybatis的Interceptor原理</h1>
-
-<p><a href="http://www.tuicool.com/articles/RbyUfu">这篇文章</a>很好的解释了Mybatis的Interceptor机制.</p>
-
-<p>mybatis读取配置再xml文件中Interceptor,通过反射构造其实例，将所有的Interceptor保存到InterceptorChain中。</p>
-
-<p>mybatis的拦截器只能代理指定的四个类：ParameterHandler、ResultSetHandler、StatementHandler以及Executor。</p>
-
-<p>参考:</p>
-
-<p><a href="http://www.tuicool.com/articles/RbyUfu">http://www.tuicool.com/articles/RbyUfu</a></p>
-
-<p><a href="http://blog.csdn.net/hupanfeng/article/details/9247379">http://blog.csdn.net/hupanfeng/article/details/9247379</a></p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Mysql PacketTooBigException]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/08/12/mysql-packettoobigexception/"/>
-    <updated>2015-08-12T16:44:38+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/08/12/mysql-packettoobigexception</id>
-    <content type="html"><![CDATA[<p>最近做一个同步线上数据导dev或者beta环境的小工具.今天遇到一个小异常:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Caused by: com.mysql.jdbc.PacketTooBigException: Packet for query is too large (17610152 &gt; 16777216). You can change this value on the server by setting the max_allowed_packet' variable.</span></code></pre></td></tr></table></div></figure>
-
-
-<p>原因就是一次插入的数据太大了.Mysql存在数据包最大大小的配置,默认是1M,这里我们的dev环境是16M,但是我这里出现了大于16M的数据packet:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show VARIABLES like '%max_allowed_packet%';
-</span><span class='line'>+--------------------------+------------+
-</span><span class='line'>| Variable_name            | Value      |
-</span><span class='line'>+--------------------------+------------+
-</span><span class='line'>| max_allowed_packet       | 16777216   |
-</span><span class='line'>| slave_max_allowed_packet | 1073741824 |
-</span><span class='line'>+--------------------------+------------+</span></code></pre></td></tr></table></div></figure>
-
-
-<p>修改max_allowed_packet:</p>
-
-<ul>
-<li>1.set global max_allowed_packet = 2<em>1024</em>1024*10</li>
-<li>2.修改my.conf文件(windows为my.ini)</li>
-</ul>
-
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>max_allowed_packet      = 16M</span></code></pre></td></tr></table></div></figure>
-
-
-<p>注意点:</p>
-
-<ul>
-<li>1.保证Master和Slave的max_allowed_packet参数一致(一般都要求所以参数一致);</li>
-</ul>
 
 ]]></content>
   </entry>
