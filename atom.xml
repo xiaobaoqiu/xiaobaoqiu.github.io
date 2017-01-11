@@ -4,7 +4,7 @@
   <title><![CDATA[xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2016-12-29T19:08:19+08:00</updated>
+  <updated>2017-01-11T21:24:41+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -20,6 +20,8 @@
     <id>http://xiaobaoqiu.github.io/blog/2016/12/29/activitishi-jian-chu-li</id>
     <content type="html"><![CDATA[<ul>
 <li><a href="#1.%E4%BA%8B%E4%BB%B6%E5%A4%84%E7%90%86">1.事件处理</a></li>
+<li><a href="#2.Listener%E5%BC%82%E5%B8%B8%E5%A4%84%E7%90%86">2.Listener异常处理</a></li>
+<li><a href="#3.Listener%E6%B3%A8%E5%86%8C">3.Listener注册</a></li>
 </ul>
 
 
@@ -157,6 +159,218 @@ public interface ProcessEventHandler {
 
 <p>参考：
 <a href="https://www.activiti.org/userguide/index.html#eventDispatcherConfiguration">https://www.activiti.org/userguide/index.html#eventDispatcherConfiguration</a></p>
+
+<h2 id="2.Listener异常处理">2.Listener异常处理</h2>
+
+
+<p>需要注意的一点是 GlobalProcessEventListener 中的异常处理,我们在实现 GlobalProcessEventListener 的时候,ActivitiEventListener有一个接口需要实现:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * @return whether or not the current operation should fail when this listeners execution
+</span><span class='line'> * throws an exception. 
+</span><span class='line'> */
+</span><span class='line'>boolean isFailOnException();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>即当 listener 抛出一个异常的时候,当前操作时序应该失败(其实就是是否需要吞掉 listener 的异常).</p>
+
+<p>我们可以看看 Activiti 相关的源代码,在 ActivitiEventSupport 中的 dispatchEvent 函数,我们可以清晰的看到,listener.isFailOnException()为false则会讲异常吞掉,只是打一行日志.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>protected void dispatchEvent(ActivitiEvent event, ActivitiEventListener listener) {
+</span><span class='line'>    try {
+</span><span class='line'>        listener.onEvent(event);
+</span><span class='line'>    } catch (Throwable t) {
+</span><span class='line'>        if (listener.isFailOnException()) {
+</span><span class='line'>            throw new ActivitiException("Exception while executing event-listener", t);
+</span><span class='line'>        } else {
+</span><span class='line'>            // Ignore the exception and continue notifying remaining listeners. The
+</span><span class='line'>            // listener
+</span><span class='line'>            // explicitly states that the exception should not bubble up
+</span><span class='line'>            LOG.warn("Exception while executing event-listener, which was ignored", t);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我的建议(也是我现在的做法)是:isFailOnException()设置为true,然后在对应的 ProcessEventHandler 自己处理需要吞掉异常的场景.</p>
+
+<h2 id="3.Listener注册">3.Listener注册</h2>
+
+
+<p>通常而言,我们的 ProcessEventHandler 需要使用到 Activiti 的Service,比如我的一个简单场景,我需要在 UserTask 获取一些业务信息,新词我需要使用 RuntimeService 来查询一些信息</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 任务创建事件
+</span><span class='line'> *
+</span><span class='line'> * @author xiaobaoqiu  Date: 16-12-23 Time: 下午7:09
+</span><span class='line'> */
+</span><span class='line'>public class ProcessTaskCreateListener extends AbstractProcessTaskListener {
+</span><span class='line'>
+</span><span class='line'>    @Resource
+</span><span class='line'>    private RuntimeService runtimeService;
+</span><span class='line'>    ...
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>按照第一节的写法,就会出现Bean循环依赖的问题:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1. ProcessEngineConfiguration 实例创建会触发 GlobalProcessEventListener 创建;
+</span><span class='line'>2.GlobalProcessEventListener 实例创建会触发 ProcessProcessTaskCreateListener 创建;
+</span><span class='line'>3.ProcessProcessTaskCreateListener 实例创建会触发 RuntimeService 创建;
+</span><span class='line'>4.RuntimeService 实例创建依赖 ProcessEngineFactoryBean 创建;
+</span><span class='line'>5.ProcessEngineFactoryBean 创建依赖 ProcessEngineConfiguration实例;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>并且 ProcessEngineFactoryBean 是 Activiti 自己实现的 FactoryBean,用来获得 ProcessEngine 实例 :</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class ProcessEngineFactoryBean implements FactoryBean&lt;ProcessEngine&gt;, DisposableBean, ApplicationContextAware {
+</span><span class='line'>    ...
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个问题一个比较好的解法是, 将 GlobalProcessEventListener 的注册延后到 GlobalProcessEventListener 初始化完成之后,因此涉及到两个问题:</p>
+
+<pre><code>1.GlobalProcessEventListener 什么时机去做自己注册;
+2.GlobalProcessEventListener 如何将自己注册到 SpringProcessEngineConfiguration 中;
+</code></pre>
+
+<p>其中第一个问题很好回答, GlobalProcessEventListener 自己初始化完成之后去自注册,这个时候依赖的各种Bean已经创建初始化完成了.因此只需要实现 ApplicationContextAware 接口,然后在 setApplicationContext 中做注册的工作.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class GlobalProcessEventListener implements ActivitiEventListener, ApplicationContextAware {
+</span><span class='line'>    /**
+</span><span class='line'>     * 将当前 EventListener 注册到 Activiti 中
+</span><span class='line'>     */
+</span><span class='line'>    @Override
+</span><span class='line'>    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+</span><span class='line'>        ...
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>第二个问题,如何自己注册上去,这个看看源代码就会找到方法, 我们在配置文件中给 SpringProcessEngineConfiguration 配置 EventListener 调用的其实是 setEventListeners 方法</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  public void setEventListeners(List&lt;ActivitiEventListener&gt; eventListeners) {
+</span><span class='line'>      this.eventListeners = eventListeners;
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们看远吗发现其中使用 eventListeners 的只有一个地方,就是将其赋值给 ActivitiEventDispatcher</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if(eventListeners != null) {
+</span><span class='line'>    for(ActivitiEventListener listenerToAdd : eventListeners) {
+</span><span class='line'>        this.eventDispatcher.addEventListener(listenerToAdd);
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>而 ActivitiEventDispatcher 才是使用  EventListener 的地方.我们再看源码发现 ActivitiEventDispatcher 提供了 addEventListener 的入口</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public interface ActivitiEventDispatcher {
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * Adds an event-listener which will be notified of ALL events by the dispatcher.
+</span><span class='line'>     * @param listenerToAdd the listener to add
+</span><span class='line'>     */
+</span><span class='line'>    void addEventListener(ActivitiEventListener listenerToAdd);
+</span><span class='line'>    
+</span><span class='line'>    /**
+</span><span class='line'>     * Adds an event-listener which will only be notified when an event of the given types occurs.
+</span><span class='line'>     * @param listenerToAdd the listener to add
+</span><span class='line'>     * @param types types of events the listener should be notified for
+</span><span class='line'>     */
+</span><span class='line'>    void addEventListener(ActivitiEventListener listenerToAdd, ActivitiEventType... types);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>并且 SpringProcessEngineConfiguration 有 getEventDispatcher 来获得 ActivitiEventDispatcher 实例,因此我们可以通过 getEventDispatcher 来拿到 ActivitiEventDispatcher 实例,然后将当前的 EventListener 通过 addEventListener 的方法增加到 ActivitiEventDispatcher 的 EventListener 列表中.</p>
+
+<p>因此,最终的实现代码很简单:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 将当前 EventListener 注册到 Activiti 中
+</span><span class='line'> */
+</span><span class='line'>@Override
+</span><span class='line'>public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+</span><span class='line'>    SpringProcessEngineConfiguration configuration = applicationContext.getBean(SpringProcessEngineConfiguration.class);
+</span><span class='line'>    configuration.getEventDispatcher().addEventListener(this);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
 ]]></content>
   </entry>
   
