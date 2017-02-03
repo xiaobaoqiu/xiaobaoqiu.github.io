@@ -9,8 +9,7 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="经常需要查看当前服务器哪些用户在登录,以及他们都在干什么. 下面总结一些命令,其中last应该是最常用的命令. 1.w w - Show who is logged on and what they are doing. 主要字段: LOGIN@: 什么时间登录的
-PCPU: 当前进程所用时间 &hellip;">
+  <meta name="description" content="前段时间搜索处理个P3的故障,原因是用户输入超级长的搜索字段,导致crate服务器load飙高,进而对外服务失败. 持续时间约10分钟.但是对我而言,最大的问题是这10分钟内,对crate服务器我什么都做不了.经过这次问题,准备好好看看crate以及背后ES的源码. 虽然解决方案是限制用户输入( &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -76,6 +75,218 @@ PCPU: 当前进程所用时间 &hellip;">
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/07/16/cratefu-wu-loadbiao-gao/">Crate服务load飙高</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-07-16T05:02:20+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:02 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>前段时间搜索处理个P3的故障,原因是用户输入超级长的搜索字段,导致crate服务器load飙高,进而对外服务失败.</p>
+
+<p>持续时间约10分钟.但是对我而言,最大的问题是这10分钟内,对crate服务器我什么都做不了.经过这次问题,准备好好看看crate以及背后ES的源码.</p>
+
+<p>虽然解决方案是限制用户输入(这一点和google以及百度做法是一样的,百度的查询限制在38个汉字以内).</p>
+
+<h1>1.like查询</h1>
+
+<p>有问题的字段是name字段,使用crate的简单的like查询.根据官方文档,crate的like查询支持两种通配符:</p>
+
+<pre><code>% : 0个或者多个字符
+_ : 单个字符
+</code></pre>
+
+<p>需要注意的注意,使用like查询可能导致慢查询.特别是当使用前置通配符开头的like查询.因为这种情况下crate需要去迭代所有行,而不能使用索引.
+如果向获取更好的性能,可以考虑使用全文索引.</p>
+
+<p>like参考:<a href="https://crate.io/docs/en/latest/sql/queries.html#like">https://crate.io/docs/en/latest/sql/queries.html#like</a></p>
+
+<p>全文索引参考: <a href="https://crate.io/docs/en/latest/sql/fulltext.html">https://crate.io/docs/en/latest/sql/fulltext.html</a> <a href="https://crate.io/docs/en/latest/sql/ddl.html#fulltext-indices">https://crate.io/docs/en/latest/sql/ddl.html#fulltext-indices</a></p>
+
+<h1>2.crate符取异常日志</h1>
+
+<p>这里贴一下当时crate服务器的异常:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>org.elasticsearch.index.query.QueryParsingException: [merchant_sea] Failed to parse
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parseQuery(IndexQueryParserService.java:370)
+</span><span class='line'>        at org.elasticsearch.action.count.TransportCountAction.shardOperation(TransportCountAction.java:187)
+</span><span class='line'>        at org.elasticsearch.action.count.CrateTransportCountAction.shardOperation(CrateTransportCountAction.java:119)
+</span><span class='line'>        at org.elasticsearch.action.count.CrateTransportCountAction.shardOperation(CrateTransportCountAction.java:49)
+</span><span class='line'>        at org.elasticsearch.action.support.broadcast.TransportBroadcastOperationAction$AsyncBroadcastAction$1.run(TransportBroadcastOperationAction.java:171)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)
+</span><span class='line'>Caused by: org.apache.lucene.util.automaton.TooComplexToDeterminizeException: Determinizing automaton would result in more than 10000 states.
+</span><span class='line'>        at org.apache.lucene.util.automaton.Operations.determinize(Operations.java:743)
+</span><span class='line'>        at org.apache.lucene.util.automaton.RunAutomaton.&lt;init&gt;(RunAutomaton.java:138)
+</span><span class='line'>        at org.apache.lucene.util.automaton.ByteRunAutomaton.&lt;init&gt;(ByteRunAutomaton.java:32)
+</span><span class='line'>        at org.apache.lucene.util.automaton.CompiledAutomaton.&lt;init&gt;(CompiledAutomaton.java:203)
+</span><span class='line'>        at org.apache.lucene.search.AutomatonQuery.&lt;init&gt;(AutomatonQuery.java:84)
+</span><span class='line'>        at org.apache.lucene.search.AutomatonQuery.&lt;init&gt;(AutomatonQuery.java:65)
+</span><span class='line'>        at org.apache.lucene.search.WildcardQuery.&lt;init&gt;(WildcardQuery.java:57)
+</span><span class='line'>        at org.elasticsearch.index.query.WildcardQueryParser.parse(WildcardQueryParser.java:106)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.BoolQueryParser.parse(BoolQueryParser.java:93)
+</span><span class='line'>        at org.elasticsearch.index.query.QueryParseContext.parseInnerQuery(QueryParseContext.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.innerParse(IndexQueryParserService.java:382)
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parse(IndexQueryParserService.java:281)
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parse(IndexQueryParserService.java:276)
+</span><span class='line'>        at org.elasticsearch.index.query.IndexQueryParserService.parseQuery(IndexQueryParserService.java:354)
+</span><span class='line'>        ... 7 more</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.背后的原理</h1>
+
+<p>查询的第一步是query词的解析，这里使用的like查询，查询类型是通配符的查询(WildcardQuery)。WildcardQuery主要处理三种情况：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  /** 匹配字符串 */
+</span><span class='line'>  public static final char WILDCARD_STRING = '*';
+</span><span class='line'>
+</span><span class='line'>  /** 匹配单个字符 */
+</span><span class='line'>  public static final char WILDCARD_CHAR = '?';
+</span><span class='line'>
+</span><span class='line'>  /** 转义符 */
+</span><span class='line'>  public static final char WILDCARD_ESCAPE = '\\';</span></code></pre></td></tr></table></div></figure>
+
+
+<p>WildcardQuery继承自AutomatonQuery，AutomatonQuery实现了有限状态机匹配的搜索(记得算法导论上有介绍，和KMP算法同时出现的)。</p>
+
+<p>构造AutomatonQuery的时候有一个参数maxDeterminizedStates，意义是构造出来的状态机的最大状态个数。默认值是Operations.DEFAULT_MAX_DETERMINIZED_STATES:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public AutomatonQuery(final Term term, Automaton automaton) {
+</span><span class='line'>    this(term, automaton, Operations.DEFAULT_MAX_DETERMINIZED_STATES);
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'>   * Create a new AutomatonQuery from an {@link Automaton}.
+</span><span class='line'>   * 
+</span><span class='line'>   * @param term Term containing field and possibly some pattern structure. The
+</span><span class='line'>   *        term text is ignored.
+</span><span class='line'>   * @param automaton Automaton to run, terms that are accepted are considered a
+</span><span class='line'>   *        match.
+</span><span class='line'>   * @param maxDeterminizedStates maximum number of states in the resulting
+</span><span class='line'>   *   automata.  If the automata would need more than this many states
+</span><span class='line'>   *   TooComplextToDeterminizeException is thrown.  Higher number require more
+</span><span class='line'>   *   space but can process more complex automata.
+</span><span class='line'>   */
+</span><span class='line'>  public AutomatonQuery(final Term term, Automaton automaton, int maxDeterminizedStates) {
+</span><span class='line'>    super(term.field());
+</span><span class='line'>    this.term = term;
+</span><span class='line'>    this.automaton = automaton;
+</span><span class='line'>    this.compiled = new CompiledAutomaton(automaton, null, true, maxDeterminizedStates);
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Operations.DEFAULT_MAX_DETERMINIZED_STATES的真实值为10000</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>final public class Operations {
+</span><span class='line'>  /**
+</span><span class='line'>   * Default maximum number of states that {@link Operations#determinize} should create.
+</span><span class='line'>   */
+</span><span class='line'>  public static final int DEFAULT_MAX_DETERMINIZED_STATES = 10000;
+</span><span class='line'>  ...
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1315,174 +1526,6 @@ WHAT: 用户当前正在使用的命令
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/06/23/linux-swap/">Linux Swap</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-06-23T19:35:55+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>7:35 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近一台机器出现swap报警,从监控图上也看到swap的使用一直存在.</p>
-
-<p>服务器上只有一个Tomcat应用和一些定时任务.</p>
-
-<h1>1.什么是swap</h1>
-
-<p>inux操作系统将物理内存分为多个小的内存块，称之为页(pages). 当应用请求的物理内存不够分配时，操作系统会将一段时间之内不用的内存页交换至swap分区，从而为应用释放内存空间。</p>
-
-<p>Swap对于系统过来说非常重要：</p>
-
-<pre><code>1.首先，当主内存不够用时，操作系统可以swap out一部分内存页，迅速为当前急需内存的应用或者进程分配内存；
-2.其次，某些内存页只在应用初始化阶段用到，之后可能就不再使用了，操作系统可以将这些内存页swap out，从而为应用或者磁盘cache腾出更多的内存空间;
-</code></pre>
-
-<h1>2.swap会带来哪些问题</h1>
-
-<p>我们知道，计算机磁盘I/O通常是系统的瓶颈所在。主内存的读写速度是纳秒级别，而磁盘读写速度是毫秒级别，两者相差3、4个数量级。然而，即使是当前广泛使用的SSD，读写速度相比主内存或者CPU cache也相差2、3个数量级。系统发生swap交换越多，那么系统自然也越慢。</p>
-
-<p>特别对于web服务器来说，都是面对用户的交互式应用，因此响应速度尤其重要。如果系统经常因为swap交换而变得响应迟钝，那么用户体验效果可想而知。</p>
-
-<p>总结成一句话：swap分区要有，在关键时刻不至于让你的应用因为内存不够用而被操作系统OOM KILLER干掉；但是不到关键时刻不要进行swap交换，因为这些操作会影响系统的响应速度。</p>
-
-<p>关于swap的swap in和swap out可以从vmstat命令查看(si表示swap in, so表示swap out).参考:
-<a href="http://xiaobaoqiu.github.io/blog/2015/01/26/vmstatgong-ju/">http://xiaobaoqiu.github.io/blog/2015/01/26/vmstatgong-ju/</a></p>
-
-<h1>3.查看swap占用</h1>
-
-<p>free命令, 参考:
-<a href="http://xiaobaoqiu.github.io/blog/2014/09/04/linux-memory-usage/">http://xiaobaoqiu.github.io/blog/2014/09/04/linux-memory-usage/</a></p>
-
-<h1>4.找到swap占用元凶</h1>
-
-<p>Linux系统中有一个文件smaps文件，记录了当前进程所对应的内存映像信息，路径为/proc/$pid/smaps.以本机的一个线程为例子:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo cat /proc/3555/smaps | head -16
-</span><span class='line'>00400000-00401000 r-xp 00000000 08:13 3444936                            /usr/local/jdk1.7.0_72/bin/java
-</span><span class='line'>Size:                  4 kB
-</span><span class='line'>Rss:                   4 kB
-</span><span class='line'>Pss:                   4 kB
-</span><span class='line'>Shared_Clean:          0 kB
-</span><span class='line'>Shared_Dirty:          0 kB
-</span><span class='line'>Private_Clean:         4 kB
-</span><span class='line'>Private_Dirty:         0 kB
-</span><span class='line'>Referenced:            4 kB
-</span><span class='line'>Anonymous:             0 kB
-</span><span class='line'>AnonHugePages:         0 kB
-</span><span class='line'>Swap:                  0 kB
-</span><span class='line'>KernelPageSize:        4 kB
-</span><span class='line'>MMUPageSize:           4 kB
-</span><span class='line'>Locked:                0 kB
-</span><span class='line'>VmFlags: rd ex mr mw me dw</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中Swap表示这个线程占有Swap的情况.</p>
-
-<p>查看swap的占有情况的脚本,按照占用swap的占用多少从高到底排序:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
-</span><span class='line'>
-</span><span class='line'>function getswap {
-</span><span class='line'>SUM=0
-</span><span class='line'>OVERALL=0
-</span><span class='line'>for DIR in `find /proc/ -maxdepth 1 -type d | egrep "^/proc/[0-9]"` ; do
-</span><span class='line'>PID=`echo $DIR | cut -d / -f 3`
-</span><span class='line'>PROGNAME=`ps -p $PID -o comm --no-headers`
-</span><span class='line'>for SWAP in `grep Swap $DIR/smaps 2&gt;/dev/null| awk '{ print $2 }'`
-</span><span class='line'>do
-</span><span class='line'>let SUM=$SUM+$SWAP
-</span><span class='line'>done
-</span><span class='line'>echo "PID=$PID    Swap used(KB): $SUM    ($PROGNAME )"
-</span><span class='line'>let OVERALL=$OVERALL+$SUM
-</span><span class='line'>SUM=0
-</span><span class='line'>
-</span><span class='line'>done
-</span><span class='line'>echo "Overall swap used: $OVERALL"
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>getswap|sort -k4nr</span></code></pre></td></tr></table></div></figure>
-
-
-<p>然后运行:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>sudo ~/check_swap.sh</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>5.清除被占用的swap</h1>
-
-<p>在我们明确知道哪些进程吃swap以后，接下来的问题就是我们如何释放这些swap，释放swap的意思就是把交换到swap中的数据swap in到物理内存页中。</p>
-
-<pre><code>1.重启吃swap的服务，比如重启一下我们的java进程;
-2.swapoff + swapon
-这个方法的好处是，不用重启服务，但是需要确保现在有足够的物理内存可以容下从swap中释放出来的数据。下面给出了swapoff和swapon的具体做法，注意看swapoff后和swapon后，free的输出有什么异同;
-
-sudo /sbin/swapoff -a
-sudo /sbin/swapon -a
-
-swapoff后，free的输出里，swap分区的大小变为0，占用变为0,也就是说swap分区中的数据已经释放到物理内存中，同时swap分区被禁用。swapon后，free的输出里，swap分区的容量又恢复了
-，也就是说swap分区重新被启用了。当然我们可以把这两个命令写到一起：
-
-sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
-</code></pre>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/8">&larr; Older</a>
@@ -1500,6 +1543,10 @@ sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/">Spring上传组件冲突</a>
@@ -1537,10 +1584,6 @@ sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
         <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1571,7 +1614,7 @@ sudo /sbin/swapoff -a &amp;&amp; sudo /sbin/swapon -a
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (5)</a></li>
  
   </div>
 </section>

@@ -9,8 +9,7 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="今天出现一次dubbo的Thread pool exhausted导致服务不可用。根本原因是Mysql的慢查询。 1
-Caused by: java.util.concurrent.RejectedExecutionException: Thread pool is EXHAUSTED! &hellip;">
+  <meta name="description" content="学习一下虚拟IP和IP漂移的概念。 1.虚拟IP 在 TCP/IP 的架构下，所有想上网的电脑，不论是用何种方式连上网路，都必须要有一个唯一的 IP-address。事实上IP地址是主机硬件地址的一种抽象，简单的说，MAC地址是物理地址，IP地址是逻辑地址。 虚拟IP， &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -76,6 +75,87 @@ Caused by: java.util.concurrent.RejectedExecutionException: Thread pool is EXHAU
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/04/02/xu-ni-iphe-ippiao-yi/">虚拟IP和IP漂移</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-04-02T22:39:14+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>2</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>10:39 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>学习一下虚拟IP和IP漂移的概念。</p>
+
+<h1>1.虚拟IP</h1>
+
+<p>在 TCP/IP 的架构下，所有想上网的电脑，不论是用何种方式连上网路，都必须要有一个唯一的 IP-address。事实上IP地址是主机硬件地址的一种抽象，简单的说，MAC地址是物理地址，IP地址是逻辑地址。</p>
+
+<p>虚拟IP，就是一个未分配给真实主机的IP，也就是说对外提供服务器的主机除了有一个真实IP外还有一个虚IP，使用这两个IP中的任意一个都可以连接到这台主机。</p>
+
+<p>虚拟IP一般用作达到HA(High Availability)的目的,比如让所有项目中数据库链接一项配置的都是这个虚IP，当主服务器发生故障无法对外提供服务时，动态将这个虚IP切换到备用服务器。</p>
+
+<h1>2.虚拟IP原理</h1>
+
+<p>ARP是地址解析协议，它的作用很简单，将一个IP地址转换为MAC地址，然后给传输层使用。</p>
+
+<p>每台主机中都有一个ARP高速缓存，存储同一个网络内的IP地址与MAC地址的对应关 系，以太网中的主机发送数据时会先从这个缓存中查询目标IP对应的MAC地址，会向这个MAC地址发送数据。操作系统会自动维护这个缓存。</p>
+
+<p>在Linux下可以使用arp命令操作ARP高速缓存。</p>
+
+<p>比如存在物理机A(IP是192.168.192.54 )和物理机器B(IP是192.168.192.40)，A作为对外服务的主服务器(比如数据库主库)，B作为备份机器，两台服务器之间的通信是通过Heartbeat，即主服务器会定时的给备份服务器发送数据包，告知主服务器服务正常，当备份服务器在规定时间内没有收到主服务器的Heartbeat，就会认为主服务器宕机，则备份服务器就会升级为主服务器。假设物理机A的ARP缓存如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>地址                     类型    硬件地址            标志  Mask            接口
+</span><span class='line'>192.168.192.54           ether   ec:f4:bb:49:xx:xx   C                     eth0
+</span><span class='line'>192.168.192.237          ether   ec:f4:bb:49:xx:xx   C                     eth0
+</span><span class='line'>192.168.192.40           ether   28:e3:47:c0:xx:xx   C                     eth0
+</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外物理机器B(IP是192.168.192.40)的ARP缓存如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>地址                     类型    硬件地址            标志  Mask            接口
+</span><span class='line'>192.168.192.54           ether   ec:f4:bb:49:xx:xx   C                     eth0
+</span><span class='line'>192.168.192.237          ether   ec:f4:bb:49:xx:xx   C                     eth0
+</span><span class='line'>192.168.192.40           ether   ec:f4:bb:49:xx:xx   C                     eth0
+</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>当机器B通过BeatHeart得知机器A对外服务质量低于预期的时候(比如发生故障，服务无响应)，会将自己的ARP缓存发送出去，让路由器修改路由表，告知虚拟地址应该指向我(物理机器B,192.168.192.40),这时候，外界再次访问虚拟IP的时候，机器B会变成主服务器，而A降级为备份服务器。这就完成了主从机器的自动切换，这一切对外界是透明的。</p>
+
+<h1>3.IP漂移</h1>
+
+<p>上面的VIP自动切换的过程就称之为IP漂移。</p>
+
+<p>我们可以通过Keepalived来实现这个过程。 Keepalived是一个基于VRRP协议(Virtual Router Redundancy Protocol,即虚拟路由冗余协议)来实现的LVS(负载均衡器)服务高可用方案，可以利用其来避免单点故障。一个LVS服务会有2台服务器运行Keepalived，一台为主服务器（MASTER），一台为备份服务器（BACKUP），但是对外表现为一个虚拟IP，主服务器会发送特定的消息给备份服务器，当备份服务器收不到这个消息的时候，即主服务器宕机的时候， 备份服务器就会接管虚拟IP，继续提供服务，从而保证了高可用性。</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -569,90 +649,6 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/03/13/tomcatjian-jie/">Tomcat简介</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-03-13T04:34:51+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>13</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:34 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近会重新看一下Tomcat的源代码，整理一些东西，包括但不限于：</p>
-
-<pre><code>1.Tomcat架构
-2.Tomcat启动过程
-3.请求在Tomcat中的流转
-4.Tomcat目录结构与配置
-</code></pre>
-
-<p>这里会首先简单介绍一些Tomcat的知识。后面会逐渐详细介绍。</p>
-
-<p>Tomcat是由Apache软件基金会下属的Jakarta项目开发的一个Servlet容器，按照Sun Microsystems提供的技术规范，实现了对Servlet和JavaServer Page(JSP)的支持，并提供了作为Web服务器的一些特有功能,如Tomcat管理和控制平台、安全域管理和Tomcat阀等。由于Tomcat本身也内含了一个HTTP服务器，它也可以被视作一个单独的Web服务器。</p>
-
-<p>由于有了Sun的参与和支持，最新的Servlet和Jsp规范总能在Tomcat中得到体现。而进来因为Tomcat 技术先进、性能稳定，而且免费，因而深受Java 爱好者的喜爱并得到了部分软件开发商的认可，成为目前比较流行的Web 应用服务器。</p>
-
-<p>官方网站：<a href="http://tomcat.apache.org/">http://tomcat.apache.org/</a></p>
-
-<p>Tomcat wiki：<a href="http://wiki.apache.org/tomcat/FrontPage">http://wiki.apache.org/tomcat/FrontPage</a></p>
-
-<h1>1.JSP和Servlet</h1>
-
-<p>Jsp（JavaServer Page）是在普通Html中嵌入了Java代码的一个脚本，在这一点上，它与其它的脚本语言（如Php）一样，但它与其它语言不同的是：其它脚本语言由服务器直接解释这个脚本，而Jsp则由Jsp容器（如Tomcat）首先将其转化为Servlet，然后再调用Javac将Servlet编译为Class文件。</p>
-
-<p>Servlet其实是一个特殊的Java类，Servlet类一般从HttpServlet类继承而来，在这个类中至少要实现doGet或者doPost函数，在这两个函数中处理来自客户的请求，然后将结果返回。</p>
-
-<h1>2.Servlet容器</h1>
-
-<p>负责处理客户请求、把请求传送给Servlet并把结果返回给客户。不同程序的容器实际实现可能有所变化，但容器与Servlet之间的接口是由Servlet API定义好的，这个接口定义了Servlet容器在Servlet上要调用的方法及传递给Servlet的对象类。</p>
-
-<h1>3.Servlet生命周期</h1>
-
-<pre><code>1.Servlet容器创建Servlet的一个实例
-2.容器调用该实例的init()方法
-3.如果容器对该Servlet有请求，则调用此实例的service()方法
-4.容器在销毁本实例前调用它的destroy()方法
-5.销毁并标记该实例以供作为垃圾收集
-</code></pre>
-
-<h1>4.Tomcat简介</h1>
-
-<p>Tomcat中的Servlet容器称之为Catalina。</p>
-
-<p>Tomcat中的应用程序是一个WAR（Web Archive）文件。WAR是Sun提出的一种Web应用程序格式，与JAR类似，也是许多文件的一个压缩包。这个包中的文件按一定目录结构来组织：通常其根目录下包含有Html和Jsp文件或者包含这两种文件的目录，另外还会有一个WEB-INF目录，这个目录很重要。通常在WEB-INF目录下有一个web.xml文件和一个classes目录，web.xml是这个应用的配置文件，而classes目录下则包含编译好的Servlet类和Jsp或Servlet所依赖的其它类（如JavaBean）。</p>
-
-<p>在Tomcat中，应用程序的部署很简单，你只需将你的WAR放到Tomcat的webapp目录下，Tomcat会自动检测到这个文件，并将其解压。你在浏览器中访问这个应用的Jsp时，通常第一次会很慢，因为Tomcat要将Jsp转化为Servlet文件，然后编译。编译以后，访问将会很快。另外Tomcat也提供了一个应用：manager，访问这个应用需要用户名和密码，用户名和密码存储在一个xml文件中。通过这个应用，你可以在远程通过Web部署和撤销应用。</p>
-
-<h1>5.Tomcat各个版本</h1>
-
-<p><a href="http://wiki.apache.org/tomcat/TomcatVersions">http://wiki.apache.org/tomcat/TomcatVersions</a></p>
-
-<h1>6.参考：</h1>
-
-<p><a href="http://zh.wikipedia.org/wiki/Apache_Tomcat">http://zh.wikipedia.org/wiki/Apache_Tomcat</a></p>
-
-<p><a href="http://www.ibm.com/developerworks/cn/java/j-lo-tomcat1/">http://www.ibm.com/developerworks/cn/java/j-lo-tomcat1/</a></p>
-
-<p><a href="http://gearever.iteye.com/category/223001">http://gearever.iteye.com/category/223001</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/12">&larr; Older</a>
@@ -670,6 +666,10 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/">Spring上传组件冲突</a>
@@ -707,10 +707,6 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
         <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -741,7 +737,7 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (5)</a></li>
  
   </div>
 </section>

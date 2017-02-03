@@ -9,11 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近会整理记录这一段时间组内同事以及个人遇到的一些问题。 1.背景
-2.Spring上传机制分析
-3.冲突分析
-4.问题解决 1.背景 问题：Spring上传组件的冲突
-背景：同事在原有的上传模块中增加了一个新的文件接口，导致就的上传接口不可用的故障。 新增的配置就是Spring自带的上传解析器 &hellip;">
+  <meta name="description" content="1.自动流转任务
+2.实现 1.自动流转任务 用户任务是审核流程中最重要的节点, 在流程设计中通常会遇到需要自动流转的需求, 比如请假半天的自动通过. 1.实现 下面是我能想到的几种实现自动流转任务方式. 2.1 ServiceTask Activiti的设计者已经考虑到我们这个需求, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -79,6 +76,163 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2017-02-03T10:53:39+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2017</span></span> <span class='time'>10:53 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.%E8%87%AA%E5%8A%A8%E6%B5%81%E8%BD%AC%E4%BB%BB%E5%8A%A1">1.自动流转任务</a></li>
+<li><a href="#2.%E5%AE%9E%E7%8E%B0">2.实现</a></li>
+</ul>
+
+
+<h2 id="1.自动流转任务">1.自动流转任务</h2>
+
+
+<p>用户任务是审核流程中最重要的节点, 在流程设计中通常会遇到需要自动流转的需求, 比如请假半天的自动通过.</p>
+
+<h2 id="2.实现">1.实现</h2>
+
+
+<p>下面是我能想到的几种实现自动流转任务方式.</p>
+
+<h4 id="2.1 ServiceTask">2.1 ServiceTask</h4>
+
+
+<p>Activiti的设计者已经考虑到我们这个需求,因此在引入了 ServiceTask 这中类型的任务.参考 Activiti 的文档: <a href="https://www.activiti.org/userguide/index.html#bpmnJavaServiceTask">https://www.activiti.org/userguide/index.html#bpmnJavaServiceTask</a>
+ServiceTask的目的是调用我们自定义的一个Java类:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>A Java service task is used to invoke an external Java class.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ServiceTask 的使用方式也有几种:</p>
+
+<pre><code>1. 自定义类实现 JavaDelegate 或者 ActivityBehavior 接口;
+2. 设计流程的时候, 显示的告诉 Activiti 引擎需要调用的 Bean;
+3. 调用一个方法表达式;
+4. 调用一个求值表达式;
+</code></pre>
+
+<p>下面审核一个示例的自定义ServiceTask调研逻辑</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import org.activiti.engine.delegate.DelegateExecution;
+</span><span class='line'>import org.activiti.engine.delegate.JavaDelegate;
+</span><span class='line'>import org.springframework.stereotype.Service;
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'> * 自动完成的任务(ServiceTask)
+</span><span class='line'> *
+</span><span class='line'> * @author xiaobaoqiu  Date: 16-12-23 Time: 下午3:46
+</span><span class='line'> */
+</span><span class='line'>@Service
+</span><span class='line'>public class AutoCompleteTaskService implements JavaDelegate {
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public void execute(DelegateExecution execution) throws Exception {
+</span><span class='line'>
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>回到我们的需求上, 要实现我们需要的自动流转任务, 我们可以使用 ServiceTask, 以上面定义的 AutoCompleteTaskService 为例子:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># 方式1
+</span><span class='line'>&lt;serviceTask id="javaService"
+</span><span class='line'>             name="My Java Service Task"
+</span><span class='line'>             activiti:class="org.xxx.AutoCompleteTaskService" /&gt;
+</span><span class='line'>
+</span><span class='line'># 方式2
+</span><span class='line'>&lt;bean id="delegateExpressionBean" class="org.xxx.AutoCompleteTaskService" /&gt;
+</span><span class='line'>&lt;serviceTask id="serviceTask" activiti:delegateExpression="${delegateExpressionBean}" /&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>但是这种实现方式的一个致命的问题在于:流程设计的时候你需要知道你要调用的Java逻辑的类路径或者Bean的名称.</p>
+
+<p>为什么说是致命的呢,因为这个的实现方式就没办法将流程设计交付给开发人员以外的其他人员了(他们不可能知道类路径或者bean名称这种信息).</p>
+
+<p>下面我使用普通的 UserTask 来实现我们的需求.</p>
+
+<h4 id="2.2 主动触发UserTask">2.2 主动触发UserTask, </h4>
+
+
+<p>我们将自动流转任务也设计成UserTask, 由业务自己主动触发.</p>
+
+<p>比如请假半天的自动通过的例子, 业务可以在提交请假的时候判断, 让这个任务自动完成.</p>
+
+<p>这种实现的问题在于: 业务逻辑实现起来太麻烦, 很容易出Bug(比如自动通过失败,可能会导致提交这个操作失败).</p>
+
+<h4 id="2.3 异步触发UserTask">2.3 异步触发UserTask</h4>
+
+
+<p>在上一个方法的基础上, 我们可以将自动生效的逻辑放到异步任务里面,可以避免将原始业务逻辑复杂化.</p>
+
+<p>但是我们需要筛选出哪些 UserTask 可以自动完成,因此我的方案就是给这些任务制定特定的任务类型.关于任务类型, 可以参考我前面的博文: <a href="http://xiaobaoqiu.github.io/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing/">http://xiaobaoqiu.github.io/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing/</a></p>
+
+<p>有了任务类型之后, 我们就可以将哪些任务需要自动流转配置起来.</p>
+
+<p>这个方案的问题在于(绝大部分情况下不是问题): 这里实现的自动生效的不是实时的(即使我们的异步任务足够频繁).</p>
+
+<h4 id="2.4 对比选择">2.4 对比选择</h4>
+
+
+<p>下面是几种实现方式的对比:
+ | ServiceTask | 主动触发UserTask | 异步触发UserTask |
+:&mdash;&mdash;&mdash;-:|:&mdash;&mdash;&mdash;-:|:&mdash;&mdash;&mdash;&mdash;|:&mdash;&mdash;&mdash;-
+设计成本 | 需要知道具体的执行类或者Bean |  | |
+触发成本 |  | 需要业务主动触发 | |
+配置成本 |  |  | 需要配置：任务类型 - 是否自动完成任务 |</p>
+
+<p>倾向于使用 异步触发UserTask 这个方案, 成本和问题都比较小.</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1015,357 +1169,6 @@ Activiti版本为：5.22.0</p>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2016/11/28/ni-zhen-de-liao-jie-stringma/">你真的了解String吗</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2016-11-28T21:01:06+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>28</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>9:01 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>String是Java中最重要最常用的类，没有之一。但是我们很多人可能只知道String的存在和简单使用，并不了解其背后的实现以及为什么这么实现。
-这里我就简单的挑选几个重要的节点讲解。</p>
-
-<p>本文基于JDK 1.7</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~ java -version
-</span><span class='line'>java version "1.7.0_80"
-</span><span class='line'>Java(TM) SE Runtime Environment (build 1.7.0_80-b15)
-</span><span class='line'>Java HotSpot(TM) 64-Bit Server VM (build 24.80-b11, mixed mode)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>实现</h1>
-
-<p>Java其实就是char数组的一个包装,String真实的内容就是存储在char数组中，数组的一个特性就是在逻辑和存储上都是连续的、可随机访问的。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/** The value is used for character storage. */
-</span><span class='line'>private final char value[];</span></code></pre></td></tr></table></div></figure>
-
-
-<p>String的操作其实都是围绕底层的char数组来的，比如trim实现，trim的其实是value的内容</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public String trim() {
-</span><span class='line'>    int len = value.length;
-</span><span class='line'>    int st = 0;
-</span><span class='line'>    char[] val = value;    /* avoid getfield opcode */
-</span><span class='line'>
-</span><span class='line'>    while ((st &lt; len) && (val[st] &lt;= ' ')) {
-</span><span class='line'>        st++;
-</span><span class='line'>    }
-</span><span class='line'>    while ((st &lt; len) && (val[len - 1] &lt;= ' ')) {
-</span><span class='line'>        len--;
-</span><span class='line'>    }
-</span><span class='line'>    return ((st &gt; 0) || (len &lt; value.length)) ? substring(st, len) : this;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>需要注意的是，String中的很多实现都是使用 System.arraycopy 来实现数组数据的快速拷贝,System.arraycopy是一个native方法:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public char[] toCharArray() {
-</span><span class='line'>    char result[] = new char[value.length];
-</span><span class='line'>    System.arraycopy(value, 0, result, 0, value.length);
-</span><span class='line'>    return result;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>final &amp; immutable</h1>
-
-<p>String基本约定中最重要的一条是Immutable，Immutable的意思就是对String的每次修改都是生成一个新的String，原始对象不受影响，类似于copy-on-write的思想。</p>
-
-<p>先具体看一下什么是Immutable。String不可变很简单，如下图，给一个已有字符串"abcd"，第二次赋值成"abcedl"，不是在原内存地址上修改数据，而是重新指向一个新对象，新地址。</p>
-
-<p><img src="/images/java/java_immutable.png"></p>
-
-<p> 那String怎么做到不可变？主要通过三个手段
- (1).String类声明为final(不会被继承改掉这种Immutable特性)；
- (2).底层的value数组声明为final(value这个引用地址不可变)；
-(3).所有String的方法里很小心的没有去动value数组里的元素，没有暴露内部成员字段；</p>
-
-<p>其实String是不可变的关键都在底层的实现，而不是一个final修饰符。</p>
-
-<p>不可变对象带来的最大好处就是线程安全，因为不会被改写。</p>
-
-<h1>hashcode</h1>
-
-<p>String内部属性除了value数组外，还有一个 hash，用于记录String的hash值。
-String能这样讲hash值cache下来的原因就是上面提到的</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/** Cache the hash code for the string */
-</span><span class='line'>private int hash; // Default to 0</span></code></pre></td></tr></table></div></figure>
-
-
-<p>每次调用hashCode，先检测 hash 是否已经计算好了，如果计算了，就不要重新计算。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public int hashCode() {
-</span><span class='line'>    int h = hash;
-</span><span class='line'>    if (h == 0 && value.length &gt; 0) {
-</span><span class='line'>        char val[] = value;
-</span><span class='line'>
-</span><span class='line'>        for (int i = 0; i &lt; value.length; i++) {
-</span><span class='line'>            h = 31 * h + val[i];
-</span><span class='line'>        }
-</span><span class='line'>        hash = h;
-</span><span class='line'>    }
-</span><span class='line'>    return h;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>hash32</h1>
-
-<p>String中有一个hash32()的方法，它的结果被缓存在成员变量int hash32 中。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * Cached value of the alternative hashing algorithm result
-</span><span class='line'> */
-</span><span class='line'>private transient int hash32 = 0;</span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * Calculates a 32-bit hash value for this string.
-</span><span class='line'> *
-</span><span class='line'> * @return a 32-bit hash value for this string.
-</span><span class='line'> */
-</span><span class='line'>int hash32() {
-</span><span class='line'>    int h = hash32;
-</span><span class='line'>    if (0 == h) {
-</span><span class='line'>       // harmless data race on hash32 here.
-</span><span class='line'>       h = sun.misc.Hashing.murmur3_32(HASHING_SEED, value, 0, value.length);
-</span><span class='line'>
-</span><span class='line'>       // ensure result is not zero to avoid recalcing
-</span><span class='line'>       h = (0 != h) ? h : 1;
-</span><span class='line'>
-</span><span class='line'>       hash32 = h;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    return h;
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>关于 hash32 为什么存在，可以看下面官网的说明：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Java SE 7u6 introduces an improved, alternative hash function for the following map and map-derived collection implementations:
-</span><span class='line'>
-</span><span class='line'>HashMap
-</span><span class='line'>Hashtable
-</span><span class='line'>HashSet
-</span><span class='line'>LinkedHashMap
-</span><span class='line'>LinkedHashSet
-</span><span class='line'>WeakHashMap
-</span><span class='line'>ConcurrentHashMap
-</span><span class='line'>
-</span><span class='line'>The alternative hash function improves the performance of these map implementations when a large number of key hash collisions are encountered.
-</span><span class='line'>
-</span><span class='line'>For Java SE 7u6, this alternative hash function is implemented as follows:
-</span><span class='line'>
-</span><span class='line'>The alternative hash function is only applied to maps with a capacity larger than a specified threshold size. By default, the threshold is -1. This value disables the alternative hash function. To enable the alternative hash function, set the jdk.map.althashing.threshold system property to a different value. The recommended value is 512. Setting this system property to 512 causes all maps with a capacity larger than 512 entries to use the alternative hash function. You can set this system property to 0, which causes all maps to use the alternative hash function.
-</span><span class='line'>
-</span><span class='line'>The following describes the jdk.map.althashing.threshold system property in more detail:
-</span><span class='line'>
-</span><span class='line'>Value type: Integer
-</span><span class='line'>Value default: -1
-</span><span class='line'>Value range: From -1 to 2147483647, inclusive
-</span><span class='line'>Description: Threshold capacity at which maps use the alternative hash function. The value -1 is a synonym for 2147483647 (which is easier to remember). All other values correspond to threshold capacity.
-</span><span class='line'>For example, the following command runs the Java application MyApplication and sets the jdk.map.althashing.threshold system property to 512:
-</span><span class='line'>
-</span><span class='line'>java -Djdk.map.althashing.threshold=512 MyApplication
-</span><span class='line'>If the alternative hash function is being used, then the iteration order of keys, values, and entities vary for each instance of HashMap, Hashtable, HashSet, and ConcurrentHashMap. This change in iteration order may cause compatibility issues with some programs. This is the reason that the alternative hash function is disabled by default. Hashing improvements will be investigated in future releases. In the meantime, the system property jdk.map.althashing.threshold is experimental. It is strongly recommended that you test your applications with the alternative hashing function enabled (by setting jdk.map.althashing.threshold to 0) to determine if your applications are affected by iteration order. If there is an impact, you should fix your applications as soon as possible because there is no guarantee of iteration order.</span></code></pre></td></tr></table></div></figure>
-
-
-<p>简单说就是为了解决 HashMap 这种hash 碰撞严重时候的性能，因为HashMap使用链地址法解决Hash碰撞，当链很长的时候，性能会受影响。
-但是这个问题在Java 8 中已经解决了，因为Java 8中引入一个新的策略，当链比较长的时候(默认阈值10)，会转化为采用红黑树实现后面的链表，可以讲时间从O(N)降到O(lgN).</p>
-
-<p>参考：
-<a href="http://stackoverflow.com/questions/23716836/what-is-use-of-hash32-in-string-class">http://stackoverflow.com/questions/23716836/what-is-use-of-hash32-in-string-class</a>
-<a href="http://docs.oracle.com/javase/7/docs/technotes/guides/collections/changes7.html">http://docs.oracle.com/javase/7/docs/technotes/guides/collections/changes7.html</a>
-<a href="http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object">http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object</a>
-<a href="http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object/23926405#23926405">http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object/23926405#23926405</a></p>
-
-<p>hash32这个方法最大的变化是，同一个字符串在不同的JVM上执行hash32()的结果可能不同（确切的说，多数情况下都会不同，因为其内部分别调用了一次System.currentTimeMillis()和两次System.nanoTime()用于初始化seed）。因此，某些容器在每次运行程序时迭代顺序都不同。</p>
-
-<h1>CaseInsensitiveComparator</h1>
-
-<p>在String中，有一个护额略大小写的比较方法，它的实现就是我们这里要说的CaseInsensitiveComparator</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public int compareToIgnoreCase(String str) {
-</span><span class='line'>    return CASE_INSENSITIVE_ORDER.compare(this, str);
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public static final Comparator&lt;String&gt; CASE_INSENSITIVE_ORDER = new CaseInsensitiveComparator();</span></code></pre></td></tr></table></div></figure>
-
-
-<p>CaseInsensitiveComparator的实现如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>private static class CaseInsensitiveComparator implements Comparator&lt;String&gt;, java.io.Serializable {
-</span><span class='line'>    // use serialVersionUID from JDK 1.2.2 for interoperability
-</span><span class='line'>    private static final long serialVersionUID = 8575799808933029326L;
-</span><span class='line'>
-</span><span class='line'>    public int compare(String s1, String s2) {
-</span><span class='line'>        int n1 = s1.length();
-</span><span class='line'>        int n2 = s2.length();
-</span><span class='line'>        int min = Math.min(n1, n2);
-</span><span class='line'>        for (int i = 0; i &lt; min; i++) {
-</span><span class='line'>            char c1 = s1.charAt(i);
-</span><span class='line'>            char c2 = s2.charAt(i);
-</span><span class='line'>            if (c1 != c2) {
-</span><span class='line'>                c1 = Character.toUpperCase(c1);
-</span><span class='line'>                c2 = Character.toUpperCase(c2);
-</span><span class='line'>                if (c1 != c2) {
-</span><span class='line'>                    c1 = Character.toLowerCase(c1);
-</span><span class='line'>                    c2 = Character.toLowerCase(c2);
-</span><span class='line'>                    if (c1 != c2) {
-</span><span class='line'>                        // No overflow because of numeric promotion
-</span><span class='line'>                        return c1 - c2;
-</span><span class='line'>                    }
-</span><span class='line'>                }
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>        return n1 - n2;
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>我们发现比较时候需要现将字符转化为大小比较，再转化为小写比较。</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/2">&larr; Older</a>
@@ -1381,6 +1184,10 @@ String能这样讲hash值cache下来的原因就是上面提到的</p>
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/">Spring上传组件冲突</a>
@@ -1418,10 +1225,6 @@ String能这样讲hash值cache下来的原因就是上面提到的</p>
         <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1452,7 +1255,7 @@ String能这样讲hash值cache下来的原因就是上面提到的</p>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (5)</a></li>
  
   </div>
 </section>

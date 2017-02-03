@@ -9,8 +9,12 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近准备开始抽个人时间着手翻译Crate的一些文档，主要是考虑两个方面： 1.使用了1年的Crate，还没有比较全面的看Crate文档，很多特性肯定还不知道；
-2.Crate被越来越多的人使用，中文文档肯定ui别人有帮助； 在 github 上开了个项目(其实很早就建工程了，一直没行动， &hellip;">
+  <meta name="description" content="String是Java中最重要最常用的类，没有之一。但是我们很多人可能只知道String的存在和简单使用，并不了解其背后的实现以及为什么这么实现。
+这里我就简单的挑选几个重要的节点讲解。 本文基于JDK 1.7 1
+2
+3
+4
+xiaobaoqiu@xiaobaoqiu:~ java - &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -76,6 +80,357 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2016/11/28/ni-zhen-de-liao-jie-stringma/">你真的了解String吗</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-11-28T21:01:06+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>28</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>9:01 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>String是Java中最重要最常用的类，没有之一。但是我们很多人可能只知道String的存在和简单使用，并不了解其背后的实现以及为什么这么实现。
+这里我就简单的挑选几个重要的节点讲解。</p>
+
+<p>本文基于JDK 1.7</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~ java -version
+</span><span class='line'>java version "1.7.0_80"
+</span><span class='line'>Java(TM) SE Runtime Environment (build 1.7.0_80-b15)
+</span><span class='line'>Java HotSpot(TM) 64-Bit Server VM (build 24.80-b11, mixed mode)</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>实现</h1>
+
+<p>Java其实就是char数组的一个包装,String真实的内容就是存储在char数组中，数组的一个特性就是在逻辑和存储上都是连续的、可随机访问的。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/** The value is used for character storage. */
+</span><span class='line'>private final char value[];</span></code></pre></td></tr></table></div></figure>
+
+
+<p>String的操作其实都是围绕底层的char数组来的，比如trim实现，trim的其实是value的内容</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public String trim() {
+</span><span class='line'>    int len = value.length;
+</span><span class='line'>    int st = 0;
+</span><span class='line'>    char[] val = value;    /* avoid getfield opcode */
+</span><span class='line'>
+</span><span class='line'>    while ((st &lt; len) && (val[st] &lt;= ' ')) {
+</span><span class='line'>        st++;
+</span><span class='line'>    }
+</span><span class='line'>    while ((st &lt; len) && (val[len - 1] &lt;= ' ')) {
+</span><span class='line'>        len--;
+</span><span class='line'>    }
+</span><span class='line'>    return ((st &gt; 0) || (len &lt; value.length)) ? substring(st, len) : this;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>需要注意的是，String中的很多实现都是使用 System.arraycopy 来实现数组数据的快速拷贝,System.arraycopy是一个native方法:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public char[] toCharArray() {
+</span><span class='line'>    char result[] = new char[value.length];
+</span><span class='line'>    System.arraycopy(value, 0, result, 0, value.length);
+</span><span class='line'>    return result;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>final &amp; immutable</h1>
+
+<p>String基本约定中最重要的一条是Immutable，Immutable的意思就是对String的每次修改都是生成一个新的String，原始对象不受影响，类似于copy-on-write的思想。</p>
+
+<p>先具体看一下什么是Immutable。String不可变很简单，如下图，给一个已有字符串"abcd"，第二次赋值成"abcedl"，不是在原内存地址上修改数据，而是重新指向一个新对象，新地址。</p>
+
+<p><img src="/images/java/java_immutable.png"></p>
+
+<p> 那String怎么做到不可变？主要通过三个手段
+ (1).String类声明为final(不会被继承改掉这种Immutable特性)；
+ (2).底层的value数组声明为final(value这个引用地址不可变)；
+(3).所有String的方法里很小心的没有去动value数组里的元素，没有暴露内部成员字段；</p>
+
+<p>其实String是不可变的关键都在底层的实现，而不是一个final修饰符。</p>
+
+<p>不可变对象带来的最大好处就是线程安全，因为不会被改写。</p>
+
+<h1>hashcode</h1>
+
+<p>String内部属性除了value数组外，还有一个 hash，用于记录String的hash值。
+String能这样讲hash值cache下来的原因就是上面提到的</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/** Cache the hash code for the string */
+</span><span class='line'>private int hash; // Default to 0</span></code></pre></td></tr></table></div></figure>
+
+
+<p>每次调用hashCode，先检测 hash 是否已经计算好了，如果计算了，就不要重新计算。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public int hashCode() {
+</span><span class='line'>    int h = hash;
+</span><span class='line'>    if (h == 0 && value.length &gt; 0) {
+</span><span class='line'>        char val[] = value;
+</span><span class='line'>
+</span><span class='line'>        for (int i = 0; i &lt; value.length; i++) {
+</span><span class='line'>            h = 31 * h + val[i];
+</span><span class='line'>        }
+</span><span class='line'>        hash = h;
+</span><span class='line'>    }
+</span><span class='line'>    return h;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>hash32</h1>
+
+<p>String中有一个hash32()的方法，它的结果被缓存在成员变量int hash32 中。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Cached value of the alternative hashing algorithm result
+</span><span class='line'> */
+</span><span class='line'>private transient int hash32 = 0;</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Calculates a 32-bit hash value for this string.
+</span><span class='line'> *
+</span><span class='line'> * @return a 32-bit hash value for this string.
+</span><span class='line'> */
+</span><span class='line'>int hash32() {
+</span><span class='line'>    int h = hash32;
+</span><span class='line'>    if (0 == h) {
+</span><span class='line'>       // harmless data race on hash32 here.
+</span><span class='line'>       h = sun.misc.Hashing.murmur3_32(HASHING_SEED, value, 0, value.length);
+</span><span class='line'>
+</span><span class='line'>       // ensure result is not zero to avoid recalcing
+</span><span class='line'>       h = (0 != h) ? h : 1;
+</span><span class='line'>
+</span><span class='line'>       hash32 = h;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    return h;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>关于 hash32 为什么存在，可以看下面官网的说明：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Java SE 7u6 introduces an improved, alternative hash function for the following map and map-derived collection implementations:
+</span><span class='line'>
+</span><span class='line'>HashMap
+</span><span class='line'>Hashtable
+</span><span class='line'>HashSet
+</span><span class='line'>LinkedHashMap
+</span><span class='line'>LinkedHashSet
+</span><span class='line'>WeakHashMap
+</span><span class='line'>ConcurrentHashMap
+</span><span class='line'>
+</span><span class='line'>The alternative hash function improves the performance of these map implementations when a large number of key hash collisions are encountered.
+</span><span class='line'>
+</span><span class='line'>For Java SE 7u6, this alternative hash function is implemented as follows:
+</span><span class='line'>
+</span><span class='line'>The alternative hash function is only applied to maps with a capacity larger than a specified threshold size. By default, the threshold is -1. This value disables the alternative hash function. To enable the alternative hash function, set the jdk.map.althashing.threshold system property to a different value. The recommended value is 512. Setting this system property to 512 causes all maps with a capacity larger than 512 entries to use the alternative hash function. You can set this system property to 0, which causes all maps to use the alternative hash function.
+</span><span class='line'>
+</span><span class='line'>The following describes the jdk.map.althashing.threshold system property in more detail:
+</span><span class='line'>
+</span><span class='line'>Value type: Integer
+</span><span class='line'>Value default: -1
+</span><span class='line'>Value range: From -1 to 2147483647, inclusive
+</span><span class='line'>Description: Threshold capacity at which maps use the alternative hash function. The value -1 is a synonym for 2147483647 (which is easier to remember). All other values correspond to threshold capacity.
+</span><span class='line'>For example, the following command runs the Java application MyApplication and sets the jdk.map.althashing.threshold system property to 512:
+</span><span class='line'>
+</span><span class='line'>java -Djdk.map.althashing.threshold=512 MyApplication
+</span><span class='line'>If the alternative hash function is being used, then the iteration order of keys, values, and entities vary for each instance of HashMap, Hashtable, HashSet, and ConcurrentHashMap. This change in iteration order may cause compatibility issues with some programs. This is the reason that the alternative hash function is disabled by default. Hashing improvements will be investigated in future releases. In the meantime, the system property jdk.map.althashing.threshold is experimental. It is strongly recommended that you test your applications with the alternative hashing function enabled (by setting jdk.map.althashing.threshold to 0) to determine if your applications are affected by iteration order. If there is an impact, you should fix your applications as soon as possible because there is no guarantee of iteration order.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>简单说就是为了解决 HashMap 这种hash 碰撞严重时候的性能，因为HashMap使用链地址法解决Hash碰撞，当链很长的时候，性能会受影响。
+但是这个问题在Java 8 中已经解决了，因为Java 8中引入一个新的策略，当链比较长的时候(默认阈值10)，会转化为采用红黑树实现后面的链表，可以讲时间从O(N)降到O(lgN).</p>
+
+<p>参考：
+<a href="http://stackoverflow.com/questions/23716836/what-is-use-of-hash32-in-string-class">http://stackoverflow.com/questions/23716836/what-is-use-of-hash32-in-string-class</a>
+<a href="http://docs.oracle.com/javase/7/docs/technotes/guides/collections/changes7.html">http://docs.oracle.com/javase/7/docs/technotes/guides/collections/changes7.html</a>
+<a href="http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object">http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object</a>
+<a href="http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object/23926405#23926405">http://stackoverflow.com/questions/23926312/difference-between-hash32-and-hash-in-java-string-object/23926405#23926405</a></p>
+
+<p>hash32这个方法最大的变化是，同一个字符串在不同的JVM上执行hash32()的结果可能不同（确切的说，多数情况下都会不同，因为其内部分别调用了一次System.currentTimeMillis()和两次System.nanoTime()用于初始化seed）。因此，某些容器在每次运行程序时迭代顺序都不同。</p>
+
+<h1>CaseInsensitiveComparator</h1>
+
+<p>在String中，有一个护额略大小写的比较方法，它的实现就是我们这里要说的CaseInsensitiveComparator</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public int compareToIgnoreCase(String str) {
+</span><span class='line'>    return CASE_INSENSITIVE_ORDER.compare(this, str);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public static final Comparator&lt;String&gt; CASE_INSENSITIVE_ORDER = new CaseInsensitiveComparator();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>CaseInsensitiveComparator的实现如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private static class CaseInsensitiveComparator implements Comparator&lt;String&gt;, java.io.Serializable {
+</span><span class='line'>    // use serialVersionUID from JDK 1.2.2 for interoperability
+</span><span class='line'>    private static final long serialVersionUID = 8575799808933029326L;
+</span><span class='line'>
+</span><span class='line'>    public int compare(String s1, String s2) {
+</span><span class='line'>        int n1 = s1.length();
+</span><span class='line'>        int n2 = s2.length();
+</span><span class='line'>        int min = Math.min(n1, n2);
+</span><span class='line'>        for (int i = 0; i &lt; min; i++) {
+</span><span class='line'>            char c1 = s1.charAt(i);
+</span><span class='line'>            char c2 = s2.charAt(i);
+</span><span class='line'>            if (c1 != c2) {
+</span><span class='line'>                c1 = Character.toUpperCase(c1);
+</span><span class='line'>                c2 = Character.toUpperCase(c2);
+</span><span class='line'>                if (c1 != c2) {
+</span><span class='line'>                    c1 = Character.toLowerCase(c1);
+</span><span class='line'>                    c2 = Character.toLowerCase(c2);
+</span><span class='line'>                    if (c1 != c2) {
+</span><span class='line'>                        // No overflow because of numeric promotion
+</span><span class='line'>                        return c1 - c2;
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>        return n1 - n2;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们发现比较时候需要现将字符转化为大小比较，再转化为小写比较。</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2031,425 +2386,6 @@ DefaultAopProxyFactory</p>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2016-04-06T10:09:38+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>6</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>10:09 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><ul>
-<li><a href="#1.%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%9A%84%E5%9F%BA%E6%9C%AC%E7%9F%A5%E8%AF%86">1.工作流的基本知识</a>
-
-<ul>
-<li><a href="#1.1%20%E8%83%8C%E6%99%AF">1.1 背景</a></li>
-<li><a href="#1.2%20%E5%B7%A5%E4%BD%9C%E6%B5%81%E4%BD%BF%E7%94%A8%E5%9C%BA%E6%99%AF">1.2 工作流使用场景</a></li>
-<li><a href="#1.3%20BPMN%E5%9F%BA%E6%9C%AC%E5%85%83%E7%B4%A0">1.3 BPMN基本元素</a></li>
-</ul>
-</li>
-<li><a href="#2.%E5%B8%B8%E8%A7%81%E7%9A%84%E5%B7%A5%E4%BD%9C%E6%B5%81%E5%BC%95%E6%93%8E">2.常见的工作流引擎</a>
-
-<ul>
-<li><a href="#2.1%20jBPM">2.1 jBPM</a></li>
-<li><a href="#2.2%20Activiti">2.2 Activiti</a></li>
-<li><a href="#2.3%20FixFlow">2.3 FixFlow</a></li>
-<li><a href="#2.4%20%E5%A6%82%E4%BD%95%E9%80%89%E6%8B%A9">2.4 如何选择</a></li>
-</ul>
-</li>
-<li><a href="#3.Activiti">3.Activiti</a>
-
-<ul>
-<li><a href="#3.1%20%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8">3.1 如何使用</a></li>
-</ul>
-</li>
-<li><a href="#4.%E4%B8%9A%E5%8A%A1%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E5%B7%A5%E4%BD%9C%E6%B5%81">4.业务如何使用工作流</a></li>
-</ul>
-
-
-<p>最近在项目中涉及到工作流的知识,需要调研各个工作流引擎,顺道总结.</p>
-
-<p>如何做流程服务,通常而言两种选择(在我的认知范围内的):</p>
-
-<pre><code>1.状态机
-2.工作流
-</code></pre>
-
-<p>状态机通常意味着需要和业务状态绑定在一起,因此无法做到业务和流程分离,通常的后果就是业务和流程紧耦合.</p>
-
-<p>因此,当我们的多个业务系统涉及到流程时候,可以考虑工作流.</p>
-
-<h2 id="1.工作流的基本知识">1.工作流的基本知识</h2>
-
-
-<h4 id="1.1 背景">1.1 背景</h4>
-
-
-<p>先介绍几个术语:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>1.BPM
-</span><span class='line'>业务流程管理(Business Process Management),基本内容是管理既定工作的流程,通过服务编排,统一调控各个业务流程,以确保工作在正确的时间被正确的人执行,达到优化整体业务过程的目的.
-</span><span class='line'>BPM概念的贯彻执行,需要有标准化的流程定义语言来支撑,使用统一的语言遵循一致的标准描述具体业务过程,这些流程定义描述由专有引擎去驱动执行,这个引擎就是工作流引擎.
-</span><span class='line'>
-</span><span class='line'>2.Workflow
-</span><span class='line'>全部或者部分由计算机支持或自动处理的业务过程
-</span><span class='line'>
-</span><span class='line'>3.WfMC
-</span><span class='line'>工作流管理联盟
-</span><span class='line'>
-</span><span class='line'>4.BPMN
-</span><span class='line'>业务流程建模与标注(Business Process Modeling Notation),又叫业务流程建模符号.可以理解为工作流的建模语言.2004年5月发布了BPMN1.0规范.2011年BPMN2.0新规范的发布为各工作流产品互容互通提供了统一的标准,结束了各工作流厂商各自为政相互抵斥的局面.</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参考:
-<a href="http://www.infoq.com/cn/articles/bpmn2-activiti5">BPMN2新规范与Activiti5</a>
-<a href="http://www.omg.org/spec/BPMN/2.0/">BPMN2.0规范</a></p>
-
-<h4 id="1.2 工作流使用场景">1.2 工作流使用场景</h4>
-
-
-<p>具体什么场景下适合使用工作流,参考前任的总结:</p>
-
-<p><a href="http://stackoverflow.com/questions/104099/when-to-use-windows-workflow-foundation">when-to-use-windows-workflow-foundation</a></p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>You may need WF only if any of the following are true:
-</span><span class='line'>
-</span><span class='line'>1.You have a long-running process.
-</span><span class='line'>2.You have a process that changes frequently.
-</span><span class='line'>3.You want a visual model of the process</span></code></pre></td></tr></table></div></figure>
-
-
-<p>我理解,注意这里的第三点说的流程可视化的目的并不是为了展示,而是说工作流提供了一种给非开发人员(如运营人员)在线修改流程并且流程实时生效的途径(当然,需要业务支持).</p>
-
-<p><a href="http://programmers.stackexchange.com/questions/103972/when-to-use-workflow-engines">when-to-use-workflow-engines</a></p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>A workflow engine is useful when you need to go from a start to a finish but there are many different paths/logic/rules to get there.
-</span><span class='line'>if you have processes that are variable from start to end, use a workflow. If the same process can be used by everyone, then you don't need a workflow.</span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<h4 id="1.3 BPMN基本元素">1.3 BPMN基本元素</h4>
-
-
-<p>简单介绍BPMN中的基本元素,详细内容可以在<a href="http://www.omg.org/spec/BPMN/2.0/">BPMN 2.0规范官网</a>下载PDF版本(章节7.2).包含5个基本元素,每个基本元素下面又包含集中类型的元素,其中Flow Objects是最重要的:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>1. Flow Objects 流对象
-</span><span class='line'>2. Data 数据
-</span><span class='line'>3. Connecting Objects 连接对象
-</span><span class='line'>4. Swimlanes 泳道
-</span><span class='line'>5. Artifacts 工件</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>(1).Flow Objects</h5>
-
-<p>Flow Objects包含了工作流的三个基本执行语义</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(1).Events 事件
-</span><span class='line'>发生在流程执行过程中的事情.像流程的启动,结束,边界条件以及每个活动的创建,开始,流转等都是流程事件,利用事件机制,可以通过事件控制器为系统增加辅助功能.如其它业务系统集成及活动预警等
-</span><span class='line'>
-</span><span class='line'>(2).Activities 活动
-</span><span class='line'>在工作流中所有具备生命周期状态的都可以称之为活动,如原子级的任务(Task)以及子流程(Sub-Process)等.任务是流程模型中最小工作单元,不能继续分解.
-</span><span class='line'>
-</span><span class='line'>(3).Gateways 网关
-</span><span class='line'>Gateways用来决定流程流转指向的,简单理解就是判断条件.比如同意走一个流程,驳回走另外一个流程.</span></code></pre></td></tr></table></div></figure>
-
-
-<p>事件有三种类型:Start, Intermediate, End</p>
-
-<h5>(2).Data</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Data Objects 数据对象
-</span><span class='line'>Data Inputs 数据输入
-</span><span class='line'>Data Outputs 数据输出
-</span><span class='line'>Data Stores 数据存储</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>(3).Connecting Objects</h5>
-
-<p>连接对象用来把各个流对象或流对象与其他信息连接起来</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>(1).Sequence Flows 序列流
-</span><span class='line'>表示流对象的前后执行顺序
-</span><span class='line'>
-</span><span class='line'>(2).Message Flows 消息流
-</span><span class='line'>表示公开流程或协作模型里参与者之间的消息,交互
-</span><span class='line'>
-</span><span class='line'>(3).Associations 结合关系
-</span><span class='line'>为流程中的元素关联信息或数据
-</span><span class='line'>
-</span><span class='line'>(4).Data Associations 数据结合关系
-</span><span class='line'>表示数据在流程、活动和数据对象之间的传递</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>(4).Swimlanes</h5>
-
-<p>使用泳道来区分不同部门或者不同参与者的功能和职责。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Pools 池
-</span><span class='line'>Lanes 道</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>(5).Artifacts</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Group 组
-</span><span class='line'>Text Annotation 文本注释</span></code></pre></td></tr></table></div></figure>
-
-
-<p>各种基本元素的示意图字节参考BPMN 2.0规范给出的图吧:</p>
-
-<p><img src="/images/workflow/BPMN_model_1.png"></p>
-
-<p><img src="/images/workflow/BPMN_model_2.png"></p>
-
-<p>几个在线画图的应用如<a href="www.processon.com">processon</a>都支持BPMN图形.</p>
-
-<p>参考:
-<a href="http://blog.csdn.net/ronghao100/article/details/6707276">BPMN这点事-BPMN基本元素（上）</a>
-<a href="http://blog.csdn.net/ronghao100/article/details/6711779">BPMN这点事-BPMN基本元素（下）</a></p>
-
-<h2 id="2.常见的工作流引擎">2.常见的工作流引擎</h2>
-
-
-<h4 id="2.1 jBPM">2.1 jBPM</h4>
-
-
-<p><a href="http://www.jbpm.org/">jBPM官网</a></p>
-
-<h4 id="2.2 Activiti">2.2 Activiti</h4>
-
-
-<p><a href="http://www.activiti.org/">Activiti官网</a>
-<a href="http://www.activiti.org/">Activiti用户手册</a>
-<a href="http://www.mossle.com/docs/activiti/index.html">Activiti 5.16 用户手册中文版</a></p>
-
-<h4 id="2.3 FixFlow">2.3 FixFlow</h4>
-
-
-<p>FixFlow国人开发的工作流引擎
-<a href="https://github.com/fixteam/fixflow">FixFlow github地址</a></p>
-
-<h4 id="2.4 如何选择">2.4 如何选择</h4>
-
-
-<p>主要从易用性,维护成本等几个角度考虑:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>1.流程设计器的支持;
-</span><span class='line'>2.嵌入到业务的成本,比如对Spring的支持等;
-</span><span class='line'>3.事务支持;
-</span><span class='line'>4.使用范围</span></code></pre></td></tr></table></div></figure>
-
-
-<p>目前来看,Activiti的使用是最简单方便的.</p>
-
-<h2 id="3.Activiti">3.Activiti</h2>
-
-
-<p>支持最新BPMN2.0规范的开源工作流引擎Activit5,实现了对规范的绝大多数图元的定义(包括一些自己的扩展定义),能够满足企业工作流的各种复杂应用.
-它是一个无侵入的,支持嵌入式和独立部署的开源工作流引擎,是Tom Bayen离开jBoss加入Alfresco公司后的另立山头之作.</p>
-
-<p>关于Activiti的一些关键特性:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>支持的流程格式: BPMN2、xPDL、jPDL等
-</span><span class='line'>引擎核心: PVM（流程虚拟机）
-</span><span class='line'>技术前身: jBPM3、jBPM4
-</span><span class='line'>
-</span><span class='line'>数据库持久层: ORM MyBatis3
-</span><span class='line'>事务管理: MyBatis机制/Spring事务控制
-</span><span class='line'>数据库连接方式: Jdbc/DataSource
-</span><span class='line'>支持数据库: Oracle、SQL Server、MySQL等多数数据库
-</span><span class='line'>集成接口: SOAP、Mule、RESTful</span></code></pre></td></tr></table></div></figure>
-
-
-<p>几个关键的概念:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>1.流程定义
-</span><span class='line'>BPMN语法定义的流程定义;比如请假流程定义:开始--&gt;申请人发起--&gt;直属leader审批--&gt;部门leader审批--&gt;人力审批--&gt;结束;
-</span><span class='line'>
-</span><span class='line'>2.流程实例
-</span><span class='line'>启动一个流程case,比如张三发起一个请假流程,这时候就会生成一个请假流程的实例;
-</span><span class='line'>
-</span><span class='line'>3.历史流程实例
-</span><span class='line'>已经结束的流程,还是可以被查询到
-</span><span class='line'>
-</span><span class='line'>4.任务
-</span><span class='line'>最常见的用户任务,即需要人参与的流程节点. 比如请假流程中的直属leader审批这个节点就会生成一个用户任务.</span></code></pre></td></tr></table></div></figure>
-
-
-<h4 id="3.1 如何使用">3.1 如何使用</h4>
-
-
-<p>这里主要大致说一下怎么结合Spring使用Activiti</p>
-
-<p>Maven依赖</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;dependency&gt;
-</span><span class='line'>  &lt;groupId&gt;org.activiti&lt;/groupId&gt;
-</span><span class='line'>  &lt;artifactId&gt;activiti-engine&lt;/artifactId&gt;
-</span><span class='line'>  &lt;version&gt;5.14&lt;/version&gt;
-</span><span class='line'>&lt;/dependency&gt;
-</span><span class='line'>&lt;dependency&gt;
-</span><span class='line'>  &lt;groupId&gt;org.activiti&lt;/groupId&gt;
-</span><span class='line'>  &lt;artifactId&gt;activiti-spring&lt;/artifactId&gt;
-</span><span class='line'>  &lt;version&gt;5.14&lt;/version&gt;
-</span><span class='line'>&lt;/dependency&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中activiti-spring主要是提供了SpringProcessEngineConfiguration这个配置入口,并且提供ProcessEngineFactoryBean这个流程引擎的Bean,通过这个Bean,我们就可以获取Activiti内部的各种Service:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>RepositoryService
-</span><span class='line'>RuntimeService
-</span><span class='line'>TaskService
-</span><span class='line'>HistoryService
-</span><span class='line'>ManagementService
-</span><span class='line'>IdentityService
-</span><span class='line'>FormService</span></code></pre></td></tr></table></div></figure>
-
-
-<p>activiti将其内部的表的建表语句和对应的Mybatis配置文件都打包在依赖jar包中,可以参考activiti-engine中的org.activiti.db这个包路径下的内容.</p>
-
-<p><a href="http://www.tuicool.com/articles/NBZNFvF">整合Acitiviti在线流程设计器</a>
-<a href="http://www.ibm.com/developerworks/cn/java/j-lo-activiti1/">Activiti - 新一代的开源 BPM 引擎</a>
-<a href="http://www.infoq.com/cn/articles/bpmn2-activiti5">http://www.infoq.com/cn/articles/bpmn2-activiti5</a></p>
-
-<h2 id="4.业务如何使用工作流">4.业务如何使用工作流</h2>
-
-
-<p>一般使用方式两种:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>1.独立部署的工作流服务
-</span><span class='line'>对外服务方式: 接口
-</span><span class='line'>和业务交互方式: 接口或者MQ
-</span><span class='line'>优点: 彻底隔离工作流和业务;可以为多套业务提供服务;
-</span><span class='line'>缺点: 无法保证业务数据的强一致性
-</span><span class='line'>
-</span><span class='line'>2.嵌入到业务系统
-</span><span class='line'>和业务交互方式: 直接调用
-</span><span class='line'>优点: 能保证业务数据的强一致性
-</span><span class='line'>缺点: 每套业务都需要自己单独使用工作流(存在重复工作)</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/3">&larr; Older</a>
@@ -2467,6 +2403,10 @@ DefaultAopProxyFactory</p>
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/">Spring上传组件冲突</a>
@@ -2504,10 +2444,6 @@ DefaultAopProxyFactory</p>
         <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -2538,7 +2474,7 @@ DefaultAopProxyFactory</p>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (5)</a></li>
  
   </div>
 </section>

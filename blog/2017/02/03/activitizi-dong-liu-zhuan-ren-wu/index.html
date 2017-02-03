@@ -5,11 +5,12 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>Java中MessageDigest计算MD5 - xiaobaoqiu Blog</title>
+  <title>Activiti自动流转任务 - xiaobaoqiu Blog</title>
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近项目的图片处理的系统出问题比较多，典型的一个问题就是因为计算md5出现的问题。 1.问题 问题的现象很简单，使用这套代码批量切图，会出现一张灵异图片，灵异之处在于，很多人批量切图都会出现这张图片，且这张图片不在他们的原始图片中。 2.原因 最后分析的原因是计算图片md5的代码， &hellip;">
+  <meta name="description" content="1.自动流转任务
+2.实现 1.自动流转任务 用户任务是审核流程中最重要的节点, 在流程设计中通常会遇到需要自动流转的需求, 比如请假半天的自动通过. 1.实现 下面是我能想到的几种实现自动流转任务方式. 2.1 ServiceTask Activiti的设计者已经考虑到我们这个需求, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -18,9 +19,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   
-  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2015/02/05/java-md5/">
+  <link rel="canonical" href="http://xiaobaoqiu.github.io/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">
   <link href="/favicon.png" rel="icon">
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  
+  <link href="/stylesheets/data-table.css" media="screen, projection" rel="stylesheet" type="text/css" />
   
 
   <link href="/atom.xml" rel="alternate" title="xiaobaoqiu Blog" type="application/atom+xml">
@@ -78,7 +81,7 @@
   
   <header>
     
-      <h1 class="entry-title">Java中MessageDigest计算MD5</h1>
+      <h1 class="entry-title">Activiti自动流转任务</h1>
     
     
       <p class="meta">
@@ -87,22 +90,48 @@
 
 
 
-<time class='entry-date' datetime='2015-02-05T21:40:13+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>5</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>9:40 pm</span></time>
+<time class='entry-date' datetime='2017-02-03T10:53:39+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2017</span></span> <span class='time'>10:53 am</span></time>
         
       </p>
     
   </header>
 
 
-<div class="entry-content"><p>最近项目的图片处理的系统出问题比较多，典型的一个问题就是因为计算md5出现的问题。</p>
+<div class="entry-content"><ul>
+<li><a href="#1.%E8%87%AA%E5%8A%A8%E6%B5%81%E8%BD%AC%E4%BB%BB%E5%8A%A1">1.自动流转任务</a></li>
+<li><a href="#2.%E5%AE%9E%E7%8E%B0">2.实现</a></li>
+</ul>
 
-<h1>1.问题</h1>
 
-<p>问题的现象很简单，使用这套代码批量切图，会出现一张灵异图片，灵异之处在于，很多人批量切图都会出现这张图片，且这张图片不在他们的原始图片中。</p>
+<h2 id="1.自动流转任务">1.自动流转任务</h2>
 
-<h1>2.原因</h1>
 
-<p>最后分析的原因是计算图片md5的代码，使用的是Java自带的MessageDigest，大致使用如下</p>
+<p>用户任务是审核流程中最重要的节点, 在流程设计中通常会遇到需要自动流转的需求, 比如请假半天的自动通过.</p>
+
+<h2 id="2.实现">1.实现</h2>
+
+
+<p>下面是我能想到的几种实现自动流转任务方式.</p>
+
+<h4 id="2.1 ServiceTask">2.1 ServiceTask</h4>
+
+
+<p>Activiti的设计者已经考虑到我们这个需求,因此在引入了 ServiceTask 这中类型的任务.参考 Activiti 的文档: <a href="https://www.activiti.org/userguide/index.html#bpmnJavaServiceTask">https://www.activiti.org/userguide/index.html#bpmnJavaServiceTask</a>
+ServiceTask的目的是调用我们自定义的一个Java类:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>A Java service task is used to invoke an external Java class.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ServiceTask 的使用方式也有几种:</p>
+
+<pre><code>1. 自定义类实现 JavaDelegate 或者 ActivityBehavior 接口;
+2. 设计流程的时候, 显示的告诉 Activiti 引擎需要调用的 Bean;
+3. 调用一个方法表达式;
+4. 调用一个求值表达式;
+</code></pre>
+
+<p>下面审核一个示例的自定义ServiceTask调研逻辑</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -117,69 +146,30 @@
 <span class='line-number'>11</span>
 <span class='line-number'>12</span>
 <span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>//声明
-</span><span class='line'>private static MessageDigest md = null;
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import org.activiti.engine.delegate.DelegateExecution;
+</span><span class='line'>import org.activiti.engine.delegate.JavaDelegate;
+</span><span class='line'>import org.springframework.stereotype.Service;
 </span><span class='line'>
-</span><span class='line'>//初始化
-</span><span class='line'>static {
-</span><span class='line'>    md = MessageDigest.getInstance("MD5");
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>//使用
-</span><span class='line'>public static byte[] getMD5(byte[] bytes) {
-</span><span class='line'>    md.update(bytes);   //-----------------------A
-</span><span class='line'>    return md.digest(); //-----------------------B
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>问题的原因就是多线程计算md5的时候getMD5这个函数有问题。</p>
-
-<h3>2.1 问题md5</h3>
-
-<p>最后定位发现重复出现的md5是</p>
-
-<pre><code>d41d8cd98f00b204e9800998ecf8427e
-</code></pre>
-
-<p>这是一个特殊的md5，即其是空字符串的md5：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>MD5("") = d41d8cd98f00b204e9800998ecf8427e</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参考： <a href="http://zh.wikipedia.org/wiki/MD5">http://zh.wikipedia.org/wiki/MD5</a></p>
-
-<h3>2.1 代码问题</h3>
-
-<p>在MessageDigest类的源代码注释有这样一段话：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> * &lt;p&gt;A MessageDigest object starts out initialized. The data is
-</span><span class='line'> * processed through it using the {@link #update(byte) update}
-</span><span class='line'> * methods. At any point {@link #reset() reset} can be called
-</span><span class='line'> * to reset the digest. Once all the data to be updated has been
-</span><span class='line'> * updated, one of the {@link #digest() digest} methods should
-</span><span class='line'> * be called to complete the hash computation.
+</span><span class='line'>/**
+</span><span class='line'> * 自动完成的任务(ServiceTask)
 </span><span class='line'> *
-</span><span class='line'> * &lt;p&gt;The &lt;code&gt;digest&lt;/code&gt; method can be called once for a given number
-</span><span class='line'> * of updates. After &lt;code&gt;digest&lt;/code&gt; has been called, the MessageDigest
-</span><span class='line'> * object is reset to its initialized state.</span></code></pre></td></tr></table></div></figure>
+</span><span class='line'> * @author xiaobaoqiu  Date: 16-12-23 Time: 下午3:46
+</span><span class='line'> */
+</span><span class='line'>@Service
+</span><span class='line'>public class AutoCompleteTaskService implements JavaDelegate {
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public void execute(DelegateExecution execution) throws Exception {
+</span><span class='line'>
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
 
 
-<p>上面这段话第二部分的意思是说，digest()这个方法只能被调用一次，一旦调用MessageDigest对象会被重置到初始状态。</p>
-
-<p>根据这个逻辑，getMD5这个函数的代码，多个线程进入这段代码的时候（这里假设两个线程），线程A执行完步骤1，在执行步骤2之前，线程B也执行完步骤1，之后线程B调用了步骤2得到正确的md5,之后线程A再调用步骤2的时候得到的md5就是d41d8cd98f00b204e9800998ecf8427e。</p>
-
-<p>本地验证：</p>
+<p>回到我们的需求上, 要实现我们需要的自动流转任务, 我们可以使用 ServiceTask, 以上面定义的 AutoCompleteTaskService 为例子:</p>
 
 <figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
 <span class='line-number'>2</span>
@@ -189,81 +179,53 @@
 <span class='line-number'>6</span>
 <span class='line-number'>7</span>
 <span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void main(String[] args) {
-</span><span class='line'>    String src = "HelloWorld";
+</pre></td><td class='code'><pre><code class=''><span class='line'># 方式1
+</span><span class='line'>&lt;serviceTask id="javaService"
+</span><span class='line'>             name="My Java Service Task"
+</span><span class='line'>             activiti:class="org.xxx.AutoCompleteTaskService" /&gt;
 </span><span class='line'>
-</span><span class='line'>    messageDigest.update(src.getBytes());
-</span><span class='line'>
-</span><span class='line'>    String md5 = bytesToHex(messageDigest.digest());
-</span><span class='line'>    System.out.println("md5 = " + md5.toLowerCase());
-</span><span class='line'>
-</span><span class='line'>    String md5Again = bytesToHex(messageDigest.digest());
-</span><span class='line'>    System.out.println("md5Again = " + md5Again.toLowerCase());
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+</span><span class='line'># 方式2
+</span><span class='line'>&lt;bean id="delegateExpressionBean" class="org.xxx.AutoCompleteTaskService" /&gt;
+</span><span class='line'>&lt;serviceTask id="serviceTask" activiti:delegateExpression="${delegateExpressionBean}" /&gt;</span></code></pre></td></tr></table></div></figure>
 
 
-<p>得到的结果：</p>
+<p>但是这种实现方式的一个致命的问题在于:流程设计的时候你需要知道你要调用的Java逻辑的类路径或者Bean的名称.</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>md5 = 68e109f0f40ca72a15e05cc22786f8e6
-</span><span class='line'>md5Again = d41d8cd98f00b204e9800998ecf8427e</span></code></pre></td></tr></table></div></figure>
+<p>为什么说是致命的呢,因为这个的实现方式就没办法将流程设计交付给开发人员以外的其他人员了(他们不可能知道类路径或者bean名称这种信息).</p>
 
+<p>下面我使用普通的 UserTask 来实现我们的需求.</p>
 
-<h1>3.解决</h1>
-
-<h3>3.1 MessageDigest正确用法</h3>
-
-<p>MessageDigest类的注释里面其实给出了正确的用法，注意其md.clone()的调用：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> MessageDigest md = MessageDigest.getInstance("MD5");
-</span><span class='line'>
-</span><span class='line'> try {
-</span><span class='line'>     md.update(toChapter1);
-</span><span class='line'>     MessageDigest tc1 = md.clone();
-</span><span class='line'>     byte[] toChapter1Digest = tc1.digest();
-</span><span class='line'>     md.update(toChapter2);
-</span><span class='line'>     ...etc.
-</span><span class='line'> } catch (CloneNotSupportedException cnse) {
-</span><span class='line'>     throw new DigestException("couldn't make digest of partial content");
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+<h4 id="2.2 主动触发UserTask">2.2 主动触发UserTask, </h4>
 
 
-<h3>3.1 Apache的DigestUtils</h3>
+<p>我们将自动流转任务也设计成UserTask, 由业务自己主动触发.</p>
 
-<p>Apache的DigestUtils是一个线程安全的类，是对MessageDigest的封装，使用很简单，首先加入依赖：</p>
+<p>比如请假半天的自动通过的例子, 业务可以在提交请假的时候判断, 让这个任务自动完成.</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;dependency&gt;
-</span><span class='line'>    &lt;groupId&gt;commons-codec&lt;/groupId&gt;
-</span><span class='line'>    &lt;artifactId&gt;commons-codec&lt;/artifactId&gt;
-</span><span class='line'>    &lt;version&gt;1.9&lt;/version&gt;
-</span><span class='line'>&lt;/dependency&gt;</span></code></pre></td></tr></table></div></figure>
+<p>这种实现的问题在于: 业务逻辑实现起来太麻烦, 很容易出Bug(比如自动通过失败,可能会导致提交这个操作失败).</p>
+
+<h4 id="2.3 异步触发UserTask">2.3 异步触发UserTask</h4>
 
 
-<p>然后就可以使用DigestUtils计算md5：</p>
+<p>在上一个方法的基础上, 我们可以将自动生效的逻辑放到异步任务里面,可以避免将原始业务逻辑复杂化.</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>DigestUtils.md5(bytes)</span></code></pre></td></tr></table></div></figure>
+<p>但是我们需要筛选出哪些 UserTask 可以自动完成,因此我的方案就是给这些任务制定特定的任务类型.关于任务类型, 可以参考我前面的博文: <a href="http://xiaobaoqiu.github.io/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing/">http://xiaobaoqiu.github.io/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing/</a></p>
 
+<p>有了任务类型之后, 我们就可以将哪些任务需要自动流转配置起来.</p>
+
+<p>这个方案的问题在于(绝大部分情况下不是问题): 这里实现的自动生效的不是实时的(即使我们的异步任务足够频繁).</p>
+
+<h4 id="2.4 对比选择">2.4 对比选择</h4>
+
+
+<p>下面是几种实现方式的对比:
+ | ServiceTask | 主动触发UserTask | 异步触发UserTask |
+:&mdash;&mdash;&mdash;-:|:&mdash;&mdash;&mdash;-:|:&mdash;&mdash;&mdash;&mdash;|:&mdash;&mdash;&mdash;-
+设计成本 | 需要知道具体的执行类或者Bean |  | |
+触发成本 |  | 需要业务主动触发 | |
+配置成本 |  |  | 需要配置：任务类型 - 是否自动完成任务 |</p>
+
+<p>倾向于使用 异步触发UserTask 这个方案, 成本和问题都比较小.</p>
 </div>
 
 
@@ -279,12 +241,12 @@
 
 
 
-<time class='entry-date' datetime='2015-02-05T21:40:13+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>5</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>9:40 pm</span></time>
+<time class='entry-date' datetime='2017-02-03T10:53:39+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2017</span></span> <span class='time'>10:53 am</span></time>
       
 
 <span class="categories">
   
-    <a class='category' href='/blog/categories/java/'>java</a>
+    <a class='category' href='/blog/categories/workflow/'>workflow</a>
   
 </span>
 
@@ -293,7 +255,7 @@
     
       <div class="sharing">
   
-  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2015/02/05/java-md5/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2015/02/05/java-md5/" >Tweet</a>
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://xiaobaoqiu.github.io/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/" data-via="" data-counturl="http://xiaobaoqiu.github.io/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/" >Tweet</a>
   
   
   
@@ -302,10 +264,8 @@
     
     <p class="meta">
       
-        <a class="basic-alignment left" href="/blog/2015/01/31/netstatming-ling/" title="Previous Post: netstat与ss命令">&laquo; netstat与ss命令</a>
+        <a class="basic-alignment left" href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/" title="Previous Post: Spring上传组件冲突">&laquo; Spring上传组件冲突</a>
       
-      
-        <a class="basic-alignment right" href="/blog/2015/02/09/ncming-ling/" title="Next Post: nc命令">nc命令 &raquo;</a>
       
     </p>
   </footer>

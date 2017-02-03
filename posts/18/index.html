@@ -9,7 +9,7 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="早就听说过Memcached独特的内存管理方式,写着篇文章的目的就是了解Memcached的内存管理,学习其源代码. 1.什么是Slab Allocator memcached默认情况下采用了名为Slab Allocator的机制分配、管理内存，Slab &hellip;">
+  <meta name="description" content="1.XMemcached是什么 XMemcached是众多Memcached Client中的后起之秀,而且还是一个Chinese主导的.写这篇Blog的目的就是研究下这个Memcached Client的代码,顺便研究下传说中的一致性Hash. XMemcached项目:https://code &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -75,6 +75,680 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/10/16/xmemcached-client/">XMemcached Client</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-10-16T22:51:01+08:00'><span class='date'><span class='date-month'>Oct</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>10:51 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><h1>1.XMemcached是什么</h1>
+
+<p>XMemcached是众多Memcached Client中的后起之秀,而且还是一个Chinese主导的.写这篇Blog的目的就是研究下这个Memcached Client的代码,顺便研究下传说中的一致性Hash.</p>
+
+<p>XMemcached项目:<a href="https://code.google.com/p/xmemcached/">https://code.google.com/p/xmemcached/</a></p>
+
+<p>源代码:<a href="https://github.com/killme2008/xmemcached">https://github.com/killme2008/xmemcached</a></p>
+
+<p>使用文档:<a href="http://blog.sina.com.cn/s/blog_6094008a0102v6gj.html">http://blog.sina.com.cn/s/blog_6094008a0102v6gj.html</a></p>
+
+<p>特点:</p>
+
+<pre><code>(1).支持所有的Memcached文本协议(text based protocols)和二进制协议(二进制协议从1.2.0开始支持);
+(2).支持分布式的Memcached,包括标准Hash和一致性哈希策略;
+(3).支持JMX,从而允许使用者监控和控制XMemcached Client的行为;同时可以修改优化参数,动态添加或者删除服务器;
+(4).支持待权重的服务器配置;
+(5).支持连接池,使用Java的nio,对同一个Memcached服务器使用者能够创建更多的连接;
+(6).支持故障模式和备用节点;
+(7).支持和Spring框架和hibernate-memcached的整合;
+(8).高性能;
+(9).支持和kestrel(一个Scala实现的MQ)和TokyoTyrant的对话;
+</code></pre>
+
+<h1>2.XMemcached的类图</h1>
+
+<p>XMemcached的类图(几个主要的类):</p>
+
+<p><img src="/images/xmemcached/xmemcached-classes.jpg"></p>
+
+<h1>3.XMemcached的示例</h1>
+
+<p>源代码中自带了例子,我们分析一个SimpleExample.java:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">SimpleExample</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">main</span><span class="o">(</span><span class="n">String</span><span class="o">[]</span> <span class="n">args</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">args</span><span class="o">.</span><span class="na">length</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">err</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;Useage:java SimpleExample [servers]&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">exit</span><span class="o">(</span><span class="mi">1</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="n">MemcachedClient</span> <span class="n">memcachedClient</span> <span class="o">=</span> <span class="n">getMemcachedClient</span><span class="o">(</span><span class="n">args</span><span class="o">[</span><span class="mi">0</span><span class="o">]);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">memcachedClient</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">NullPointerException</span><span class="o">(</span><span class="s">&quot;Null MemcachedClient,please check memcached has been started&quot;</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">// add a,b,c</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;Add a,b,c&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">memcachedClient</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="s">&quot;a&quot;</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="s">&quot;Hello,xmemcached&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">memcachedClient</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="s">&quot;b&quot;</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="s">&quot;Hello,xmemcached&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">memcachedClient</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="s">&quot;c&quot;</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="s">&quot;Hello,xmemcached&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// get a</span>
+</span><span class='line'>            <span class="n">String</span> <span class="n">value</span> <span class="o">=</span> <span class="n">memcachedClient</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="s">&quot;a&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;get a=&quot;</span> <span class="o">+</span> <span class="n">value</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;delete a&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// delete a</span>
+</span><span class='line'>            <span class="n">memcachedClient</span><span class="o">.</span><span class="na">delete</span><span class="o">(</span><span class="s">&quot;a&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// reget a</span>
+</span><span class='line'>            <span class="n">value</span> <span class="o">=</span> <span class="n">memcachedClient</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="s">&quot;a&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;after delete,a=&quot;</span> <span class="o">+</span> <span class="n">value</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;Iterate all keys...&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// iterate all keys</span>
+</span><span class='line'>            <span class="n">KeyIterator</span> <span class="n">it</span> <span class="o">=</span> <span class="n">memcachedClient</span><span class="o">.</span><span class="na">getKeyIterator</span><span class="o">(</span><span class="n">AddrUtil</span><span class="o">.</span><span class="na">getOneAddress</span><span class="o">(</span><span class="n">args</span><span class="o">[</span><span class="mi">0</span><span class="o">]));</span>
+</span><span class='line'>            <span class="k">while</span> <span class="o">(</span><span class="n">it</span><span class="o">.</span><span class="na">hasNext</span><span class="o">())</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="n">it</span><span class="o">.</span><span class="na">next</span><span class="o">());</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="n">memcachedClient</span><span class="o">.</span><span class="na">touch</span><span class="o">(</span><span class="s">&quot;b&quot;</span><span class="o">,</span> <span class="mi">1000</span><span class="o">));</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">MemcachedException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">err</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;MemcachedClient operation fail&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">e</span><span class="o">.</span><span class="na">printStackTrace</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">TimeoutException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">err</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;MemcachedClient operation timeout&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">e</span><span class="o">.</span><span class="na">printStackTrace</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">InterruptedException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">// ignore</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">memcachedClient</span><span class="o">.</span><span class="na">shutdown</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">Exception</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">err</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;Shutdown MemcachedClient fail&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">e</span><span class="o">.</span><span class="na">printStackTrace</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">static</span> <span class="n">MemcachedClient</span> <span class="nf">getMemcachedClient</span><span class="o">(</span><span class="n">String</span> <span class="n">servers</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">//默认是Text协议</span>
+</span><span class='line'>            <span class="n">MemcachedClientBuilder</span> <span class="n">builder</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">XMemcachedClientBuilder</span><span class="o">(</span><span class="n">AddrUtil</span><span class="o">.</span><span class="na">getAddresses</span><span class="o">(</span><span class="n">servers</span><span class="o">));</span>
+</span><span class='line'>            <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="na">build</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">IOException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">err</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="s">&quot;Create MemcachedClient fail&quot;</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">e</span><span class="o">.</span><span class="na">printStackTrace</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>本地先起来两个Memcached实例:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="o">/</span><span class="n">usr</span><span class="o">/</span><span class="n">bin</span><span class="o">/</span><span class="n">memcached</span> <span class="o">-</span><span class="n">m</span> <span class="mi">256</span> <span class="o">-</span><span class="n">p</span> <span class="mi">11211</span> <span class="o">-</span><span class="n">u</span> <span class="n">memcache</span> <span class="o">-</span><span class="n">l</span> <span class="mf">127.0</span><span class="o">.</span><span class="mf">0.1</span> <span class="o">-</span><span class="n">d</span>
+</span><span class='line'><span class="o">/</span><span class="n">usr</span><span class="o">/</span><span class="n">bin</span><span class="o">/</span><span class="n">memcached</span> <span class="o">-</span><span class="n">m</span> <span class="mi">256</span> <span class="o">-</span><span class="n">p</span> <span class="mi">11222</span> <span class="o">-</span><span class="n">u</span> <span class="n">memcache</span> <span class="o">-</span><span class="n">l</span> <span class="mf">127.0</span><span class="o">.</span><span class="mf">0.1</span> <span class="o">-</span><span class="n">d</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在IDEA下运行,配上运行参数,即Memcached服务器的IP和端口,格式如下(解析代码见AddrUtil.java):</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="mf">127.0</span><span class="o">.</span><span class="mf">0.1</span><span class="o">:</span><span class="mi">11211</span> <span class="mf">127.0</span><span class="o">.</span><span class="mf">0.1</span><span class="o">:</span><span class="mi">11222</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Debug代码,可以发现其运行过程,下面是get的一个运行序列图:</p>
+
+<p><img src="/images/xmemcached/xmemcached-get.jpg"></p>
+
+<h1>4.XMemcached的分布式实现</h1>
+
+<p>memcached虽然称为“分布式”缓存服务器,但服务器端并没有"&ldquo;分布式”功能.至于memcached的分布式,则是完全由客户端程序库实现的.</p>
+
+<h3>4.1 Memcached的分布式是什么意思</h3>
+
+<p>这里多次使用了“分布式”这个词,但并未做详细解释.现在开始简单地介绍一下其原理,各个客户端的实现基本相同.</p>
+
+<p>下面假设memcached服务器有node1～node3三台, 应用程序要保存键名为“tokyo”“kanagawa”“chiba”“saitama”“gunma” 的数据.</p>
+
+<p><img src="/images/memcached/memcached-distribute-1.png"></p>
+
+<p>首先向memcached中添加“tokyo”.将“tokyo”传给客户端程序库后, 客户端实现的算法就会根据“键”来决定保存数据的memcached服务器. 服务器选定后,即命令它保存“tokyo”及其值.</p>
+
+<p><img src="/images/memcached/memcached-distribute-2.png"></p>
+
+<p>同样,“kanagawa”“chiba”“saitama”“gunma”都是先选择服务器再保存.</p>
+
+<p>接下来获取保存的数据.获取时也要将要获取的键“tokyo”传递给函数库. 函数库通过与数据保存时相同的算法,根据“键”选择服务器. 使用的算法相同,就能选中与保存时相同的服务器,然后发送get命令. 只要数据没有因为某些原因被删除,就能获得保存的值.</p>
+
+<p><img src="/images/memcached/memcached-distribute-3.png"></p>
+
+<p>这样,将不同的键保存到不同的服务器上,就实现了memcached的分布式. memcached服务器增多后,键就会分散,即使一台memcached服务器发生故障
+无法连接,也不会影响其他的缓存,系统依然能继续运行.</p>
+
+<h3>4.2 余数哈希</h3>
+
+<p>XMemcached默认使用的是Native Hash,见ArrayMemcachedSessionLocator.java:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">final</span> <span class="kt">long</span> <span class="nf">getHash</span><span class="o">(</span><span class="kt">int</span> <span class="n">size</span><span class="o">,</span> <span class="n">String</span> <span class="n">key</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kt">long</span> <span class="n">hash</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">hashAlgorighm</span><span class="o">.</span><span class="na">hash</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">return</span> <span class="n">hash</span> <span class="o">%</span> <span class="n">size</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ArrayMemcachedSessionLocator中使用的hashAlgorighm是HashAlgorithm.NATIVE_HASH,而HashAlgorithm.NATIVE_HASH的hash()函数的实现:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kt">long</span> <span class="nf">hash</span><span class="o">(</span><span class="kd">final</span> <span class="n">String</span> <span class="n">k</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kt">long</span> <span class="n">rv</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">switch</span> <span class="o">(</span><span class="k">this</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">case</span> <span class="nl">NATIVE_HASH:</span>
+</span><span class='line'>        <span class="n">rv</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="na">hashCode</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">...</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>即XMemcached的Native Hash就是通常的余数哈希:首先求得字符串的hash值,根据该值除以服务器节点数目得到的余数决定服务器.</p>
+
+<p>根据这种hash方式,上门这几个key分布的服务器如下(三台服务器分别为 0 1 2):</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">tokyo</span> <span class="o">--&gt;</span> <span class="mi">2</span>
+</span><span class='line'><span class="n">kanagawa</span> <span class="o">--&gt;</span> <span class="mi">1</span>
+</span><span class='line'><span class="n">chiba</span> <span class="o">--&gt;</span> <span class="mi">2</span>
+</span><span class='line'><span class="n">saitama</span> <span class="o">--&gt;</span> <span class="mi">1</span>
+</span><span class='line'><span class="n">gunma</span> <span class="o">--&gt;</span> <span class="mi">2</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><strong>优点</strong>
+简单高效:计算简单,数据的分散性也相当优秀</p>
+
+<p><strong>缺点</strong>
+当添加或移除服务器时,缓存重组的代价相当巨大. 添加服务器后,余数就会产生巨变,这样就无法获取与保存时相同的服务器, 从而影响缓存的命中率.</p>
+
+<p>下面简单验证这个:首先在3台服务器的情况下将“a”到“z”的键保存到memcached并访问的情况;接下来增加一台memcached服务器;计算缓存命中率;</p>
+
+<p>简单测试代码(忍不住吐槽下java真是一门罗嗦的语言):</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Hash</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 默认的Hash算法</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="n">HashAlgorithm</span> <span class="n">hashAlgorithm</span> <span class="o">=</span> <span class="n">HashAlgorithm</span><span class="o">.</span><span class="na">NATIVE_HASH</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * Memcached服务器数目</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">int</span> <span class="n">SERVER_SIZE</span> <span class="o">=</span> <span class="mi">3</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">main</span><span class="o">(</span><span class="n">String</span><span class="o">[]</span> <span class="n">args</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">// 初始化</span>
+</span><span class='line'>        <span class="n">Map</span><span class="o">&lt;</span><span class="n">Long</span><span class="o">,</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;&gt;</span> <span class="n">itemMap</span> <span class="o">=</span> <span class="k">new</span> <span class="n">HashMap</span><span class="o">&lt;</span><span class="n">Long</span><span class="o">,</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;&gt;();</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">long</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">SERVER_SIZE</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">itemMap</span><span class="o">.</span><span class="na">put</span><span class="o">(</span><span class="n">i</span><span class="o">,</span> <span class="k">new</span> <span class="n">LinkedList</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;());</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kt">char</span> <span class="n">letters</span><span class="o">[]</span> <span class="o">=</span> <span class="k">new</span> <span class="kt">char</span><span class="o">[</span><span class="mi">27</span><span class="o">];</span>
+</span><span class='line'>        <span class="n">letters</span><span class="o">[</span><span class="mi">0</span><span class="o">]</span> <span class="o">=</span> <span class="sc">&#39;a&#39;</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="mi">26</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">letters</span><span class="o">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="o">]</span> <span class="o">=</span> <span class="o">(</span><span class="kt">char</span><span class="o">)</span> <span class="o">(</span><span class="n">letters</span><span class="o">[</span><span class="n">i</span><span class="o">]</span> <span class="o">+</span> <span class="mi">1</span><span class="o">);</span>
+</span><span class='line'>            <span class="kt">long</span> <span class="n">hash</span> <span class="o">=</span> <span class="n">getHash</span><span class="o">(</span><span class="n">SERVER_SIZE</span><span class="o">,</span> <span class="n">String</span><span class="o">.</span><span class="na">valueOf</span><span class="o">(</span><span class="n">letters</span><span class="o">[</span><span class="n">i</span><span class="o">]));</span>
+</span><span class='line'>            <span class="n">itemMap</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">hash</span><span class="o">).</span><span class="na">add</span><span class="o">(</span><span class="n">String</span><span class="o">.</span><span class="na">valueOf</span><span class="o">(</span><span class="n">letters</span><span class="o">[</span><span class="n">i</span><span class="o">]));</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(</span><span class="n">Map</span><span class="o">.</span><span class="na">Entry</span><span class="o">&lt;</span><span class="n">Long</span><span class="o">,</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;&gt;</span> <span class="n">e</span> <span class="o">:</span> <span class="n">itemMap</span><span class="o">.</span><span class="na">entrySet</span><span class="o">())</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">System</span><span class="o">.</span><span class="na">out</span><span class="o">.</span><span class="na">println</span><span class="o">(</span><span class="n">e</span><span class="o">.</span><span class="na">getKey</span><span class="o">()</span> <span class="o">+</span> <span class="s">&quot; : &quot;</span> <span class="o">+</span> <span class="n">join</span><span class="o">(</span><span class="n">e</span><span class="o">.</span><span class="na">getValue</span><span class="o">()));</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">static</span> <span class="kt">long</span> <span class="nf">getHash</span><span class="o">(</span><span class="kt">int</span> <span class="n">size</span><span class="o">,</span> <span class="n">String</span> <span class="n">key</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kt">long</span> <span class="n">hash</span> <span class="o">=</span> <span class="n">hashAlgorithm</span><span class="o">.</span><span class="na">hash</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">hash</span> <span class="o">%</span> <span class="n">size</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="n">String</span> <span class="nf">join</span><span class="o">(</span><span class="kd">final</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span> <span class="n">list</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">StringBuilder</span> <span class="n">builder</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">StringBuilder</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">for</span><span class="o">(</span><span class="n">String</span> <span class="n">s</span> <span class="o">:</span> <span class="n">list</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">builder</span><span class="o">.</span><span class="na">append</span><span class="o">(</span><span class="n">s</span> <span class="o">+</span> <span class="sc">&#39; &#39;</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="na">toString</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们得到3台服务器(分别为0,1,2)的时候,26个字母的分布如下:</p>
+
+<pre><code>0 : c f i l o r u x 
+1 : a d g j m p s v y 
+2 : b e h k n q t w z 
+</code></pre>
+
+<p>4台服务器(分别为0,1,2,3)的时候,26个字母的分布如下:</p>
+
+<pre><code>0 : d h l p t x 
+1 : a e i m q u y 
+2 : b f j n r v z 
+3 : c g k o s w
+</code></pre>
+
+<p>根据这两份数据,我们可以得到,加拉一台服务器之后,26个字母只有8个命中了.像这样,添加节点后键分散到的服务器会发生巨大变化.</p>
+
+<p>同样,减少服务器(比如某一台服务器down机),也会导致大量的Miss,基本失去了缓存的作用.</p>
+
+<p>带来的问题就是,在Web应用程序中使用memcached时, 在添加memcached服务器的瞬间缓存效率会大幅度下降,有可能会发生无法提供正常服务的情况.</p>
+
+<h3>4.3 一致性哈希(Consistent Hashing)</h3>
+
+<p>一致性哈希能够很大程度上(注意不是完全解决)解决余数哈希的增加服务器导致缓存失效的问题.</p>
+
+<p><strong>4.3.1 一致性哈希原理</strong>
+Consistent Hashing如下所示：首先求出memcached服务器（节点）的哈希值,
+并将其配置到0～2SUP(32)的圆（continuum）上. 然后用同样的方法求出存储数据的键的哈希值,并映射到圆上. 然后从数据映射到的位置开始顺时针查找,将数据保存到找到的第一个服务器上. 如果超过2SUP(32)仍然找不到服务器,就会保存到第一台memcached服务器上.</p>
+
+<p><img src="/images/memcached/memcached-consistent-hash1.png"></p>
+
+<p>从上图的状态中添加一台memcached服务器.余数分布式算法由于保存键的服务器会发生巨大变化 而影响缓存的命中率,但Consistent Hashing中,只有在continuum上增加服务器的地点逆时针方向的 第一台服务器上的键会受到影响.</p>
+
+<p><img src="/images/memcached/memcached-consistent-hash2.png"></p>
+
+<p>因此,Consistent Hashing最大限度地抑制了键的重新分布. 而且,有的Consistent Hashing的实现方法还采用了虚拟节点的思想. 使用一般的hash函数的话,服务器的映射地点的分布非常不均匀. 因此,使用虚拟节点的思想,为每个物理节点（服务器） 在continuum上分配100～200个点.这样就能抑制分布不均匀, 最大限度地减小服务器增减时的缓存重新分布.</p>
+
+<p><strong>4.3.2 虚拟节点</strong>
+ 一致性哈希算法在服务节点太少时,容易因为节点分部不均匀而造成数据倾斜问题.例如我们的系统中有两台 server,其环分布如下：</p>
+
+<p> <img src="/images/xmemcached/virtual-node-why.png"></p>
+
+<p> 此时必然造成大量数据集中到Server 1上,而只有极少量会定位到Server 2上.为了解决这种数据倾斜问题,一致性哈希算法引入了虚拟节点机制.</p>
+
+<p>虚拟节点(virtual node)是实际节点(服务器)在 hash 空间的复制品,一个实际节点(服务器)对应了若干个虚拟节点,这个对应个数也称为为复制个数,虚拟节点在 hash 环中以hash值排列.</p>
+
+<p>例如为上面的每台服务器设置三个虚拟节点:</p>
+
+<p><img src="/images/xmemcached/virtual-node.png"></p>
+
+<p>在实际应用中,一个物理节点对应多少的虚拟节点才能达到比较好的均衡效果,有一个效果图:</p>
+
+<p><img src="/images/xmemcached/virtual-node-count.png"></p>
+
+<p>纵轴为物理服务器的数目,横轴为虚拟节点的数目,可以看出,当物理服务器的数量很小时,需要更大的虚拟节点,反之则需要更少的节点,从图上可以看出,在物理服务器有10台时,差不多需要为每台服务器增加100~200个虚拟节点效果比较好.</p>
+
+<h3>4.4 XMemcached一致性哈希的实现</h3>
+
+<p>XMemcached Client中实现了一致性哈希,见KetamaMemcachedSessionLocator.java,使用的Hash算法是KETAMA HASH算法.</p>
+
+<p>下面主要分析一下KetamaMemcachedSessionLocator.java代码,去掉了一些无关的代码:</p>
+
+<p><strong>4.4.1 根据服务器列表生成Hash环</strong></p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="kd">final</span> <span class="kt">void</span> <span class="nf">buildMap</span><span class="o">(</span><span class="n">Collection</span><span class="o">&lt;</span><span class="n">Session</span><span class="o">&gt;</span> <span class="n">list</span><span class="o">,</span> <span class="n">HashAlgorithm</span> <span class="n">alg</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">TreeMap</span><span class="o">&lt;</span><span class="n">Long</span><span class="o">,</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">Session</span><span class="o">&gt;&gt;</span> <span class="n">sessionMap</span> <span class="o">=</span> <span class="k">new</span> <span class="n">TreeMap</span><span class="o">&lt;</span><span class="n">Long</span><span class="o">,</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">Session</span><span class="o">&gt;&gt;();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(</span><span class="n">Session</span> <span class="n">session</span> <span class="o">:</span> <span class="n">list</span><span class="o">)</span> <span class="o">{</span>  <span class="c1">//遍历每个服务器</span>
+</span><span class='line'>        <span class="n">String</span> <span class="n">sockStr</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>  <span class="c1">//根据服务器地址得到的字符串,用于hash</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="k">this</span><span class="o">.</span><span class="na">cwNginxUpstreamConsistent</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="o">...</span> <span class="c1">//生成sockStr</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>            <span class="o">...</span> <span class="c1">//生成sockStr</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="cm">/**</span>
+</span><span class='line'><span class="cm">         * Duplicate 160 X weight references</span>
+</span><span class='line'><span class="cm">         */</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">numReps</span> <span class="o">=</span> <span class="n">NUM_REPS</span><span class="o">;</span> <span class="c1">//虚拟节点数目, 默认160</span>
+</span><span class='line'>        <span class="c1">//考虑权重,权重小的服务器最终生成的虚拟节点就少,数据打到这个服务器的概率就小</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">session</span> <span class="k">instanceof</span> <span class="n">MemcachedTCPSession</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">numReps</span> <span class="o">*=</span> <span class="o">((</span><span class="n">MemcachedSession</span><span class="o">)</span> <span class="n">session</span><span class="o">).</span><span class="na">getWeight</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">alg</span> <span class="o">==</span> <span class="n">HashAlgorithm</span><span class="o">.</span><span class="na">KETAMA_HASH</span><span class="o">)</span> <span class="o">{</span>     <span class="c1">//一致性Hash</span>
+</span><span class='line'>            <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">numReps</span> <span class="o">/</span> <span class="mi">4</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="c1">//计算Hash值,将虚拟节点映射到当前session代表的服务器</span>
+</span><span class='line'>                <span class="kt">byte</span><span class="o">[]</span> <span class="n">digest</span> <span class="o">=</span> <span class="n">HashAlgorithm</span><span class="o">.</span><span class="na">computeMd5</span><span class="o">(</span><span class="n">sockStr</span> <span class="o">+</span> <span class="s">&quot;-&quot;</span> <span class="o">+</span> <span class="n">i</span><span class="o">);</span>
+</span><span class='line'>                <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">h</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">h</span> <span class="o">&lt;</span> <span class="mi">4</span><span class="o">;</span> <span class="n">h</span><span class="o">++)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="kt">long</span> <span class="n">k</span> <span class="o">=</span> <span class="o">(</span><span class="kt">long</span><span class="o">)</span> <span class="o">(</span><span class="n">digest</span><span class="o">[</span><span class="mi">3</span> <span class="o">+</span> <span class="n">h</span> <span class="o">*</span> <span class="mi">4</span><span class="o">]</span> <span class="o">&amp;</span> <span class="mh">0xFF</span><span class="o">)</span> <span class="o">&lt;&lt;</span> <span class="mi">24</span> <span class="o">|</span> <span class="o">(</span><span class="kt">long</span><span class="o">)</span> <span class="o">(</span><span class="n">digest</span><span class="o">[</span><span class="mi">2</span> <span class="o">+</span> <span class="n">h</span> <span class="o">*</span> <span class="mi">4</span><span class="o">]</span> <span class="o">&amp;</span> <span class="mh">0xFF</span><span class="o">)</span> <span class="o">&lt;&lt;</span> <span class="mi">16</span>
+</span><span class='line'>                            <span class="o">|</span> <span class="o">(</span><span class="kt">long</span><span class="o">)</span> <span class="o">(</span><span class="n">digest</span><span class="o">[</span><span class="mi">1</span> <span class="o">+</span> <span class="n">h</span> <span class="o">*</span> <span class="mi">4</span><span class="o">]</span> <span class="o">&amp;</span> <span class="mh">0xFF</span><span class="o">)</span> <span class="o">&lt;&lt;</span> <span class="mi">8</span> <span class="o">|</span> <span class="n">digest</span><span class="o">[</span><span class="n">h</span> <span class="o">*</span> <span class="mi">4</span><span class="o">]</span> <span class="o">&amp;</span> <span class="mh">0xFF</span><span class="o">;</span>
+</span><span class='line'>                    <span class="k">this</span><span class="o">.</span><span class="na">getSessionList</span><span class="o">(</span><span class="n">sessionMap</span><span class="o">,</span> <span class="n">k</span><span class="o">).</span><span class="na">add</span><span class="o">(</span><span class="n">session</span><span class="o">);</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>            <span class="o">...</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="k">this</span><span class="o">.</span><span class="na">ketamaSessions</span> <span class="o">=</span> <span class="n">sessionMap</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">this</span><span class="o">.</span><span class="na">maxTries</span> <span class="o">=</span> <span class="n">list</span><span class="o">.</span><span class="na">size</span><span class="o">();</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">private</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">Session</span><span class="o">&gt;</span> <span class="nf">getSessionList</span><span class="o">(</span><span class="n">TreeMap</span><span class="o">&lt;</span><span class="n">Long</span><span class="o">,</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">Session</span><span class="o">&gt;&gt;</span> <span class="n">sessionMap</span><span class="o">,</span> <span class="kt">long</span> <span class="n">k</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">List</span><span class="o">&lt;</span><span class="n">Session</span><span class="o">&gt;</span> <span class="n">sessionList</span> <span class="o">=</span> <span class="n">sessionMap</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">k</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">sessionList</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">sessionList</span> <span class="o">=</span> <span class="k">new</span> <span class="n">ArrayList</span><span class="o">&lt;</span><span class="n">Session</span><span class="o">&gt;();</span>
+</span><span class='line'>        <span class="n">sessionMap</span><span class="o">.</span><span class="na">put</span><span class="o">(</span><span class="n">k</span><span class="o">,</span> <span class="n">sessionList</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="k">return</span> <span class="n">sessionList</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>buildMap的结果就是在0-2<sup>32</sup>这个圈上生成一些列的虚拟节点,每个虚拟节点都指向一个真实服务器.</p>
+
+<p>例如本机只开一个服务器情况下,没有设置权重,会生成160个虚拟节点,每个虚拟节点都指向中一台服务器:</p>
+
+<p><img src="/images/xmemcached/xmemcached-ketama-buildmap.png">
+<strong>4.4.2 对Key做Hash</strong></p>
+
+<p>做get或者set的时候,首先都会通过key找到服务器:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">Session</span> <span class="nf">getSessionByKey</span><span class="o">(</span><span class="kd">final</span> <span class="n">String</span> <span class="n">key</span><span class="o">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其实现代码如下:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="c1">//通过key找真实到服务器</span>
+</span><span class='line'><span class="kd">public</span> <span class="kd">final</span> <span class="n">Session</span> <span class="nf">getSessionByKey</span><span class="o">(</span><span class="kd">final</span> <span class="n">String</span> <span class="n">key</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="k">this</span><span class="o">.</span><span class="na">ketamaSessions</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="k">this</span><span class="o">.</span><span class="na">ketamaSessions</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="kt">long</span> <span class="n">hash</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">hashAlg</span><span class="o">.</span><span class="na">hash</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>         <span class="c1">//计算key的Hash值</span>
+</span><span class='line'>    <span class="n">Session</span> <span class="n">rv</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">getSessionByHash</span><span class="o">(</span><span class="n">hash</span><span class="o">);</span>   <span class="c1">//通过Hash值找服务器</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">tries</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">while</span> <span class="o">(!</span><span class="k">this</span><span class="o">.</span><span class="na">failureMode</span> <span class="o">&amp;&amp;</span> <span class="o">(</span><span class="n">rv</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">rv</span><span class="o">.</span><span class="na">isClosed</span><span class="o">())</span>
+</span><span class='line'>            <span class="o">&amp;&amp;</span> <span class="n">tries</span><span class="o">++</span> <span class="o">&lt;</span> <span class="k">this</span><span class="o">.</span><span class="na">maxTries</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">hash</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">nextHash</span><span class="o">(</span><span class="n">hash</span><span class="o">,</span> <span class="n">key</span><span class="o">,</span> <span class="n">tries</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">rv</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">getSessionByHash</span><span class="o">(</span><span class="n">hash</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="k">return</span> <span class="n">rv</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">public</span> <span class="kd">final</span> <span class="n">Session</span> <span class="nf">getSessionByHash</span><span class="o">(</span><span class="kd">final</span> <span class="kt">long</span> <span class="n">hash</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">TreeMap</span><span class="o">&lt;</span><span class="n">Long</span><span class="o">,</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">Session</span><span class="o">&gt;&gt;</span> <span class="n">sessionMap</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">ketamaSessions</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">sessionMap</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="n">Long</span> <span class="n">resultHash</span> <span class="o">=</span> <span class="n">hash</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(!</span><span class="n">sessionMap</span><span class="o">.</span><span class="na">containsKey</span><span class="o">(</span><span class="n">hash</span><span class="o">))</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">//下面的逻辑是找到大于hash值的第一个虚拟节点(即ceiling)</span>
+</span><span class='line'>        <span class="c1">//Java 1.6使用ceilingKey可以实现,为兼容jdk5,使用tailMap,tailMap为所有大于hash值的虚拟节点</span>
+</span><span class='line'>        <span class="n">SortedMap</span><span class="o">&lt;</span><span class="n">Long</span><span class="o">,</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">Session</span><span class="o">&gt;&gt;</span> <span class="n">tailMap</span> <span class="o">=</span> <span class="n">sessionMap</span><span class="o">.</span><span class="na">tailMap</span><span class="o">(</span><span class="n">hash</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">tailMap</span><span class="o">.</span><span class="na">isEmpty</span><span class="o">())</span> <span class="o">{</span><span class="c1">//没有比hash值大的节点,则取第一个虚拟节点</span>
+</span><span class='line'>            <span class="n">resultHash</span> <span class="o">=</span> <span class="n">sessionMap</span><span class="o">.</span><span class="na">firstKey</span><span class="o">();</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">resultHash</span> <span class="o">=</span> <span class="n">tailMap</span><span class="o">.</span><span class="na">firstKey</span><span class="o">();</span><span class="c1">//取tailMap第一个,即最大于hash值最小节点</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">List</span><span class="o">&lt;</span><span class="n">Session</span><span class="o">&gt;</span> <span class="n">sessionList</span> <span class="o">=</span> <span class="n">sessionMap</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">resultHash</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">sessionList</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">sessionList</span><span class="o">.</span><span class="na">size</span><span class="o">()</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">size</span> <span class="o">=</span> <span class="n">sessionList</span><span class="o">.</span><span class="na">size</span><span class="o">();</span>
+</span><span class='line'>    <span class="k">return</span> <span class="n">sessionList</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="k">this</span><span class="o">.</span><span class="na">random</span><span class="o">.</span><span class="na">nextInt</span><span class="o">(</span><span class="n">size</span><span class="o">));</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这里调试时候key是'a',其Hash值是3111502092:</p>
+
+<p><img src="/images/xmemcached/xmemcached-ketama-key.png">
+getSessionByHash的逻辑其实就是在Hash环上找第一个大于key对应hash值的虚拟节点,通过虚拟节点找到真实服务器.</p>
+
+<p>这里的tailMap即为大于3111502092的虚拟节点,如下:</p>
+
+<p><img src="/images/xmemcached/xmemcached-ketama-tailMap.png"></p>
+
+<p>因此我们要找的虚拟节点就是3164521287对应的虚拟节点,其服务器指向的是127.0.0.1:11211.因此当前key(这里为'a')的请求被打到这台服务器上.</p>
+
+<h3>4.5 使用XMemcached的一致性哈希</h3>
+
+<p>默认情况下XMemcached使用的是余数哈希,如下使用一致性哈希:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">MemcachedClientBuilder</span> <span class="n">builder</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">XMemcachedClientBuilder</span><span class="o">(</span><span class="n">AddrUtil</span><span class="o">.</span><span class="na">getAddresses</span><span class="o">(</span><span class="n">servers</span><span class="o">));</span>
+</span><span class='line'><span class="c1">// 设置使用一致性hash</span>
+</span><span class='line'><span class="n">builder</span><span class="o">.</span><span class="na">setSessionLocator</span><span class="o">(</span><span class="k">new</span> <span class="nf">KetamaMemcachedSessionLocator</span><span class="o">());</span>
+</span><span class='line'><span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="na">build</span><span class="o">();</span>
+</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -3053,376 +3727,6 @@ Fieldref, Methodref, InterfaceMethodrefA  点号分割的一对值,每个值指�
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/09/04/linux-memory-usage/">Linux Memory Usage</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-09-04T23:37:01+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>4</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>11:37 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h1>1.问题</h1>
-
-<p>这段时间最易个图片迁移的工作，涉及60W+图片的迁移，用java写的临时代码，部署到图片服务器上。因为服务器还有其他服务，看日志的同时，也再看迁移的应用对服务器CPU和内存使用的影响。使用top命令猛然发现Mem的used狂涨而free狂降，下面是两个时刻的top情况：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>top - 15:41:56 up 176 days, 19:46,  2 users,  load average: 0.34, 0.32, 0.28
-</span><span class='line'>Tasks: 521 total,   1 running, 520 sleeping,   0 stopped,   0 zombie
-</span><span class='line'>Cpu(s):  0.1%us,  0.1%sy,  0.0%ni, 98.6%id,  1.2%wa,  0.0%hi,  0.0%si,  0.0%st
-</span><span class='line'>Mem:  66057208k total, 57548808k used,  8508400k free,  1154764k buffers
-</span><span class='line'>Swap: 50331640k total,        0k used, 50331640k free, 47054444k cached
-</span><span class='line'>
-</span><span class='line'>top - 15:43:45 up 176 days, 19:48,  2 users,  load average: 0.25, 0.30, 0.27
-</span><span class='line'>Tasks: 521 total,   1 running, 520 sleeping,   0 stopped,   0 zombie
-</span><span class='line'>Cpu(s):  0.2%us,  0.0%sy,  0.0%ni, 99.7%id,  0.0%wa,  0.0%hi,  0.0%si,  0.0%st
-</span><span class='line'>Mem:  66057208k total, 57941160k used,  8116048k free,  1154764k buffers
-</span><span class='line'>Swap: 50331640k total,        0k used, 50331640k free, 47448656k cached</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.疑惑</h1>
-
-<p>第一想法是内存泄漏了，之前写惯C++代码Windows下碰到过一次明显的内存泄漏，情况和这个完全类似。</p>
-
-<p>但是这个是java代码，java想写出内存泄漏的代码不容易。</p>
-
-<h1>3.原因</h1>
-
-<p>问了个老鸟，原因是Linux的内存管理和Windows不一样。在Linux下，无论物理内存有多大都将其充份利用，会将应用程序调用过的硬盘数据保留在内存，利用内存读写的高速特性来提高Linux系统的数据访问性能。</p>
-
-<h3>3.1 linux中内存是如何使用</h3>
-
-<p>当有应用需要读写磁盘数据时，由系统把相关数据从磁盘读取到内存，如果物理内存不够，则把内存中的部分数据导入到磁盘，从而把磁盘的部分空间当作虚拟内存来使用，也称为Swap。如果给所有应用分配足够内存后，物理内存还有剩余，linux会尽量再利用这些空闲内存，以提高整体I/O效率，其方法是把这部分剩余内存再划分为cache及buffer两部分加以利用。</p>
-
-<p>从磁盘读取到内存的数据在被相关应用程序读取后，如果有剩余内存，则这部分数据会存入cache，以备第2次读取时，避免重新读取磁盘。当一个应用程序在内存中修改过数据后，因为写入磁盘速度相对较低，在有空闲内存的情况下，这些数据先存入buffer，在以后某个时间再写入磁盘，从而应用程序可以继续后面的操作，而不必等待这些数据写入磁盘的操作完成。</p>
-
-<p>如果在某个时刻，系统需要更多的内存，则会把cache部分擦除，并把buffer中的内容写入磁盘，从而把这两部分内存释放给系统使用，这样再次读取cache中的内容时，就需要重新从磁盘读取了。</p>
-
-<p>通过以上分析可以得知，Mem中的空闲物理内存（free）不多，不一定表示系统运行状态很差，因为内存的cache及buffer部分可以随时被重用，在某种意义上，这两部分内存也可以看作是额外的空闲内存。</p>
-
-<h1>4.Linux和Windows内存管理的差异</h1>
-
-<p>无论物理内存有多大，Linux都将其充份利用，将一些程序调用过的硬盘数据读入内存，利用内存读写的高速特性来提高Linux系统的数据访问性能。</p>
-
-<p>而Windows 是只在需要内存时，才为应用程序分配内存，并不能充分利用大容量的内存空间。</p>
-
-<p>换句话说，每增加一些物理内存，Linux 都将能充分利用起来，发挥了硬件投资带来的好处，而Windows只将其做为摆设，即使增加8GB甚至更大。</p>
-
-<h1>5.什么是Linux的cache，buffers，Swap</h1>
-
-<p>Cached表示page cache大小，Buffers表示内存中块I/O缓冲(buffer cache)的大小。通常而言，Cached很关键，Buffers则影响不大。</p>
-
-<p>简单来说，磁盘的操作有逻辑级（文件系统）和物理级（磁盘块），page cache对应的就是用来缓存逻辑级数据，buffer cache用来缓存物理级数据。</p>
-
-<p>假设我们通过文件系统操作文件，那么文件将被缓存到Page Cache，如果需要刷新文件的时候，page cache将交给buffer cache去完成，因为buffer cache就是缓存磁盘块的。
-也就是说，直接去操作文件，那就是page cache区缓存，用dd等命令直接操作磁盘块，就是buffer cache缓存的东西。</p>
-
-<h3>5.1 buffer</h3>
-
-<p>buffer是作为buffer cache的内存，是块设备的读写缓冲区。</p>
-
-<p>buffer cache也叫块缓冲，由物理内存分配，是对物理磁盘上的一个磁盘块（磁盘的组织单位）进行的缓冲。</p>
-
-<p>设立buffer cache的目的是为在程序多次访问同一磁盘块时，减少访问时间。系统将磁盘块首先读入buffer cache，如果cache空间不够时，会通过一定的策略将一些过时或多次未被访问的buffer cache清空。程序在下一次访问磁盘时首先查看是否在buffer cache找到所需块，命中可减少访问磁盘时间,不命中时需重新读入buffer cache。</p>
-
-<p>对buffer cache 的写分为两种，一是直接写，这是程序在写buffer cache后也写磁盘，要读时从buffer cache 上读，二是后台写，程序在写完buffer cache 后并不立即写磁盘，因为有可能程序在很短时间内又需要写文件，如果直接写，就需多次写磁盘了,这样效率很低，而是过一段时间后由后台写(批量写)，减少了多次访磁盘的时间。</p>
-
-<p>buffer cache 是由物理内存分配，linux系统为提高内存使用率，会将空闲内存全分给buffer cache ，当其他程序需要更多内存时，系统会减少cahce大小。</p>
-
-<h3>5.2 cache</h3>
-
-<p>cache是page cache的内存, 文件系统的cache。</p>
-
-<p>page cache也叫页缓冲或文件缓冲，文件读取是由外存上不连续的几个磁盘块，到buffer cache，然后组成page cache，然后供给应用程序。</p>
-
-<p>page cache在linux读写文件时，它用于缓存文件的逻辑内容，从而加快对磁盘上映像和数据的访问。具体说是加速对文件内容的访问，buffer cache缓存文件的具体内容——物理磁盘上的磁盘块，这是加速对磁盘的访问。</p>
-
-<h3>5.3 Swap</h3>
-
-<p>swap space交换空间，是虚拟内存的表现形式。系统为了应付一些需要大量内存的应用，而将磁盘上的空间做内存使用，当物理内存不够用时，将其中一些暂时不需的数据交换到交换空间。</p>
-
-<p>做虚拟内存的好处是让进程以为好像可以访问整个系统物理内存。因为在一个进程访问数据时，其他进程的数据会被交换到交换空间中。</p>
-
-<h1>6.Linux内存常用命令</h1>
-
-<h3>6.1 top</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>top - 16:13:52 up 1 day,  6:01, 16 users,  load average: 2.89, 2.27, 2.14
-</span><span class='line'>Tasks: 274 total,   7 running, 266 sleeping,   0 stopped,   1 zombie
-</span><span class='line'>%Cpu(s): 44.3 us, 16.6 sy,  0.0 ni, 38.4 id,  0.6 wa,  0.0 hi,  0.1 si,  0.0 st
-</span><span class='line'>KiB Mem:   8047584 total,  7905356 used,   142228 free,    73476 buffers
-</span><span class='line'>KiB Swap: 15879164 total,    26872 used, 15852292 free,  1962736 cached
-</span><span class='line'>
-</span><span class='line'>PID USER      PR  NI  VIRT  RES  SHR S  %CPU %MEM    TIME+  COMMAND
-</span><span class='line'>29121 xiaobaoq  20   0 3938m 2.1g 2.1g S  34.2 27.7 119:28.33 VirtualBox
-</span><span class='line'>2548 xiaobaoq  20   0 1371m  79m  19m R  31.2  1.0 131:40.03 compiz</span></code></pre></td></tr></table></div></figure>
-
-
-<p>字段的意义如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>PID：进程的ID
-</span><span class='line'>　　USER：进程所有者
-</span><span class='line'>　　PR：进程的优先级别，越小越优先被执行
-</span><span class='line'>　　NInice：值
-</span><span class='line'>　　VIRT：进程占用的虚拟内存
-</span><span class='line'>　　RES：进程占用的物理内存
-</span><span class='line'>　　SHR：进程使用的共享内存
-</span><span class='line'>　　S：进程的状态。S表示休眠，R表示正在运行，Z表示僵死状态，N表示该进程优先值为负数
-</span><span class='line'>　　%CPU：进程占用CPU的使用率
-</span><span class='line'>　　%MEM：进程使用的物理内存和总内存的百分比
-</span><span class='line'>　　TIME+：该进程启动后占用的总的CPU时间，即占用CPU使用时间的累加值。
-</span><span class='line'>　　COMMAND：进程启动命令名称</span></code></pre></td></tr></table></div></figure>
-
-
-<p>top命令提供了额外的输入，常用的命令包括（注意是大写）：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>　　P：按%CPU使用率排行
-</span><span class='line'>　　T：按MITE+排行
-</span><span class='line'>　　M：按%MEM排行</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>6.2 free</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ free -m
-</span><span class='line'>             total       used       free     shared    buffers     cached
-</span><span class='line'>Mem:          7858       7687        171          0         71       1889
-</span><span class='line'>-/+ buffers/cache:       5726       2132
-</span><span class='line'>Swap:        15506         26      15480</span></code></pre></td></tr></table></div></figure>
-
-
-<p>-m表示单位为M，可以使用-g表示单位为G，默认为K。
--/+ buffers/cache表示物理内存的缓存统计，Used为4506，即实际使用的buffers与cache 总量，也是实际使用的内存总量;Free为3352, 即未被使用的buffers与cache和未被分配的内存之和，这就是系统当前实际可用内存。</p>
-
-<p>Swap表示硬盘上交换分区的使用情况。只有mem被当前进程实际占用完,即没有了buffers和cache时，才会使用到swap。</p>
-
-<p>注意一下几个关系：
-Free（-/+ buffers/cache行）= Free(Mem)+buffers(Mem)+Cached(Mem)</p>
-
-<p>Used(Mem) = Used(-/+ buffers/cache)+ buffers(Mem) + Cached(Mem)</p>
-
-<p>total（Mem） = used(-/+ buffers/cache) + free(-/+ buffers/cache)</p>
-
-<p>从应用程序角度来看，对于应用程序来说，buffers/cached 是等于可用的，因为buffer/cached是为了提高文件读取的性能，当应用程序需在用到内存的时候，buffer/cached会很快地被回收。所以从应用程序的角度来说，可用内存=系统free memory+buffers+cached.</p>
-
-<h3>6.3 /proc/meminfo</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ cat /proc/meminfo
-</span><span class='line'>MemTotal:        8047584 kB
-</span><span class='line'>MemFree:          162416 kB
-</span><span class='line'>Buffers:           73772 kB
-</span><span class='line'>Cached:          1943380 kB
-</span><span class='line'>SwapCached:         3860 kB
-</span><span class='line'>Active:          3636032 kB
-</span><span class='line'>Inactive:        1608472 kB
-</span><span class='line'>Active(anon):    3092468 kB
-</span><span class='line'>Inactive(anon):  1121848 kB
-</span><span class='line'>Active(file):     543564 kB
-</span><span class='line'>Inactive(file):   486624 kB
-</span><span class='line'>Unevictable:          48 kB
-</span><span class='line'>Mlocked:              48 kB
-</span><span class='line'>SwapTotal:      15879164 kB
-</span><span class='line'>SwapFree:       15852292 kB
-</span><span class='line'>Dirty:               664 kB
-</span><span class='line'>Writeback:             0 kB
-</span><span class='line'>AnonPages:       3223572 kB
-</span><span class='line'>Mapped:          2597276 kB
-</span><span class='line'>Shmem:            986964 kB
-</span><span class='line'>Slab:             311976 kB
-</span><span class='line'>SReclaimable:     247580 kB
-</span><span class='line'>SUnreclaim:        64396 kB
-</span><span class='line'>KernelStack:        6808 kB
-</span><span class='line'>PageTables:        61012 kB
-</span><span class='line'>NFS_Unstable:          0 kB
-</span><span class='line'>Bounce:                0 kB
-</span><span class='line'>WritebackTmp:          0 kB
-</span><span class='line'>CommitLimit:    19902956 kB
-</span><span class='line'>Committed_AS:   11365592 kB
-</span><span class='line'>VmallocTotal:   34359738367 kB
-</span><span class='line'>VmallocUsed:      360776 kB
-</span><span class='line'>VmallocChunk:   34359367876 kB
-</span><span class='line'>HardwareCorrupted:     0 kB
-</span><span class='line'>AnonHugePages:         0 kB
-</span><span class='line'>HugePages_Total:       0
-</span><span class='line'>HugePages_Free:        0
-</span><span class='line'>HugePages_Rsvd:        0
-</span><span class='line'>HugePages_Surp:        0
-</span><span class='line'>Hugepagesize:       2048 kB
-</span><span class='line'>DirectMap4k:       71156 kB
-</span><span class='line'>DirectMap2M:     8187904 kB</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其中的MemTotal, MemFree, Buffers, Cached, SwapTotal, SwapFree和free命令中的值对应起来。</p>
-
-<p>Cached is the size of the page cache。
-Buffers is the size of in-memory block I/O buffer。</p>
-
-<h3>6.4 vmstat</h3>
-
-<p>vmstat -s显示内存使用的统计信息</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ vmstat -s
-</span><span class='line'>      8047584 K total memory
-</span><span class='line'>      7841504 K used memory
-</span><span class='line'>      3624652 K active memory
-</span><span class='line'>      1584740 K inactive memory
-</span><span class='line'>       206080 K free memory
-</span><span class='line'>        69252 K buffer memory
-</span><span class='line'>      1890844 K swap cache
-</span><span class='line'>     15879164 K total swap
-</span><span class='line'>        39488 K used swap
-</span><span class='line'>     15839676 K free swap
-</span><span class='line'>      8744974 non-nice user cpu ticks
-</span><span class='line'>          345 nice user cpu ticks
-</span><span class='line'>      4309209 system cpu ticks
-</span><span class='line'>     29496503 idle cpu ticks
-</span><span class='line'>       240289 IO-wait cpu ticks
-</span><span class='line'>           19 IRQ cpu ticks
-</span><span class='line'>        14705 softirq cpu ticks
-</span><span class='line'>            0 stolen cpu ticks
-</span><span class='line'>      7878551 pages paged in
-</span><span class='line'>     18640168 pages paged out
-</span><span class='line'>          976 pages swapped in
-</span><span class='line'>         9899 pages swapped out
-</span><span class='line'>    664925325 interrupts
-</span><span class='line'>   1290574510 CPU context switches
-</span><span class='line'>   1409739162 boot time
-</span><span class='line'>        36758 forks</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>参考</h1>
-
-<ol>
-<li><a href="http://www.linuxintheshell.org/2012/06/05/episode-008-free-understanding-linux-memory-usage/">http://www.linuxintheshell.org/2012/06/05/episode-008-free-understanding-linux-memory-usage/</a></li>
-</ol>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/19">&larr; Older</a>
@@ -3440,6 +3744,10 @@ Buffers is the size of in-memory block I/O buffer。</p>
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/">Spring上传组件冲突</a>
@@ -3477,10 +3785,6 @@ Buffers is the size of in-memory block I/O buffer。</p>
         <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -3511,7 +3815,7 @@ Buffers is the size of in-memory block I/O buffer。</p>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (5)</a></li>
  
   </div>
 </section>

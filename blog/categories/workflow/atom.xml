@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Workflow | xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/blog/categories/workflow/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2017-02-03T10:48:47+08:00</updated>
+  <updated>2017-02-03T11:44:08+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,136 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Activiti自动流转任务]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/"/>
+    <updated>2017-02-03T10:53:39+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.%E8%87%AA%E5%8A%A8%E6%B5%81%E8%BD%AC%E4%BB%BB%E5%8A%A1">1.自动流转任务</a></li>
+<li><a href="#2.%E5%AE%9E%E7%8E%B0">2.实现</a></li>
+</ul>
+
+
+<h2 id="1.自动流转任务">1.自动流转任务</h2>
+
+
+<p>用户任务是审核流程中最重要的节点, 在流程设计中通常会遇到需要自动流转的需求, 比如请假半天的自动通过.</p>
+
+<h2 id="2.实现">1.实现</h2>
+
+
+<p>下面是我能想到的几种实现自动流转任务方式.</p>
+
+<h4 id="2.1 ServiceTask">2.1 ServiceTask</h4>
+
+
+<p>Activiti的设计者已经考虑到我们这个需求,因此在引入了 ServiceTask 这中类型的任务.参考 Activiti 的文档: <a href="https://www.activiti.org/userguide/index.html#bpmnJavaServiceTask">https://www.activiti.org/userguide/index.html#bpmnJavaServiceTask</a>
+ServiceTask的目的是调用我们自定义的一个Java类:</p>
+
+<pre><code>A Java service task is used to invoke an external Java class.
+</code></pre>
+
+<p>ServiceTask 的使用方式也有几种:</p>
+
+<pre><code>1. 自定义类实现 JavaDelegate 或者 ActivityBehavior 接口;
+2. 设计流程的时候, 显示的告诉 Activiti 引擎需要调用的 Bean;
+3. 调用一个方法表达式;
+4. 调用一个求值表达式;
+</code></pre>
+
+<p>下面审核一个示例的自定义ServiceTask调研逻辑
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import org.activiti.engine.delegate.DelegateExecution;
+</span><span class='line'>import org.activiti.engine.delegate.JavaDelegate;
+</span><span class='line'>import org.springframework.stereotype.Service;&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;/&lt;em&gt;*
+</span><span class='line'> * 自动完成的任务(ServiceTask)
+</span><span class='line'> *
+</span><span class='line'> * @author xiaobaoqiu  Date: 16-12-23 Time: 下午3:46
+</span><span class='line'> &lt;/em&gt;/
+</span><span class='line'>@Service
+</span><span class='line'>public class AutoCompleteTaskService implements JavaDelegate {&lt;/p&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;pre&gt;&lt;code&gt;@Override
+</span><span class='line'>public void execute(DelegateExecution execution) throws Exception {
+</span><span class='line'>
+</span><span class='line'>}
+</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
+
+<p>回到我们的需求上, 要实现我们需要的自动流转任务, 我们可以使用 ServiceTask, 以上面定义的 AutoCompleteTaskService 为例子:</p>
+
+<pre><code># 方式1
+&lt;serviceTask id="javaService"
+             name="My Java Service Task"
+             activiti:class="org.xxx.AutoCompleteTaskService" /&gt;
+
+# 方式2
+&lt;bean id="delegateExpressionBean" class="org.xxx.AutoCompleteTaskService" /&gt;
+&lt;serviceTask id="serviceTask" activiti:delegateExpression="${delegateExpressionBean}" /&gt;
+</code></pre>
+
+<p>但是这种实现方式的一个致命的问题在于:流程设计的时候你需要知道你要调用的Java逻辑的类路径或者Bean的名称.</p>
+
+<p>为什么说是致命的呢,因为这个的实现方式就没办法将流程设计交付给开发人员以外的其他人员了(他们不可能知道类路径或者bean名称这种信息).</p>
+
+<p>下面我使用普通的 UserTask 来实现我们的需求.</p>
+
+<h4 id="2.2 主动触发UserTask">2.2 主动触发UserTask, </h4>
+
+
+<p>我们将自动流转任务也设计成UserTask, 由业务自己主动触发.</p>
+
+<p>比如请假半天的自动通过的例子, 业务可以在提交请假的时候判断, 让这个任务自动完成.</p>
+
+<p>这种实现的问题在于: 业务逻辑实现起来太麻烦, 很容易出Bug(比如自动通过失败,可能会导致提交这个操作失败).</p>
+
+<h4 id="2.3 异步触发UserTask">2.3 异步触发UserTask</h4>
+
+
+<p>在上一个方法的基础上, 我们可以将自动生效的逻辑放到异步任务里面,可以避免将原始业务逻辑复杂化.</p>
+
+<p>但是我们需要筛选出哪些 UserTask 可以自动完成,因此我的方案就是给这些任务制定特定的任务类型.关于任务类型, 可以参考我前面的博文: <a href="http://xiaobaoqiu.github.io/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing/">http://xiaobaoqiu.github.io/blog/2016/12/29/activitiren-wu-zeng-jia-shu-xing/</a></p>
+
+<p>有了任务类型之后, 我们就可以将哪些任务需要自动流转配置起来.</p>
+
+<p>这个方案的问题在于(绝大部分情况下不是问题): 这里实现的自动生效的不是实时的(即使我们的异步任务足够频繁).</p>
+
+<h4 id="2.4 对比选择">2.4 对比选择</h4>
+
+
+<p>下面是几种实现方式的对比:
+ | ServiceTask | 主动触发UserTask | 异步触发UserTask |
+:&mdash;&mdash;&mdash;-:|:&mdash;&mdash;&mdash;-:|:&mdash;&mdash;&mdash;&mdash;|:&mdash;&mdash;&mdash;-
+设计成本 | 需要知道具体的执行类或者Bean |  | |
+触发成本 |  | 需要业务主动触发 | |
+配置成本 |  |  | 需要配置：任务类型 - 是否自动完成任务 |</p>
+
+<p>倾向于使用 异步触发UserTask 这个方案, 成本和问题都比较小.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Activiti事件处理]]></title>

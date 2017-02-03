@@ -9,10 +9,12 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.代理 1.1 代理模式
-1.2 Java动态代理
-1.3 CGLib动态代理
-1.4 Java动态代理 VS CGLib动态代理 最近再项目中发现不少同事(包括自己)不太理解默认情况下的Spring事务的运行机制(主要是不理解AOP机制),导致随意使用事务注解.因此也在很多场景事务不生效。 &hellip;">
+  <meta name="description" content="1.工作流的基本知识 1.1 背景
+1.2 工作流使用场景
+1.3 BPMN基本元素 2.常见的工作流引擎 2.1 jBPM
+2.2 Activiti
+2.3 FixFlow
+2.4 如何选择 3.Activiti 3.1 如何使用 4.业务如何使用工作流 最近在项目中涉及到工作流的知识, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -78,6 +80,425 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-04-06T10:09:38+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>6</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>10:09 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%9A%84%E5%9F%BA%E6%9C%AC%E7%9F%A5%E8%AF%86">1.工作流的基本知识</a>
+
+<ul>
+<li><a href="#1.1%20%E8%83%8C%E6%99%AF">1.1 背景</a></li>
+<li><a href="#1.2%20%E5%B7%A5%E4%BD%9C%E6%B5%81%E4%BD%BF%E7%94%A8%E5%9C%BA%E6%99%AF">1.2 工作流使用场景</a></li>
+<li><a href="#1.3%20BPMN%E5%9F%BA%E6%9C%AC%E5%85%83%E7%B4%A0">1.3 BPMN基本元素</a></li>
+</ul>
+</li>
+<li><a href="#2.%E5%B8%B8%E8%A7%81%E7%9A%84%E5%B7%A5%E4%BD%9C%E6%B5%81%E5%BC%95%E6%93%8E">2.常见的工作流引擎</a>
+
+<ul>
+<li><a href="#2.1%20jBPM">2.1 jBPM</a></li>
+<li><a href="#2.2%20Activiti">2.2 Activiti</a></li>
+<li><a href="#2.3%20FixFlow">2.3 FixFlow</a></li>
+<li><a href="#2.4%20%E5%A6%82%E4%BD%95%E9%80%89%E6%8B%A9">2.4 如何选择</a></li>
+</ul>
+</li>
+<li><a href="#3.Activiti">3.Activiti</a>
+
+<ul>
+<li><a href="#3.1%20%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8">3.1 如何使用</a></li>
+</ul>
+</li>
+<li><a href="#4.%E4%B8%9A%E5%8A%A1%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E5%B7%A5%E4%BD%9C%E6%B5%81">4.业务如何使用工作流</a></li>
+</ul>
+
+
+<p>最近在项目中涉及到工作流的知识,需要调研各个工作流引擎,顺道总结.</p>
+
+<p>如何做流程服务,通常而言两种选择(在我的认知范围内的):</p>
+
+<pre><code>1.状态机
+2.工作流
+</code></pre>
+
+<p>状态机通常意味着需要和业务状态绑定在一起,因此无法做到业务和流程分离,通常的后果就是业务和流程紧耦合.</p>
+
+<p>因此,当我们的多个业务系统涉及到流程时候,可以考虑工作流.</p>
+
+<h2 id="1.工作流的基本知识">1.工作流的基本知识</h2>
+
+
+<h4 id="1.1 背景">1.1 背景</h4>
+
+
+<p>先介绍几个术语:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1.BPM
+</span><span class='line'>业务流程管理(Business Process Management),基本内容是管理既定工作的流程,通过服务编排,统一调控各个业务流程,以确保工作在正确的时间被正确的人执行,达到优化整体业务过程的目的.
+</span><span class='line'>BPM概念的贯彻执行,需要有标准化的流程定义语言来支撑,使用统一的语言遵循一致的标准描述具体业务过程,这些流程定义描述由专有引擎去驱动执行,这个引擎就是工作流引擎.
+</span><span class='line'>
+</span><span class='line'>2.Workflow
+</span><span class='line'>全部或者部分由计算机支持或自动处理的业务过程
+</span><span class='line'>
+</span><span class='line'>3.WfMC
+</span><span class='line'>工作流管理联盟
+</span><span class='line'>
+</span><span class='line'>4.BPMN
+</span><span class='line'>业务流程建模与标注(Business Process Modeling Notation),又叫业务流程建模符号.可以理解为工作流的建模语言.2004年5月发布了BPMN1.0规范.2011年BPMN2.0新规范的发布为各工作流产品互容互通提供了统一的标准,结束了各工作流厂商各自为政相互抵斥的局面.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>参考:
+<a href="http://www.infoq.com/cn/articles/bpmn2-activiti5">BPMN2新规范与Activiti5</a>
+<a href="http://www.omg.org/spec/BPMN/2.0/">BPMN2.0规范</a></p>
+
+<h4 id="1.2 工作流使用场景">1.2 工作流使用场景</h4>
+
+
+<p>具体什么场景下适合使用工作流,参考前任的总结:</p>
+
+<p><a href="http://stackoverflow.com/questions/104099/when-to-use-windows-workflow-foundation">when-to-use-windows-workflow-foundation</a></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>You may need WF only if any of the following are true:
+</span><span class='line'>
+</span><span class='line'>1.You have a long-running process.
+</span><span class='line'>2.You have a process that changes frequently.
+</span><span class='line'>3.You want a visual model of the process</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我理解,注意这里的第三点说的流程可视化的目的并不是为了展示,而是说工作流提供了一种给非开发人员(如运营人员)在线修改流程并且流程实时生效的途径(当然,需要业务支持).</p>
+
+<p><a href="http://programmers.stackexchange.com/questions/103972/when-to-use-workflow-engines">when-to-use-workflow-engines</a></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>A workflow engine is useful when you need to go from a start to a finish but there are many different paths/logic/rules to get there.
+</span><span class='line'>if you have processes that are variable from start to end, use a workflow. If the same process can be used by everyone, then you don't need a workflow.</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h4 id="1.3 BPMN基本元素">1.3 BPMN基本元素</h4>
+
+
+<p>简单介绍BPMN中的基本元素,详细内容可以在<a href="http://www.omg.org/spec/BPMN/2.0/">BPMN 2.0规范官网</a>下载PDF版本(章节7.2).包含5个基本元素,每个基本元素下面又包含集中类型的元素,其中Flow Objects是最重要的:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1. Flow Objects 流对象
+</span><span class='line'>2. Data 数据
+</span><span class='line'>3. Connecting Objects 连接对象
+</span><span class='line'>4. Swimlanes 泳道
+</span><span class='line'>5. Artifacts 工件</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(1).Flow Objects</h5>
+
+<p>Flow Objects包含了工作流的三个基本执行语义</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>(1).Events 事件
+</span><span class='line'>发生在流程执行过程中的事情.像流程的启动,结束,边界条件以及每个活动的创建,开始,流转等都是流程事件,利用事件机制,可以通过事件控制器为系统增加辅助功能.如其它业务系统集成及活动预警等
+</span><span class='line'>
+</span><span class='line'>(2).Activities 活动
+</span><span class='line'>在工作流中所有具备生命周期状态的都可以称之为活动,如原子级的任务(Task)以及子流程(Sub-Process)等.任务是流程模型中最小工作单元,不能继续分解.
+</span><span class='line'>
+</span><span class='line'>(3).Gateways 网关
+</span><span class='line'>Gateways用来决定流程流转指向的,简单理解就是判断条件.比如同意走一个流程,驳回走另外一个流程.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>事件有三种类型:Start, Intermediate, End</p>
+
+<h5>(2).Data</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Data Objects 数据对象
+</span><span class='line'>Data Inputs 数据输入
+</span><span class='line'>Data Outputs 数据输出
+</span><span class='line'>Data Stores 数据存储</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(3).Connecting Objects</h5>
+
+<p>连接对象用来把各个流对象或流对象与其他信息连接起来</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>(1).Sequence Flows 序列流
+</span><span class='line'>表示流对象的前后执行顺序
+</span><span class='line'>
+</span><span class='line'>(2).Message Flows 消息流
+</span><span class='line'>表示公开流程或协作模型里参与者之间的消息,交互
+</span><span class='line'>
+</span><span class='line'>(3).Associations 结合关系
+</span><span class='line'>为流程中的元素关联信息或数据
+</span><span class='line'>
+</span><span class='line'>(4).Data Associations 数据结合关系
+</span><span class='line'>表示数据在流程、活动和数据对象之间的传递</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(4).Swimlanes</h5>
+
+<p>使用泳道来区分不同部门或者不同参与者的功能和职责。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Pools 池
+</span><span class='line'>Lanes 道</span></code></pre></td></tr></table></div></figure>
+
+
+<h5>(5).Artifacts</h5>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Group 组
+</span><span class='line'>Text Annotation 文本注释</span></code></pre></td></tr></table></div></figure>
+
+
+<p>各种基本元素的示意图字节参考BPMN 2.0规范给出的图吧:</p>
+
+<p><img src="/images/workflow/BPMN_model_1.png"></p>
+
+<p><img src="/images/workflow/BPMN_model_2.png"></p>
+
+<p>几个在线画图的应用如<a href="www.processon.com">processon</a>都支持BPMN图形.</p>
+
+<p>参考:
+<a href="http://blog.csdn.net/ronghao100/article/details/6707276">BPMN这点事-BPMN基本元素（上）</a>
+<a href="http://blog.csdn.net/ronghao100/article/details/6711779">BPMN这点事-BPMN基本元素（下）</a></p>
+
+<h2 id="2.常见的工作流引擎">2.常见的工作流引擎</h2>
+
+
+<h4 id="2.1 jBPM">2.1 jBPM</h4>
+
+
+<p><a href="http://www.jbpm.org/">jBPM官网</a></p>
+
+<h4 id="2.2 Activiti">2.2 Activiti</h4>
+
+
+<p><a href="http://www.activiti.org/">Activiti官网</a>
+<a href="http://www.activiti.org/">Activiti用户手册</a>
+<a href="http://www.mossle.com/docs/activiti/index.html">Activiti 5.16 用户手册中文版</a></p>
+
+<h4 id="2.3 FixFlow">2.3 FixFlow</h4>
+
+
+<p>FixFlow国人开发的工作流引擎
+<a href="https://github.com/fixteam/fixflow">FixFlow github地址</a></p>
+
+<h4 id="2.4 如何选择">2.4 如何选择</h4>
+
+
+<p>主要从易用性,维护成本等几个角度考虑:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1.流程设计器的支持;
+</span><span class='line'>2.嵌入到业务的成本,比如对Spring的支持等;
+</span><span class='line'>3.事务支持;
+</span><span class='line'>4.使用范围</span></code></pre></td></tr></table></div></figure>
+
+
+<p>目前来看,Activiti的使用是最简单方便的.</p>
+
+<h2 id="3.Activiti">3.Activiti</h2>
+
+
+<p>支持最新BPMN2.0规范的开源工作流引擎Activit5,实现了对规范的绝大多数图元的定义(包括一些自己的扩展定义),能够满足企业工作流的各种复杂应用.
+它是一个无侵入的,支持嵌入式和独立部署的开源工作流引擎,是Tom Bayen离开jBoss加入Alfresco公司后的另立山头之作.</p>
+
+<p>关于Activiti的一些关键特性:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>支持的流程格式: BPMN2、xPDL、jPDL等
+</span><span class='line'>引擎核心: PVM（流程虚拟机）
+</span><span class='line'>技术前身: jBPM3、jBPM4
+</span><span class='line'>
+</span><span class='line'>数据库持久层: ORM MyBatis3
+</span><span class='line'>事务管理: MyBatis机制/Spring事务控制
+</span><span class='line'>数据库连接方式: Jdbc/DataSource
+</span><span class='line'>支持数据库: Oracle、SQL Server、MySQL等多数数据库
+</span><span class='line'>集成接口: SOAP、Mule、RESTful</span></code></pre></td></tr></table></div></figure>
+
+
+<p>几个关键的概念:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1.流程定义
+</span><span class='line'>BPMN语法定义的流程定义;比如请假流程定义:开始--&gt;申请人发起--&gt;直属leader审批--&gt;部门leader审批--&gt;人力审批--&gt;结束;
+</span><span class='line'>
+</span><span class='line'>2.流程实例
+</span><span class='line'>启动一个流程case,比如张三发起一个请假流程,这时候就会生成一个请假流程的实例;
+</span><span class='line'>
+</span><span class='line'>3.历史流程实例
+</span><span class='line'>已经结束的流程,还是可以被查询到
+</span><span class='line'>
+</span><span class='line'>4.任务
+</span><span class='line'>最常见的用户任务,即需要人参与的流程节点. 比如请假流程中的直属leader审批这个节点就会生成一个用户任务.</span></code></pre></td></tr></table></div></figure>
+
+
+<h4 id="3.1 如何使用">3.1 如何使用</h4>
+
+
+<p>这里主要大致说一下怎么结合Spring使用Activiti</p>
+
+<p>Maven依赖</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;dependency&gt;
+</span><span class='line'>  &lt;groupId&gt;org.activiti&lt;/groupId&gt;
+</span><span class='line'>  &lt;artifactId&gt;activiti-engine&lt;/artifactId&gt;
+</span><span class='line'>  &lt;version&gt;5.14&lt;/version&gt;
+</span><span class='line'>&lt;/dependency&gt;
+</span><span class='line'>&lt;dependency&gt;
+</span><span class='line'>  &lt;groupId&gt;org.activiti&lt;/groupId&gt;
+</span><span class='line'>  &lt;artifactId&gt;activiti-spring&lt;/artifactId&gt;
+</span><span class='line'>  &lt;version&gt;5.14&lt;/version&gt;
+</span><span class='line'>&lt;/dependency&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中activiti-spring主要是提供了SpringProcessEngineConfiguration这个配置入口,并且提供ProcessEngineFactoryBean这个流程引擎的Bean,通过这个Bean,我们就可以获取Activiti内部的各种Service:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>RepositoryService
+</span><span class='line'>RuntimeService
+</span><span class='line'>TaskService
+</span><span class='line'>HistoryService
+</span><span class='line'>ManagementService
+</span><span class='line'>IdentityService
+</span><span class='line'>FormService</span></code></pre></td></tr></table></div></figure>
+
+
+<p>activiti将其内部的表的建表语句和对应的Mybatis配置文件都打包在依赖jar包中,可以参考activiti-engine中的org.activiti.db这个包路径下的内容.</p>
+
+<p><a href="http://www.tuicool.com/articles/NBZNFvF">整合Acitiviti在线流程设计器</a>
+<a href="http://www.ibm.com/developerworks/cn/java/j-lo-activiti1/">Activiti - 新一代的开源 BPM 引擎</a>
+<a href="http://www.infoq.com/cn/articles/bpmn2-activiti5">http://www.infoq.com/cn/articles/bpmn2-activiti5</a></p>
+
+<h2 id="4.业务如何使用工作流">4.业务如何使用工作流</h2>
+
+
+<p>一般使用方式两种:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1.独立部署的工作流服务
+</span><span class='line'>对外服务方式: 接口
+</span><span class='line'>和业务交互方式: 接口或者MQ
+</span><span class='line'>优点: 彻底隔离工作流和业务;可以为多套业务提供服务;
+</span><span class='line'>缺点: 无法保证业务数据的强一致性
+</span><span class='line'>
+</span><span class='line'>2.嵌入到业务系统
+</span><span class='line'>和业务交互方式: 直接调用
+</span><span class='line'>优点: 能保证业务数据的强一致性
+</span><span class='line'>缺点: 每套业务都需要自己单独使用工作流(存在重复工作)</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2319,135 +2740,6 @@ DefaultAopProxyFactory</p>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/11/23/memcachedcun-chu-mei-ju/">Memcached存储枚举</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-11-23T20:48:42+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>23</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>8:48 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>今天发布线上碰到一个小问题，Memcached存储的数据类型包括枚举的时候，当修改枚举的包路径之后，会出现问题。
-异常信息如下，比较直观，就是数据的反序列化失败：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[2015-11-23 18:04:45 ERROR net.rubyeye.xmemcached.transcoders.BaseSerializingTranscoder:113] Caught CNFE decoding 944 bytes of data
-</span><span class='line'>java.lang.ClassNotFoundException: Xxx.Xxx.Xxx.Xxx.RoomStatus
-</span><span class='line'>        at org.apache.catalina.loader.WebappClassLoader.loadClass(WebappClassLoader.java:1702) ~[catalina.jar:7.0.47]
-</span><span class='line'>        at org.apache.catalina.loader.WebappClassLoader.loadClass(WebappClassLoader.java:1547) ~[catalina.jar:7.0.47]
-</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.BaseSerializingTranscoder$1.resolveClass(BaseSerializingTranscoder.java:102) ~[xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at java.io.ObjectInputStream.readNonProxyDesc(ObjectInputStream.java:1612) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readClassDesc(ObjectInputStream.java:1517) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readEnum(ObjectInputStream.java:1725) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1347) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.defaultReadFields(ObjectInputStream.java:1990) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readSerialData(ObjectInputStream.java:1915) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readOrdinaryObject(ObjectInputStream.java:1798) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1350) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readObject(ObjectInputStream.java:370) ~[na:1.7.0_45]
-</span><span class='line'>        at java.util.ArrayList.readObject(ArrayList.java:771) ~[na:1.7.0_45]
-</span><span class='line'>        at sun.reflect.GeneratedMethodAccessor41.invoke(Unknown Source) ~[na:na]
-</span><span class='line'>        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43) ~[na:1.7.0_45]
-</span><span class='line'>        at java.lang.reflect.Method.invoke(Method.java:606) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectStreamClass.invokeReadObject(ObjectStreamClass.java:1017) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readSerialData(ObjectInputStream.java:1893) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readOrdinaryObject(ObjectInputStream.java:1798) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1350) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.defaultReadFields(ObjectInputStream.java:1990) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readSerialData(ObjectInputStream.java:1915) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readOrdinaryObject(ObjectInputStream.java:1798) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1350) ~[na:1.7.0_45]
-</span><span class='line'>        at java.io.ObjectInputStream.readObject(ObjectInputStream.java:370) ~[na:1.7.0_45]
-</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.BaseSerializingTranscoder.deserialize(BaseSerializingTranscoder.java:106) ~[xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.SerializingTranscoder.decode0(SerializingTranscoder.java:92) [xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at net.rubyeye.xmemcached.transcoders.SerializingTranscoder.decode(SerializingTranscoder.java:86) [xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.fetch0(XMemcachedClient.java:630) [xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.get0(XMemcachedClient.java:1030) [xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.get(XMemcachedClient.java:988) [xmemcached-1.4.1.jar:na]
-</span><span class='line'>        at net.rubyeye.xmemcached.XMemcachedClient.get(XMemcachedClient.java:999) [xmemcached-1.4.1.jar:na]</span></code></pre></td></tr></table></div></figure>
-
-
-<p>场景如下：</p>
-
-<ol>
-<li>Memcached已经有数据，数据中包含RoomStatus数据；</li>
-<li>修改了枚举的包路径，发布线上；</li>
-<li>从Cache中读取之前的数据会出现枚举反序列化异常；</li>
-</ol>
-
-
-<p>在本地代码中重现了一下问题，并看了一下使用枚举的情况下其他可能处心问题的场景，结论如下（前提是Cache中已经存在使用RoomStatus数据）：</p>
-
-<ol>
-<li>修改包路径，会导致get数据反序列化失败，java.lang.ClassNotFoundException: Xxx.Xxx.Xxx.Xxx.RoomStatus；</li>
-<li>RoomStatus增加项，正常；</li>
-<li>RoomStatus减少项(已Cache数据中未使用到的项)，正常；</li>
-<li>RoomStatus减少项(已Cache数据中使用到的项)，异常：enum constant Xxx does not exist in Xxx.Xxx.Xxx.Xxx.RoomStatus；</li>
-</ol>
-
-
-<p>综上，在Memcached中cache包含枚举的数据时候，建议如下：</p>
-
-<ol>
-<li>不要修改枚举的包路径；</li>
-<li>不要删除枚举中的数据；</li>
-</ol>
-
-
-<p>这些序列化和反序列化的逻辑再XMemcached客户端实现的。详见SerializingTranscoder类，包含数据的encode和decode逻辑。再使用Memcached的时候也可以使用</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/4">&larr; Older</a>
@@ -2465,6 +2757,10 @@ DefaultAopProxyFactory</p>
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/">Spring上传组件冲突</a>
@@ -2502,10 +2798,6 @@ DefaultAopProxyFactory</p>
         <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -2536,7 +2828,7 @@ DefaultAopProxyFactory</p>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (5)</a></li>
  
   </div>
 </section>

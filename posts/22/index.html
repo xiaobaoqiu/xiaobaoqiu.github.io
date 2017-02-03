@@ -9,12 +9,11 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="Problem: Given a set of points in a two dimensional space, you will have to find the distance between the closest two points. 示例: input 1
-2
-3
-4
-5
-0 2 &hellip;">
+  <meta name="description" content="第四章：组合对象
+我们希望通过将线程安全的组件以完全的方式组合成更大的组件或者程序. 1. 设计线程安全的类 设计线程安全类的过程应该包含下面3个基本要素:
+1. 确定对象状态是由哪些变量构成的;
+2. 确定限制状态变量的不变约束;
+3. 制定一个管理并发访问对象状态的策略; 2. 实例限制 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -80,6 +79,313 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/06/09/java-concurrency-in-practice-4/">Java Concurrency in Practice 4 : 组合对象</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-06-09T14:29:06+08:00'><span class='date'><span class='date-month'>Jun</span> <span class='date-day'>9</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>2:29 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p><strong>第四章：组合对象</strong>
+我们希望通过将线程安全的组件以完全的方式组合成更大的组件或者程序.</p>
+
+<h3>1. 设计线程安全的类</h3>
+
+<p>设计线程安全类的过程应该包含下面3个基本要素:
+1. 确定对象状态是由哪些变量构成的;
+2. 确定限制状态变量的不变约束;
+3. 制定一个管理并发访问对象状态的策略;</p>
+
+<h3>2. 实例限制</h3>
+
+<p>即使一个对象不是线程安全的,仍然有许多技术可以让他安全的用于多线程程序.
+通过使用实例限制,封装简化了类的线程安全化工作.</p>
+
+<p>将数据封装在对象内部,把对数据的访问限制在对象的方法上,更容易确保线程在访问数据时候总能获得正确的锁.</p>
+
+<p>如下,HashSet是非线程安全的,但是由于mySet是private,不会逸出,因此HashSet被限制在PersonSet中,唯一可以访问mySet的代码路径是addPerson与containPerson,执行他们时都要获得PersonSet的锁.因而确保了PersonSet是线程安全的.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">PersonSet</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Set</span><span class="o">&lt;</span><span class="n">Person</span><span class="o">&gt;</span> <span class="n">mySet</span> <span class="o">=</span> <span class="k">new</span> <span class="n">HashSet</span><span class="o">&lt;</span><span class="n">Person</span><span class="o">&gt;();</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">addPerson</span><span class="o">(</span><span class="n">Person</span> <span class="n">p</span><span class="o">){</span>
+</span><span class='line'>        <span class="n">mySet</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="n">p</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">boolean</span> <span class="nf">containPerson</span><span class="o">(</span><span class="n">Person</span> <span class="n">p</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">mySet</span><span class="o">.</span><span class="na">contains</span><span class="o">(</span><span class="n">p</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>java类库中有很多这样的例子.ArrayList和HashMap这样的基本容器类是非线程安全的,但是类库提供了包装器工厂方法,如:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">Collections</span><span class="o">.</span><span class="na">synchronizedList</span><span class="o">(</span><span class="n">arrayList</span><span class="o">);</span>
+</span><span class='line'><span class="n">Collections</span><span class="o">.</span><span class="na">synchronizedMap</span><span class="o">(</span><span class="n">hashMap</span><span class="o">);</span>
+</span><span class='line'><span class="n">Collections</span><span class="o">.</span><span class="na">synchronizedSet</span><span class="o">(</span><span class="n">hashSet</span><span class="o">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>使得这些非线程安全的类可以安全的用于多线程环境.这些工厂方法的原理是使用Decorator模式,使用一个同步的包装器对象保证这些非线程安全的容器,将相关接口实现为同步方法,并将请求转发打下层容器对象上:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">class</span> <span class="nc">SynchronizedCollection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">implements</span> <span class="n">Collection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;,</span> <span class="n">Serializable</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">Collection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">c</span><span class="o">;</span>  <span class="c1">// Backing Collection</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">Object</span> <span class="n">mutex</span><span class="o">;</span>     <span class="c1">// Object on which to synchronize</span>
+</span><span class='line'>    <span class="o">...</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">add</span><span class="o">(</span><span class="n">E</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">synchronized</span><span class="o">(</span><span class="n">mutex</span><span class="o">)</span> <span class="o">{</span><span class="k">return</span> <span class="n">c</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="n">e</span><span class="o">);}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="o">...</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>3. 委托线程安全</h3>
+
+<p>java中CopyOnWrite系列(CopyOnWriteArrayList,CopyOnWriteArraySet),CopyOnWriteArrayList是ArrayList的线程安全版本,即实现了写时复制的ArrayList版本,写时复制即每次写操作都会触发一个复制(深拷贝)的过程,如CopyOnWriteArrayList的add操作:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">CopyOnWriteArrayList</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="kd">implements</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;,</span> <span class="n">RandomAccess</span><span class="o">,</span> <span class="n">Cloneable</span><span class="o">,</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
+</span><span class='line'>    <span class="o">...</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">add</span><span class="o">(</span><span class="n">E</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">ReentrantLock</span> <span class="n">lock</span> <span class="o">=</span> <span class="k">this</span><span class="o">.</span><span class="na">lock</span><span class="o">;</span>
+</span><span class='line'>    <span class="n">lock</span><span class="o">.</span><span class="na">lock</span><span class="o">();</span>
+</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">elements</span> <span class="o">=</span> <span class="n">getArray</span><span class="o">();</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">len</span> <span class="o">=</span> <span class="n">elements</span><span class="o">.</span><span class="na">length</span><span class="o">;</span>
+</span><span class='line'>        <span class="n">Object</span><span class="o">[]</span> <span class="n">newElements</span> <span class="o">=</span> <span class="n">Arrays</span><span class="o">.</span><span class="na">copyOf</span><span class="o">(</span><span class="n">elements</span><span class="o">,</span> <span class="n">len</span> <span class="o">+</span> <span class="mi">1</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">newElements</span><span class="o">[</span><span class="n">len</span><span class="o">]</span> <span class="o">=</span> <span class="n">e</span><span class="o">;</span>
+</span><span class='line'>        <span class="n">setArray</span><span class="o">(</span><span class="n">newElements</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span> <span class="k">finally</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">lock</span><span class="o">.</span><span class="na">unlock</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Collections中的Unmodifiable系列,包含UnmodifiableList,UnmodifiableMap,UnmodifiableSet,UnmodifiableSortedMap,UnmodifiableSortedSet,器特性是不支持对容器内数据的修改,比如包含UnmodifiableList:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">static</span> <span class="kd">class</span> <span class="nc">UnmodifiableList</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">UnmodifiableCollection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>                      <span class="kd">implements</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">serialVersionUID</span> <span class="o">=</span> <span class="o">-</span><span class="mi">283967356065247728L</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">List</span><span class="o">&lt;?</span> <span class="kd">extends</span> <span class="n">E</span><span class="o">&gt;</span> <span class="n">list</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">...</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="n">E</span> <span class="nf">set</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">,</span> <span class="n">E</span> <span class="n">element</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">throw</span> <span class="k">new</span> <span class="nf">UnsupportedOperationException</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>4. 向已有的线程安全类添加功能</h3>
+
+<ol>
+<li>可以直接扩展原始类的代码</li>
+<li>通过继承来增加功能</li>
+<li>扩展功能,而不是扩展类本身,将扩展代码置于一个助手类;</li>
+<li>组合</li>
+</ol>
+
+
+<p>Collections的synchronized系列容器,包括synchronizedList,synchronizedMap,synchronizedSet,synchronizedSortedMap,synchronizedSortedSet,是普通容器的线程安全版本版本,实现原理即每个操作上面都加锁:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">static</span> <span class="kd">class</span> <span class="nc">SynchronizedCollection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="kd">implements</span> <span class="n">Collection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;,</span> <span class="n">Serializable</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">Collection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">c</span><span class="o">;</span>  <span class="c1">// Backing Collection</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">Object</span> <span class="n">mutex</span><span class="o">;</span>     <span class="c1">// Object on which to synchronize</span>
+</span><span class='line'>    <span class="o">...</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">static</span> <span class="kd">class</span> <span class="nc">SynchronizedList</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="kd">extends</span> <span class="n">SynchronizedCollection</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="kd">implements</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">serialVersionUID</span> <span class="o">=</span> <span class="o">-</span><span class="mi">7754090372962971524L</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">list</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="n">E</span> <span class="nf">get</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">synchronized</span><span class="o">(</span><span class="n">mutex</span><span class="o">)</span> <span class="o">{</span><span class="k">return</span> <span class="n">list</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">index</span><span class="o">);}</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="n">E</span> <span class="nf">set</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">,</span> <span class="n">E</span> <span class="n">element</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">synchronized</span><span class="o">(</span><span class="n">mutex</span><span class="o">)</span> <span class="o">{</span><span class="k">return</span> <span class="n">list</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">index</span><span class="o">,</span> <span class="n">element</span><span class="o">);}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>和Vector类似,但是Vector通过给所有方法级别加上synchronized关键字修饰来实现所以线程安全.</p>
+
+<p>助手类达到扩展功能的示例:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ListHelper</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span> <span class="n">list</span> <span class="o">=</span> <span class="n">Collections</span><span class="o">.</span><span class="na">synchronizedList</span><span class="o">(</span><span class="k">new</span> <span class="n">ArrayList</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;());</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">boolean</span> <span class="nf">putIfAbsent</span><span class="o">(</span><span class="n">E</span> <span class="n">x</span><span class="o">){</span>
+</span><span class='line'>        <span class="kd">synchronized</span> <span class="o">(</span><span class="n">list</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="kt">boolean</span> <span class="n">absent</span> <span class="o">=</span> <span class="o">!</span><span class="n">list</span><span class="o">.</span><span class="na">contains</span><span class="o">(</span><span class="n">x</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">if</span><span class="o">(</span><span class="n">absent</span><span class="o">)</span>
+</span><span class='line'>                <span class="n">list</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="n">x</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="k">return</span> <span class="n">absent</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这种方式的问题是,将加锁的代码分布到对象继承体系中的多个类中,即类的行为和基类实现之间存在耦合.</p>
+
+<p>向已有的线程安全类添加原子操作,更健壮的选择是组合.示例:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ImprovedList</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="kd">implements</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="n">list</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">ImprovedList</span><span class="o">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="n">list</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">list</span> <span class="o">=</span> <span class="n">list</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">boolean</span> <span class="nf">putIfAbsent</span><span class="o">(</span><span class="n">T</span> <span class="n">x</span><span class="o">){</span>
+</span><span class='line'>        <span class="kt">boolean</span> <span class="n">absent</span> <span class="o">=</span> <span class="o">!</span><span class="n">list</span><span class="o">.</span><span class="na">contains</span><span class="o">(</span><span class="n">x</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">absent</span><span class="o">)</span>
+</span><span class='line'>            <span class="n">list</span><span class="o">.</span><span class="na">add</span><span class="o">(</span><span class="n">x</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">absent</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">synchronized</span> <span class="kt">void</span> <span class="nf">clear</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">list</span><span class="o">.</span><span class="na">clear</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="c1">//其他list方法的代理</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -957,261 +1263,6 @@
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/05/30/sublimeshu-ru-zhong-wen/">Sublime输入中文</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-05-30T13:02:58+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>30</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>1:02 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>环境:Ubuntu 13.04</p>
-
-<h4>1.保存下述代码为 sublime-imfix.c 文件</h4>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/* C
-</span><span class='line'>sublime-imfix.c
-</span><span class='line'>Use LD_PRELOAD to interpose some function to fix sublime input method support for linux.
-</span><span class='line'>By Cjacker Huang &lt;jianzhong.huang at i-soft.com.cn&gt;
-</span><span class='line'>
-</span><span class='line'>gcc -shared -o libsublime-imfix.so sublime_imfix.c  `pkg-config --libs --cflags gtk+-2.0` -fPIC
-</span><span class='line'>LD_PRELOAD=./libsublime-imfix.so sublime_text
-</span><span class='line'>*/
-</span><span class='line'>#include &lt;gtk/gtk.h&gt;
-</span><span class='line'>#include &lt;gdk/gdkx.h&gt;
-</span><span class='line'>typedef GdkSegment GdkRegionBox;
-</span><span class='line'>
-</span><span class='line'>struct _GdkRegion
-</span><span class='line'>{
-</span><span class='line'>  long size;
-</span><span class='line'>  long numRects;
-</span><span class='line'>  GdkRegionBox *rects;
-</span><span class='line'>  GdkRegionBox extents;
-</span><span class='line'>};
-</span><span class='line'>
-</span><span class='line'>GtkIMContext *local_context;
-</span><span class='line'>
-</span><span class='line'>void
-</span><span class='line'>gdk_region_get_clipbox (const GdkRegion *region,
-</span><span class='line'>            GdkRectangle    *rectangle)
-</span><span class='line'>{
-</span><span class='line'>  g_return_if_fail (region != NULL);
-</span><span class='line'>  g_return_if_fail (rectangle != NULL);
-</span><span class='line'>
-</span><span class='line'>  rectangle-&gt;x = region-&gt;extents.x1;
-</span><span class='line'>  rectangle-&gt;y = region-&gt;extents.y1;
-</span><span class='line'>  rectangle-&gt;width = region-&gt;extents.x2 - region-&gt;extents.x1;
-</span><span class='line'>  rectangle-&gt;height = region-&gt;extents.y2 - region-&gt;extents.y1;
-</span><span class='line'>  GdkRectangle rect;
-</span><span class='line'>  rect.x = rectangle-&gt;x;
-</span><span class='line'>  rect.y = rectangle-&gt;y;
-</span><span class='line'>  rect.width = 0;
-</span><span class='line'>  rect.height = rectangle-&gt;height; 
-</span><span class='line'>  //The caret width is 2; 
-</span><span class='line'>  //Maybe sometimes we will make a mistake, but for most of the time, it should be the caret.
-</span><span class='line'>  if(rectangle-&gt;width == 2 && GTK_IS_IM_CONTEXT(local_context)) {
-</span><span class='line'>        gtk_im_context_set_cursor_location(local_context, rectangle);
-</span><span class='line'>  }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>//this is needed, for example, if you input something in file dialog and return back the edit area
-</span><span class='line'>//context will lost, so here we set it again.
-</span><span class='line'>
-</span><span class='line'>static GdkFilterReturn event_filter (GdkXEvent *xevent, GdkEvent *event, gpointer im_context)
-</span><span class='line'>{
-</span><span class='line'>    XEvent *xev = (XEvent *)xevent;
-</span><span class='line'>    if(xev-&gt;type == KeyRelease && GTK_IS_IM_CONTEXT(im_context)) {
-</span><span class='line'>       GdkWindow * win = g_object_get_data(G_OBJECT(im_context),"window");
-</span><span class='line'>       if(GDK_IS_WINDOW(win))
-</span><span class='line'>         gtk_im_context_set_client_window(im_context, win);
-</span><span class='line'>    }
-</span><span class='line'>    return GDK_FILTER_CONTINUE;
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>void gtk_im_context_set_client_window (GtkIMContext *context,
-</span><span class='line'>          GdkWindow    *window)
-</span><span class='line'>{
-</span><span class='line'>  GtkIMContextClass *klass;
-</span><span class='line'>  g_return_if_fail (GTK_IS_IM_CONTEXT (context));
-</span><span class='line'>  klass = GTK_IM_CONTEXT_GET_CLASS (context);
-</span><span class='line'>  if (klass-&gt;set_client_window)
-</span><span class='line'>    klass-&gt;set_client_window (context, window);
-</span><span class='line'>
-</span><span class='line'>  if(!GDK_IS_WINDOW (window))
-</span><span class='line'>    return;
-</span><span class='line'>  g_object_set_data(G_OBJECT(context),"window",window);
-</span><span class='line'>  int width = gdk_window_get_width(window);
-</span><span class='line'>  int height = gdk_window_get_height(window);
-</span><span class='line'>  if(width != 0 && height !=0) {
-</span><span class='line'>    gtk_im_context_focus_in(context);
-</span><span class='line'>    local_context = context;
-</span><span class='line'>  }
-</span><span class='line'>  gdk_window_add_filter (window, event_filter, context); 
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h4>2.安装C/C++的编译环境和gtk libgtk2.0-dev</h4>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install build-essential
-</span><span class='line'>sudo apt-get install libgtk2.0-dev</span></code></pre></td></tr></table></div></figure>
-
-
-<h4>3.编译共享内库</h4>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>gcc -shared -o libsublime-imfix.so sublime_imfix.c  `pkg-config --libs --cflags gtk+-2.0` -fPIC</span></code></pre></td></tr></table></div></figure>
-
-
-<h4>4.启动 Sublime Text 2</h4>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>LD_PRELOAD=./libsublime-imfix.so sublime_text</span></code></pre></td></tr></table></div></figure>
-
-
-<p>现在就可以输入中文了.</p>
-
-<h4>5.别名</h4>
-
-<p>每次这样启动sublime,很是别扭,我们取个别名就可以了.同时libsublime-imfix.so放在~目录下很是别扭,哪天可能不小心删除了,也把它移个位置:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ whereis sublime
-</span><span class='line'>sublime: /usr/local/bin/sublime
-</span><span class='line'>
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ cd /usr/local/bin/
-</span><span class='line'>
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:/usr/local/bin$ sudo cp ~/libsublime-imfix.so .
-</span><span class='line'>
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ vim ~/.bashrc</span></code></pre></td></tr></table></div></figure>
-
-
-<p>在.bashrc文件中加一个别名:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>#sublime
-</span><span class='line'>alias sublime='LD_PRELOAD=/usr/local/bin/libsublime-imfix.so sublime_text'</span></code></pre></td></tr></table></div></figure>
-
-
-<p>退出之后:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ source ~/.bashrc</span></code></pre></td></tr></table></div></figure>
-
-
-<p>现在,在命令行下直接输入sublime就可以开启可以输入中文的sublime了.</p>
-
-<h4>附上截图</h4>
-
-<p><img src="/images/sublime_chinese.png"></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/23">&larr; Older</a>
@@ -1229,6 +1280,10 @@
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/">Spring上传组件冲突</a>
@@ -1266,10 +1321,6 @@
         <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1300,7 +1351,7 @@
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>
-<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (4)</a></li>
+<li><a class='list-group-item' href='/blog/categories/workflow/'>workflow (5)</a></li>
  
   </div>
 </section>
