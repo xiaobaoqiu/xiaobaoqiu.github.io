@@ -9,8 +9,10 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.strace简介
-2.strace使用Demo 1.strace简介 strace用来跟踪进程执行时的系统调用和所接收的信号. Linux下进程不能直接访问硬件设备,当进程需要访问硬件设备(比如读取磁盘文件,接收网络数据等等)时,必须由用户态模式切换至内核态模式,通过系统调用访问硬件设备. &hellip;">
+  <meta name="description" content="1.代理 1.1 代理模式
+1.2 Java动态代理
+1.3 CGLib动态代理
+1.4 Java动态代理 VS CGLib动态代理 最近再项目中发现不少同事(包括自己)不太理解默认情况下的Spring事务的运行机制(主要是不理解AOP机制),导致随意使用事务注解.因此也在很多场景事务不生效。 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -76,6 +78,1243 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-03-11T17:15:46+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>11</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>5:15 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.%E4%BB%A3%E7%90%86">1.代理</a>
+
+<ul>
+<li><a href="#1.1%20%E4%BB%A3%E7%90%86%E6%A8%A1%E5%BC%8F">1.1 代理模式</a></li>
+<li><a href="#1.2%20Java%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86">1.2 Java动态代理</a></li>
+<li><a href="#1.3%20CGLib%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86">1.3 CGLib动态代理</a>
+<a href="#1.4%20Java%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86%20VS%20CGLib%E5%8A%A8%E6%80%81%E4%BB%A3%E7%90%86">1.4 Java动态代理 VS CGLib动态代理</a></li>
+</ul>
+</li>
+</ul>
+
+
+<p>最近再项目中发现不少同事(包括自己)不太理解默认情况下的Spring事务的运行机制(主要是不理解AOP机制),导致随意使用事务注解.因此也在很多场景事务不生效。因此想从代理机制开始理一下整个Spring声明式事务的原理。</p>
+
+<p>因为篇幅太长，分成三个部分：</p>
+
+<pre><code>(1).代理
+(2).Spring的AOP
+(3).Spring的事务
+</code></pre>
+
+<h2 id="1.代理">1.代理</h2>
+
+
+<p>通常，我们代码中处理核心的业务逻辑，还包含一些枝节性的代码和功能，比如日志记录、消息发送、安全、事务保证和监控等。</p>
+
+<p>我们通常期望将这些枝节性的代码功能和我们的核心业务逻辑分离，减少业务功能和枝节功能的耦合。这时候我们就要使用代理来达到我们的目的。</p>
+
+<p>代理的作用是：为其它对象提供一种代理以控制对这个对象的访问。简单理解就是中间的作用。代理一般涉及到三个角色：</p>
+
+<pre><code>(1).抽象角色：声明真实对象和代理对象的共同接口；
+(2).代理角色：代理对象内部包含有真实角色的引用，从而可以操作真实角色，同时代理对象与真实对象有相同的接口，能在任何时候代替真实对象，同时代理对象可以在执行真实对 象前后加入特定的逻辑以实现功能的扩展；
+(3).真实角色：代理角色所代表的真实对象，是我们最终要引用的对象；
+</code></pre>
+
+<h4 id="1.1 代理模式">1.1 代理模式</h4>
+
+
+<p>代理模式是一个经典的设计模式，介绍往上很多。</p>
+
+<p>下面是一个最简单的实现：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public interface IHello {
+</span><span class='line'>    void hello();
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class HelloImpl implements IHello {
+</span><span class='line'>    @Override
+</span><span class='line'>    public void hello() {
+</span><span class='line'>        System.out.println("HelloImpl: Hello World.");
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class HelloProxyImpl implements IHello {
+</span><span class='line'>
+</span><span class='line'>    private IHello inner;
+</span><span class='line'>
+</span><span class='line'>    public HelloProxyImpl(IHello inner) {
+</span><span class='line'>        this.inner = inner;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    @Override
+</span><span class='line'>    public void hello() {
+</span><span class='line'>        doSomethingBefore();
+</span><span class='line'>        
+</span><span class='line'>        inner.hello();
+</span><span class='line'>        
+</span><span class='line'>        doSomethingAfter();
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private void doSomethingBefore() {
+</span><span class='line'>        System.out.println("HelloProxyImpl: Before hello()...");
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private void doSomethingAfter() {
+</span><span class='line'>        System.out.println("HelloProxyImpl: After hello()...");
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>UML图大致如下：
+<img src="/images/spring/proxy_mode.png"></p>
+
+<p>从代码上我们可以看出，代理模式要求(这也是它的限制所在)：</p>
+
+<pre><code>(1).代理类需要和被代理者一样实现相同的接口；
+(2).代理类包含被代理者的引用；
+</code></pre>
+
+<h4 id="1.2 Java动态代理">1.2 Java动态代理</h4>
+
+
+<p>代理模式我们可以理解为一种静态代理，其问题是需要我们显示的为每个需要被代理的类实现一个代理类，即一个代理类只能为i一个被代理者做代理的功能。如果有上千个类需要代理，估计要骂娘了。</p>
+
+<p>java动态代理正是为了解决这个问题。主要通过java.lang.reflect.Proxy类和java.lang.reflect.InvocationHandler接口。我们只需要实现InvocationHandler接口，在实现invoke()方法的时候加上我们的代理逻辑。</p>
+
+<p>一个简单的使用实例如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * @author xiaobaoqiu  Date: 16-3-10 Time: 下午6:18
+</span><span class='line'> */
+</span><span class='line'>public class JavaDynamicProxy implements InvocationHandler {
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 被代理者
+</span><span class='line'>     */
+</span><span class='line'>    private Object inner;
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 生成代理类
+</span><span class='line'>     */
+</span><span class='line'>    public static Object generateProxy(Object inner) {
+</span><span class='line'>        return Proxy.newProxyInstance(
+</span><span class='line'>                inner.getClass().getClassLoader(),
+</span><span class='line'>                inner.getClass().getInterfaces(),
+</span><span class='line'>                new JavaDynamicProxy(inner));
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private JavaDynamicProxy(Object inner) {
+</span><span class='line'>        this.inner = inner;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+</span><span class='line'>        doSomethingBefore();
+</span><span class='line'>
+</span><span class='line'>        Object result = method.invoke(inner, args);
+</span><span class='line'>
+</span><span class='line'>        doSomethingAfter();
+</span><span class='line'>
+</span><span class='line'>        return result;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private void doSomethingBefore() {
+</span><span class='line'>        System.out.println("JavaDynamicProxy: Before...");
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private void doSomethingAfter() {
+</span><span class='line'>        System.out.println("JavaDynamicProxy: After...");
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>//使用
+</span><span class='line'>public static void main(String[] args) {
+</span><span class='line'>        //被动态代理的IHello实例对象A
+</span><span class='line'>        IHello helloA = new HelloImpl();
+</span><span class='line'>        //生成对象A的动态代理
+</span><span class='line'>        IHello helloAProxy = (IHello) JavaDynamicProxy.generateProxy(helloA);
+</span><span class='line'>        helloAProxy.hello();
+</span><span class='line'>
+</span><span class='line'>        System.out.println("-------------------------------------------------");
+</span><span class='line'>        // 一个JavaDynamicProxy可以一直使用
+</span><span class='line'>
+</span><span class='line'>        //被动态代理的IHello实例对象B
+</span><span class='line'>        IHello helloB = new HelloWithLogImpl();
+</span><span class='line'>        //生成对象B的动态代理
+</span><span class='line'>        IHello helloBProxy = (IHello) JavaDynamicProxy.generateProxy(helloB);
+</span><span class='line'>        helloBProxy.hello();
+</span><span class='line'>
+</span><span class='line'>        System.out.println("-------------------------------------------------");
+</span><span class='line'>        //被动态代理对象IBye实例
+</span><span class='line'>        IBye bye = new ByeImpl();
+</span><span class='line'>        //生成IBye实例的动态代理
+</span><span class='line'>        IBye byeProxy = (IBye) JavaDynamicProxy.generateProxy(bye);
+</span><span class='line'>        byeProxy.bye();
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>JavaDynamicProxy.generateProxy的输出会是一个动态的代理类。debug信息如下，从debug信息我们大致知道，这个代理类的类名称为$Proxy0,内部包含一个属性名为h的属性，h指向的就是我们实现的InvocationHandler的类(这里即JavaDynamicProxy)的实例。</p>
+
+<p><img src="/images/spring/java_proxy_debug.png"></p>
+
+<p>但是Java动态代理的限制是：</p>
+
+<pre><code>(1).被代理的类要求至少实现了一个Interface;
+(2).被代理的类要求有public的构造函数(即没有显示的将其设置为private等);
+(3).被代理的类要求不是final;
+</code></pre>
+
+<p>如下代理一个没有实现任何接口的类会报错</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>    //没有实现任何interface的类使不能被动态代理的
+</span><span class='line'>    System.out.println("-------------------------------------------------");
+</span><span class='line'>    HelloWithoutInterface helloC = new HelloWithoutInterface();
+</span><span class='line'>    //生成对象C的动态代理
+</span><span class='line'>    HelloWithoutInterface helloCProxy = (HelloWithoutInterface) JavaDynamicProxy.generateProxy(helloC);
+</span><span class='line'>    helloCProxy.hello();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>错误信息如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Exception in thread "main" java.lang.ClassCastException: com.sun.proxy.$Proxy2 cannot be cast to proxy.javaProxy.HelloWithoutInterface
+</span><span class='line'>  at proxy.javaProxy.JavaProxyMain.main(JavaProxyMain.java:42)
+</span><span class='line'>  at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+</span><span class='line'>  at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+</span><span class='line'>  at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+</span><span class='line'>  at java.lang.reflect.Method.invoke(Method.java:606)
+</span><span class='line'>  at com.intellij.rt.execution.application.AppMain.main(AppMain.java:140)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Java动态代理的机制是利用反射机制生成。具体代码可以debug，主要的代码如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>//Proxy.java
+</span><span class='line'>public static Object newProxyInstance(ClassLoader loader, Class&lt;?&gt;[] interfaces, InvocationHandler h) throws IllegalArgumentException {
+</span><span class='line'>  ...
+</span><span class='line'>  Class&lt;?&gt; cl = getProxyClass0(loader, intfs);  //生成代理类
+</span><span class='line'>  ...
+</span><span class='line'>  return newInstance(cons, ih);   // 生成代理类的实例
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>private static Class&lt;?&gt; getProxyClass0(ClassLoader loader,  Class&lt;?&gt;... interfaces) {
+</span><span class='line'>        //生成代理类的主要逻辑在ProxyClassFactory
+</span><span class='line'>        return proxyClassCache.get(loader, interfaces);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>//ProxyClassFactory的apply方法
+</span><span class='line'>public Class&lt;?&gt; apply(ClassLoader loader, Class&lt;?&gt;[] interfaces) {
+</span><span class='line'>  ...
+</span><span class='line'>            String proxyPkg = null;     // 生成代理类的包路径
+</span><span class='line'>            ...
+</span><span class='line'>            if (proxyPkg == null) {
+</span><span class='line'>                // if no non-public proxy interfaces, use com.sun.proxy package
+</span><span class='line'>                proxyPkg = ReflectUtil.PROXY_PACKAGE + ".";   //默认路径在com.sun.proxy下面
+</span><span class='line'>            }
+</span><span class='line'>
+</span><span class='line'>            long num = nextUniqueNumber.getAndIncrement();    //代理类的序号， 我们熟悉的$Proxy0中的0
+</span><span class='line'>            String proxyName = proxyPkg + proxyClassNamePrefix + num; //代理类的类名称
+</span><span class='line'>
+</span><span class='line'>            //使用ProxyGenerator生成代理类的字节码
+</span><span class='line'>            byte[] proxyClassFile = ProxyGenerator.generateProxyClass(proxyName, interfaces);
+</span><span class='line'>            //生成代理类
+</span><span class='line'>            return defineClass0(loader, proxyName, proxyClassFile, 0, proxyClassFile.length);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>//ProxyGenerator.generateProxyClass的代码太恶心的...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们可以自己使用ProxyGenerator来生成代理类并将其字节码记录下来：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>// 获取代理类的字节码
+</span><span class='line'>byte[] classFile = ProxyGenerator.generateProxyClass("$Proxy0", ByeImpl.class.getInterfaces());
+</span><span class='line'>//将字节码写文件，建议写成.class文件</span></code></pre></td></tr></table></div></figure>
+
+
+<p>获取的字节码如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>import java.lang.reflect.InvocationHandler;
+</span><span class='line'>import java.lang.reflect.Method;
+</span><span class='line'>import java.lang.reflect.Proxy;
+</span><span class='line'>import java.lang.reflect.UndeclaredThrowableException;
+</span><span class='line'>import proxy.sample.IBye;
+</span><span class='line'>
+</span><span class='line'>public final class $Proxy0 extends Proxy implements IBye {
+</span><span class='line'>    private static Method m1;
+</span><span class='line'>    private static Method m3;
+</span><span class='line'>    private static Method m0;
+</span><span class='line'>    private static Method m2;
+</span><span class='line'>
+</span><span class='line'>    public $Proxy0(InvocationHandler var1) throws  {
+</span><span class='line'>        super(var1);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public final boolean equals(Object var1) throws  {
+</span><span class='line'>        try {
+</span><span class='line'>            return ((Boolean)super.h.invoke(this, m1, new Object[]{var1})).booleanValue();
+</span><span class='line'>        } catch (RuntimeException | Error var3) {
+</span><span class='line'>            throw var3;
+</span><span class='line'>        } catch (Throwable var4) {
+</span><span class='line'>            throw new UndeclaredThrowableException(var4);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public final void bye() throws  {
+</span><span class='line'>        try {
+</span><span class='line'>            super.h.invoke(this, m3, (Object[])null);
+</span><span class='line'>        } catch (RuntimeException | Error var2) {
+</span><span class='line'>            throw var2;
+</span><span class='line'>        } catch (Throwable var3) {
+</span><span class='line'>            throw new UndeclaredThrowableException(var3);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public final int hashCode() throws  {
+</span><span class='line'>        try {
+</span><span class='line'>            return ((Integer)super.h.invoke(this, m0, (Object[])null)).intValue();
+</span><span class='line'>        } catch (RuntimeException | Error var2) {
+</span><span class='line'>            throw var2;
+</span><span class='line'>        } catch (Throwable var3) {
+</span><span class='line'>            throw new UndeclaredThrowableException(var3);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public final String toString() throws  {
+</span><span class='line'>        try {
+</span><span class='line'>            return (String)super.h.invoke(this, m2, (Object[])null);
+</span><span class='line'>        } catch (RuntimeException | Error var2) {
+</span><span class='line'>            throw var2;
+</span><span class='line'>        } catch (Throwable var3) {
+</span><span class='line'>            throw new UndeclaredThrowableException(var3);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    static {
+</span><span class='line'>        try {
+</span><span class='line'>            m1 = Class.forName("java.lang.Object").getMethod("equals", new Class[]{Class.forName("java.lang.Object")});
+</span><span class='line'>            m3 = Class.forName("proxy.sample.IBye").getMethod("bye", new Class[0]);
+</span><span class='line'>            m0 = Class.forName("java.lang.Object").getMethod("hashCode", new Class[0]);
+</span><span class='line'>            m2 = Class.forName("java.lang.Object").getMethod("toString", new Class[0]);
+</span><span class='line'>        } catch (NoSuchMethodException var2) {
+</span><span class='line'>            throw new NoSuchMethodError(var2.getMessage());
+</span><span class='line'>        } catch (ClassNotFoundException var3) {
+</span><span class='line'>            throw new NoClassDefFoundError(var3.getMessage());
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从生成的类我们知道，代理类继承Proxy类(这就是为什么Proxy类内的InvocationHandler实例未protected)并实现我们需要的被代理者的Interface(比如这里的bye()方法)，另外它只要一个接受一个InvocationHandler为参数的构造函数。当我们调用代理类的bye()方法时候，其实是调用我们实现的InvocationHandler(即上面的JavaDynamicProxy)的invoke()方法，在invoke()方法里面，我们实现了我的代理逻辑。</p>
+
+<p>我们这里这个Demo的大致UML图如下：</p>
+
+<p><img src="/images/spring/java_dynamic_proxy.png"></p>
+
+<p>参考：<a href="http://www.cnblogs.com/cruze/p/3819761.html">http://www.cnblogs.com/cruze/p/3819761.html</a></p>
+
+<h4 id="1.3 CGLib动态代理">1.3 CGLib动态代理</h4>
+
+
+<p>鉴于Java动态代理的限制，我们有需要代理没有任何实现接口的类的时候，可以考虑使用CGLib。CGLib的全称是Code Generate Library。CGLib的使用使用十分广泛，我们这里要讲的Spring AOP，以及EasyMock等。</p>
+
+<p>同样先上Demo代码，我们只需要实现MethodInterceptor接口：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * @author xiaobaoqiu  Date: 16-3-10 Time: 下午7:15
+</span><span class='line'> */
+</span><span class='line'>public class CglibDynamicProxy implements MethodInterceptor {
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * 动态生成代理类
+</span><span class='line'>     */
+</span><span class='line'>    public Object generateProxy(Class cls) {
+</span><span class='line'>        Enhancer enhancer = new Enhancer();
+</span><span class='line'>        enhancer.setCallback(this);
+</span><span class='line'>//        enhancer.setCallbackFilter(); //filter
+</span><span class='line'>        enhancer.setSuperclass(cls);
+</span><span class='line'>        return enhancer.create(); // Enhancer也包含带参数的create方法
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    public Object intercept(Object obj, Method method, Object[] args, MethodProxy proxy) throws Throwable {
+</span><span class='line'>        doSomethingBefore();
+</span><span class='line'>
+</span><span class='line'>        Object result = proxy.invokeSuper(obj, args);
+</span><span class='line'>
+</span><span class='line'>        doSomethingAfter();
+</span><span class='line'>
+</span><span class='line'>        return result;
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private void doSomethingBefore() {
+</span><span class='line'>        System.out.println("CglibDynamicProxy: Before...");
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    private void doSomethingAfter() {
+</span><span class='line'>        System.out.println("CglibDynamicProxy: After...");
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>//使用
+</span><span class='line'>public static void main(String[] args) {
+</span><span class='line'>        CglibDynamicProxy proxy = new CglibDynamicProxy();
+</span><span class='line'>        //注意: 原始类的instance不需要存在，只需要Class类型
+</span><span class='line'>
+</span><span class='line'>        //用接口IHello接, 或者 HelloImpl 接
+</span><span class='line'>        IHello helloAProxy = (IHello)proxy.generateProxy(HelloImpl.class);
+</span><span class='line'>        helloAProxy.hello();
+</span><span class='line'>
+</span><span class='line'>        System.out.println("-------------------------------------------------");
+</span><span class='line'>
+</span><span class='line'>        //用接口IHello接, 或者 HelloWithLogImpl 接
+</span><span class='line'>        IHello helloBProxy = (IHello)proxy.generateProxy(HelloWithLogImpl.class);
+</span><span class='line'>        helloBProxy.hello();
+</span><span class='line'>
+</span><span class='line'>        System.out.println("-------------------------------------------------");
+</span><span class='line'>
+</span><span class='line'>        //代理没有实现任何interface的类
+</span><span class='line'>        HelloWithoutInterface helloCProxy = (HelloWithoutInterface)proxy.generateProxy(HelloWithoutInterface.class);
+</span><span class='line'>        helloCProxy.hello();
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>同样我们debug一下，得到的信息如下，同样生成了代理类，类名称为proxy.sample.HelloImpl$$EnhancerByCGLIB$$b46b6f06，这个稀奇古怪的类名我们后面会分析：</p>
+
+<p><img src="/images/spring/cglib_proxy_debug.png"></p>
+
+<p>下面还是尝试分析CGLib动态代理的原理。默认情况下生成的代理class文件只存储在内存中，我们可以在代码中设置一个环境变量：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>System.setProperty(DebuggingClassWriter.DEBUG_LOCATION_PROPERTY, "/home/xiaobaoqiu/cglib_proxy");</span></code></pre></td></tr></table></div></figure>
+
+
+<p>之后我们在目标目录下得到很多的class，其中的proxy目录包含了生成的class文件。我们发现一大堆的class文件，类名都是稀奇古怪：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/cglib_proxy/proxy/javaProxy$ ll
+</span><span class='line'>-rw-rw-r-- 1 xiaobaoqiu xiaobaoqiu 2227  3月 21 18:38 HelloWithoutInterface$$EnhancerByCGLIB$$7d786e36.class
+</span><span class='line'>-rw-rw-r-- 1 xiaobaoqiu xiaobaoqiu 5555  3月 21 18:38 HelloWithoutInterface$$EnhancerByCGLIB$$e4e0e0f1.class
+</span><span class='line'>-rw-rw-r-- 1 xiaobaoqiu xiaobaoqiu 7744  3月 21 18:38 HelloWithoutInterface$$EnhancerByCGLIB$$e4e0e0f1$$FastClassByCGLIB$$814877d5.class
+</span><span class='line'>-rw-rw-r-- 1 xiaobaoqiu xiaobaoqiu 2673  3月 21 18:45 HelloWithoutInterface$$FastClassByCGLIB$$32a767a1.class</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们先看看class文件的生成策略。每个Class Generator(比如这里的Enhancer)都继承自AbstractClassGenerator(实现接口ClassGenerator，这个接口只有一个generateClass的方法)，需要实现其generateClass()方法。generateClassName()方法用来生成Class名称：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private String generateClassName(Predicate nameTestPredicate) {
+</span><span class='line'>        return namingPolicy.getClassName(namePrefix, source.name, key, nameTestPredicate);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>//namingPolicy的默认实现NamingPolicy
+</span><span class='line'>public String getClassName(String prefix, String source, Object key, Predicate names) {
+</span><span class='line'>  //prefix为被代理类的路径，
+</span><span class='line'>        String base =
+</span><span class='line'>            prefix + "$$" +                       //prefix为被代理类的路径
+</span><span class='line'>            source.substring(source.lastIndexOf('.') + 1) +       //获取生成代理类的类，比如我们这里的Enhancer
+</span><span class='line'>            getTag() + "$$" +                     //getTag()默认为ByCGLIB
+</span><span class='line'>            Integer.toHexString(STRESS_HASH_CODE ? 0 : key.hashCode());   //hashcode
+</span><span class='line'>        String attempt = base;
+</span><span class='line'>        int index = 2;
+</span><span class='line'>        while (names.evaluate(attempt))       //如果有重复，则再在后面加上下标，小标从2开始
+</span><span class='line'>            attempt = base + "_" + index++;
+</span><span class='line'>        return attempt;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面正式进入class文件的生成原理分析，还是从源代码入手，enhancer.create()最终进入AbstractClassGenerator.create()方法，我们发现最终return的Object是从内部变量obj得来，因此，我们看看ClassLoaderData的生成逻辑：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>protected Object create(Object key) {
+</span><span class='line'>            ClassLoader loader = getClassLoader();
+</span><span class='line'>            Map&lt;ClassLoader, ClassLoaderData&gt; cache = CACHE;
+</span><span class='line'>            ClassLoaderData data = cache.get(loader);
+</span><span class='line'>            if (data == null) {
+</span><span class='line'>                synchronized (AbstractClassGenerator.class) {
+</span><span class='line'>                    data = cache.get(loader);
+</span><span class='line'>                    if (data == null) {
+</span><span class='line'>                        Map&lt;ClassLoader, ClassLoaderData&gt; newCache = new WeakHashMap&lt;ClassLoader, ClassLoaderData&gt;(cache);
+</span><span class='line'>                        data = new ClassLoaderData(classLoader);
+</span><span class='line'>                        newCache.put(classLoader, data);
+</span><span class='line'>                        CACHE = newCache;
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>            this.key = key;
+</span><span class='line'>            Object obj = data.get(this);
+</span><span class='line'>            if (obj instanceof Class) {
+</span><span class='line'>                return firstInstance((Class) obj);
+</span><span class='line'>            }
+</span><span class='line'>            return nextInstance(obj);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public ClassLoaderData(ClassLoader classLoader) {
+</span><span class='line'>            this.classLoader = new WeakReference&lt;ClassLoader&gt;(classLoader);
+</span><span class='line'>            Function&lt;AbstractClassGenerator, Object&gt; load =
+</span><span class='line'>                    new Function&lt;AbstractClassGenerator, Object&gt;() {
+</span><span class='line'>                        public Object apply(AbstractClassGenerator gen) {
+</span><span class='line'>                            Class klass = gen.generate(ClassLoaderData.this); //生成class的关键代码
+</span><span class='line'>                            return gen.wrapCachedClass(klass);
+</span><span class='line'>                        }
+</span><span class='line'>                    };
+</span><span class='line'>            generatedClasses = new LoadingCache&lt;AbstractClassGenerator, Object, Object&gt;(GET_KEY, load);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因此我们将目光转到generate()中：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>//Enhancer的generate()方法
+</span><span class='line'>protected Class generate(ClassLoaderData data) {
+</span><span class='line'>        validate();
+</span><span class='line'>        if (superclass != null) {
+</span><span class='line'>            setNamePrefix(superclass.getName());
+</span><span class='line'>        } else if (interfaces != null) {
+</span><span class='line'>            setNamePrefix(interfaces[ReflectUtils.findPackageProtected(interfaces)].getName());
+</span><span class='line'>        }
+</span><span class='line'>        return super.generate(data);  //父类AbstractClassGenerator
+</span><span class='line'>}
+</span><span class='line'>// AbstractClassGenerator的generate()方法
+</span><span class='line'>protected Class generate(ClassLoaderData data) {
+</span><span class='line'>            //...
+</span><span class='line'>            ClassLoader classLoader = data.getClassLoader();
+</span><span class='line'>            this.setClassName(generateClassName(data.getUniqueNamePredicate()));  //代理类的类名称的生成逻辑
+</span><span class='line'>            //...
+</span><span class='line'>            byte[] b = strategy.generate(this);       //生成策略，默认实现DefaultGeneratorStrategy，生成class文件的字节码
+</span><span class='line'>            String className = ClassNameReader.getClassName(new ClassReader(b));
+</span><span class='line'>            ProtectionDomain protectionDomain = getProtectionDomain();
+</span><span class='line'>            synchronized (classLoader) { // just in case
+</span><span class='line'>                if (protectionDomain == null) {
+</span><span class='line'>                    gen = ReflectUtils.defineClass(className, b, classLoader);
+</span><span class='line'>                } else {
+</span><span class='line'>                    gen = ReflectUtils.defineClass(className, b, classLoader, protectionDomain);
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>            return gen;
+</span><span class='line'>            ...//异常处理
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>//DefaultGeneratorStrategy的generate()方法
+</span><span class='line'>public byte[] generate(ClassGenerator cg) throws Exception {
+</span><span class='line'>        DebuggingClassWriter cw = getClassVisitor();
+</span><span class='line'>        transform(cg).generateClass(cw);      //这里调用最终的generateClass()逻辑,Visitor模式
+</span><span class='line'>        return transform(cw.toByteArray());   //通过Visitor得到最后的字节码
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>所以最终的调用是Enhancer的generateClass()调用。这代码好晦涩，感觉和JVM加载字节码相关。</p>
+
+<p>看一下CGLib生成的class文件，这个代理类继承了我们的被代理类并且实现了Factory类，类定义如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class HelloWithoutInterface$$EnhancerByCGLIB$$e4e0e0f1 extends proxy.javaProxy.HelloWithoutInterface implements net.sf.cglib.proxy.Factory {
+</span><span class='line'>    private boolean CGLIB$BOUND;
+</span><span class='line'>    public static java.lang.Object CGLIB$FACTORY_DATA;
+</span><span class='line'>    private static final java.lang.ThreadLocal CGLIB$THREAD_CALLBACKS;
+</span><span class='line'>    private static final net.sf.cglib.proxy.Callback[] CGLIB$STATIC_CALLBACKS;
+</span><span class='line'>    private net.sf.cglib.proxy.MethodInterceptor CGLIB$CALLBACK_0;
+</span><span class='line'>    private static final java.lang.reflect.Method CGLIB$hello$0$Method;
+</span><span class='line'>    private static final net.sf.cglib.proxy.MethodProxy CGLIB$hello$0$Proxy;
+</span><span class='line'>    private static final java.lang.Object[] CGLIB$emptyArgs;
+</span><span class='line'>    private static final java.lang.reflect.Method CGLIB$equals$1$Method;
+</span><span class='line'>    private static final net.sf.cglib.proxy.MethodProxy CGLIB$equals$1$Proxy;
+</span><span class='line'>    private static final java.lang.reflect.Method CGLIB$toString$2$Method;
+</span><span class='line'>    private static final net.sf.cglib.proxy.MethodProxy CGLIB$toString$2$Proxy;
+</span><span class='line'>    private static final java.lang.reflect.Method CGLIB$hashCode$3$Method;
+</span><span class='line'>    private static final net.sf.cglib.proxy.MethodProxy CGLIB$hashCode$3$Proxy;
+</span><span class='line'>    private static final java.lang.reflect.Method CGLIB$clone$4$Method;
+</span><span class='line'>    private static final net.sf.cglib.proxy.MethodProxy CGLIB$clone$4$Proxy;
+</span><span class='line'>
+</span><span class='line'>    static void CGLIB$STATICHOOK1() { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    final void CGLIB$hello$0() { /* compiled code */ }    //代理的方法
+</span><span class='line'>
+</span><span class='line'>    public final void hello() { /* compiled code */ } //代理的方法
+</span><span class='line'>
+</span><span class='line'>    final boolean CGLIB$equals$1(java.lang.Object o) { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public final boolean equals(java.lang.Object o) { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    final java.lang.String CGLIB$toString$2() { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public final java.lang.String toString() { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    final int CGLIB$hashCode$3() { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public final int hashCode() { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    final java.lang.Object CGLIB$clone$4() throws java.lang.CloneNotSupportedException { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    protected final java.lang.Object clone() throws java.lang.CloneNotSupportedException { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public static net.sf.cglib.proxy.MethodProxy CGLIB$findMethodProxy(net.sf.cglib.core.Signature signature) { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public HelloWithoutInterface$$EnhancerByCGLIB$$e4e0e0f1() { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public static void CGLIB$SET_THREAD_CALLBACKS(net.sf.cglib.proxy.Callback[] callbacks) { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public static void CGLIB$SET_STATIC_CALLBACKS(net.sf.cglib.proxy.Callback[] callbacks) { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    private static final void CGLIB$BIND_CALLBACKS(java.lang.Object o) { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public java.lang.Object newInstance(net.sf.cglib.proxy.Callback[] callbacks) { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public java.lang.Object newInstance(net.sf.cglib.proxy.Callback callback) { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public java.lang.Object newInstance(java.lang.Class[] classes, java.lang.Object[] objects, net.sf.cglib.proxy.Callback[] callbacks) { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public net.sf.cglib.proxy.Callback getCallback(int i) { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public void setCallback(int i, net.sf.cglib.proxy.Callback callback) { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public net.sf.cglib.proxy.Callback[] getCallbacks() { /* compiled code */ }
+</span><span class='line'>
+</span><span class='line'>    public void setCallbacks(net.sf.cglib.proxy.Callback[] callbacks) { /* compiled code */ }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>注意，我们生成的动态代理包含两个hello()相关的方法。我们可以使用javap获取其字节码,我们发现和我们被代理者同名的hello()方法是带代理逻辑的，而CGLIB$hello$0()这个则是原始被代理者的直接调用(不包含代理逻辑):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/cglib_proxy/proxy/javaProxy$ javap -c HelloWithoutInterface\$\$EnhancerByCGLIB\$\$e4e0e0f1.class
+</span><span class='line'>...
+</span><span class='line'>  final void CGLIB$hello$0();
+</span><span class='line'>    Code:
+</span><span class='line'>       0: aload_0
+</span><span class='line'>       1: invokespecial #36                 // Method proxy/javaProxy/HelloWithoutInterface.hello:()V
+</span><span class='line'>       4: return
+</span><span class='line'>
+</span><span class='line'>  public final void hello();
+</span><span class='line'>    Code:
+</span><span class='line'>       0: aload_0
+</span><span class='line'>       1: getfield      #38                 // Field CGLIB$CALLBACK_0:Lnet/sf/cglib/proxy/MethodInterceptor;
+</span><span class='line'>       4: dup
+</span><span class='line'>       5: ifnonnull     17
+</span><span class='line'>       8: pop
+</span><span class='line'>       9: aload_0
+</span><span class='line'>      10: invokestatic  #42                 // Method CGLIB$BIND_CALLBACKS:(Ljava/lang/Object;)V
+</span><span class='line'>      13: aload_0
+</span><span class='line'>      14: getfield      #38                 // Field CGLIB$CALLBACK_0:Lnet/sf/cglib/proxy/MethodInterceptor;
+</span><span class='line'>      17: dup
+</span><span class='line'>      18: ifnull        37
+</span><span class='line'>      21: aload_0
+</span><span class='line'>      22: getstatic     #44                 // Field CGLIB$hello$0$Method:Ljava/lang/reflect/Method;
+</span><span class='line'>      25: getstatic     #46                 // Field CGLIB$emptyArgs:[Ljava/lang/Object;
+</span><span class='line'>      28: getstatic     #48                 // Field CGLIB$hello$0$Proxy:Lnet/sf/cglib/proxy/MethodProxy;
+</span><span class='line'>      31: invokeinterface #54,  5           // InterfaceMethod net/sf/cglib/proxy/MethodInterceptor.intercept:(Ljava/lang/Object;Ljava/lang/reflect/Method;[Ljava/lang/Object;Lnet/sf/cglib/proxy/MethodProxy;)Ljava/lang/Object;
+</span><span class='line'>      36: return
+</span><span class='line'>      37: aload_0
+</span><span class='line'>      38: invokespecial #36                 // Method proxy/javaProxy/HelloWithoutInterface.hello:()V
+</span><span class='line'>      41: return
+</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>遗留问题：
+(1).为什么一个类会生成多个代理类，各个代理类都是什么用处；</p>
+
+<p>CGLib代理同样存在限制：</p>
+
+<pre><code>(1).private方法无法代理；
+(2).final方法无法代理;
+</code></pre>
+
+<p>private方法和final方法看代理类的字节码会发现，代理类不会这些重写函数(子类没法重写)，因此会自动调用父类的。</p>
+
+<p>参考：
+<a href="http://www.cnblogs.com/cruze/p/3843996.html">cglib源码分析（四）：cglib 动态代理原理分析</a></p>
+
+<p><a href="https://dzone.com/articles/cglib-missing-manual">CGLib: The Missing Manual</a></p>
+
+<h4 id="#1.4 Java动态代理 VS CGLib动态代理">#1.4 Java动态代理 VS CGLib动态代理</h4>
+
+
+<p>简单总结对比一下两种动态代理:</p>
+
+<table>
+<thead>
+<tr>
+<th style="text-align:center;">代理 </th>
+<th style="text-align:center;"> 没有实现interface的类 </th>
+<th style="text-align:center;"> protected方法 </th>
+<th style="text-align:center;"> private方法 </th>
+<th style="text-align:center;"> final类 </th>
+<th style="text-align:center;"> final方法 </th>
+<th style="text-align:center;"> 构造函数private的类 </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center;">Java动态代理 </td>
+<td style="text-align:center;"> 不支持 </td>
+<td style="text-align:center;"> 不支持 </td>
+<td style="text-align:center;"> 不支持 </td>
+<td style="text-align:center;">支持 </td>
+<td style="text-align:center;"> 支持 </td>
+<td style="text-align:center;"> 支持 </td>
+</tr>
+<tr>
+<td style="text-align:center;">CGLib动态代理 </td>
+<td style="text-align:center;"> 支持 </td>
+<td style="text-align:center;"> 支持  </td>
+<td style="text-align:center;"> 不支持 </td>
+<td style="text-align:center;">不支持 </td>
+<td style="text-align:center;"> 不支持 </td>
+<td style="text-align:center;"> 不支持 </td>
+</tr>
+</tbody>
+</table>
+
+
+<p>关于CGLib对protected方法的支持,可以在生成的代理类中看到.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>CGLib报错信息：
+</span><span class='line'>final类: Cannot subclass final class proxy.javaProxy.HelloWithFinal
+</span><span class='line'>构造方法私有的类: No visible constructors in class proxy.javaProxy.HelloWithoutConstructor
+</span><span class='line'>final方法: 不报错，但没有代理逻辑</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在性能方面，通常认为Java动态代理生成代理类比CGLib生成代理类快，但是CGLib的代理类运行期性能会优于Java动态代理的代理类。不过通常性能都不是问题，如果确实很关心性能，建议直接使用ASM。</p>
+
+<p>参考：
+<a href="http://www.theserverside.com/news/thread.tss?thread_id=45089">Why do you think CGLib proxies are faster than JDK Proxies?</a></p>
+
+<p><a href="https://community.oracle.com/docs/DOC-983406">Implement Your Own Proxy-Based AOP Framework Blog</a></p>
+
+<p>BeanDefinitionParserDelegate
+AnnotationDrivenBeanDefinitionParser</p>
+
+<p>参考：
+Spring加载资源分析：<a href="http://www.blogjava.net/heavensay/archive/2013/10/28/405699.html">http://www.blogjava.net/heavensay/archive/2013/10/28/405699.html</a></p>
+
+<p>事务的坑
+<a href="http://www.ibm.com/developerworks/library/j-ts1/">http://www.ibm.com/developerworks/library/j-ts1/</a></p>
+
+<p>代理实现选择器:
+AdviceMode
+TransactionManagementConfigurationSelector</p>
+
+<p>声明事务切面实现:
+TransactionInterceptor</p>
+
+<p>事务实现
+Connection关闭自动提交
+ConnectionHolder来保持Connection</p>
+
+<p>参考:
+<a href="http://openwares.net/java/spring_mybatis_transaction.html">http://openwares.net/java/spring_mybatis_transaction.html</a>
+<a href="http://my.oschina.net/guanzhenxing/blog/214228">http://my.oschina.net/guanzhenxing/blog/214228</a>
+<a href="http://www.mybatis.org/spring/zh/transactions.html">http://www.mybatis.org/spring/zh/transactions.html</a>
+<a href="http://tracylihui.github.io/2015/07/28/spring/Spring%E5%A3%B0%E6%98%8E%E5%BC%8F%E4%BA%8B%E5%8A%A1%E7%AE%A1%E7%90%86/">http://tracylihui.github.io/2015/07/28/spring/Spring%E5%A3%B0%E6%98%8E%E5%BC%8F%E4%BA%8B%E5%8A%A1%E7%AE%A1%E7%90%86/</a>
+<a href="http://www.cnblogs.com/davenkin/archive/2013/02/16/java-tranaction-1.html">http://www.cnblogs.com/davenkin/archive/2013/02/16/java-tranaction-1.html</a>
+<a href="http://www.importnew.com/12300.html">http://www.importnew.com/12300.html</a>
+详细介绍Spring事务管理: <a href="http://developer.51cto.com/art/200906/129854.htm">http://developer.51cto.com/art/200906/129854.htm</a>
+spring事务原理1-事务的抽象: <a href="http://sqtds.github.io/2014/06/09/2014/spring-tx1/">http://sqtds.github.io/2014/06/09/2014/spring-tx1/</a>
+Spring官方文档Transaction Management: <a href="http://docs.spring.io/autorepo/docs/spring/3.2.x/spring-framework-reference/html/transaction.html">http://docs.spring.io/autorepo/docs/spring/3.2.x/spring-framework-reference/html/transaction.html</a>
+Spring官方文档Aspect Oriented Programming with Spring: <a href="http://docs.spring.io/spring/docs/3.0.x/reference/aop.html">http://docs.spring.io/spring/docs/3.0.x/reference/aop.html</a>
+StackOverFlow Spring - @Transactional - What happens in background?: <a href="http://stackoverflow.com/questions/1099025/spring-transactional-what-happens-in-background">http://stackoverflow.com/questions/1099025/spring-transactional-what-happens-in-background</a>
+Transaction strategies: Understanding transaction pitfalls: <a href="http://www.ibm.com/developerworks/library/j-ts1/">http://www.ibm.com/developerworks/library/j-ts1/</a>
+Annotation-based Transactions in Spring: <a href="http://springinpractice.com/2008/03/18/annotation-based-transactions-in-spring">http://springinpractice.com/2008/03/18/annotation-based-transactions-in-spring</a>
+Design principle behind Transaction framework with Spring 3: <a href="http://stackoverflow.com/questions/11789857/design-principle-behind-transaction-framework-with-spring-3">http://stackoverflow.com/questions/11789857/design-principle-behind-transaction-framework-with-spring-3</a>
+Chapter 6. 使用Spring进行面向切面编程（AOP）: <a href="http://shouce.jb51.net/spring/aop.html">http://shouce.jb51.net/spring/aop.html</a>
+wiki: <a href="http://wiki.corp.qunar.com/display/~yushen.ma/Spring+3.x-JDBC+Transaction">http://wiki.corp.qunar.com/display/~yushen.ma/Spring+3.x-JDBC+Transaction</a>
+spring事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=52084161">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=52084161</a>
+spring 事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=93338632">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=93338632</a>
+aspectj事务: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=92656954">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=92656954</a></p>
+
+<p>Demo:
+编程事务: <a href="http://www.tutorialspoint.com/spring/programmatic_management.htm">http://www.tutorialspoint.com/spring/programmatic_management.htm</a>
+声明事务: <a href="http://www.tutorialspoint.com/spring/declarative_management.htm">http://www.tutorialspoint.com/spring/declarative_management.htm</a></p>
+
+<p>@Transactional注解工作原理：<a href="http://blog.csdn.net/dslztx/article/details/46636079">http://blog.csdn.net/dslztx/article/details/46636079</a>
+分布式事务系列（1.2）Spring的事务体系： <a href="https://yq.aliyun.com/articles/39046">https://yq.aliyun.com/articles/39046</a>
+spring transaction源码分析&ndash;事务架构：<a href="http://www.cnblogs.com/davidwang456/p/4309038.html">http://www.cnblogs.com/davidwang456/p/4309038.html</a></p>
+
+<p><a href="http://blog.csdn.net/szwangdf/article/details/41516239">http://blog.csdn.net/szwangdf/article/details/41516239</a></p>
+
+<p>AopProxy
+DefaultAopProxyFactory</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1209,98 +2448,6 @@
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/11/21/ju-bu-min-gan-hash/">局部敏感Hash</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-11-21T12:05:25+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>21</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>12:05 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><ul>
-<li><a href="#1.LSH%E7%AE%80%E4%BB%8B">1.LSH简介</a></li>
-<li><a href="#2.%E6%99%AE%E9%80%9AHash">2.普通Hash</a></li>
-<li><a href="#3.LSH">3.LSH</a></li>
-</ul>
-
-
-<h2 id="1.LSH简介">1.LSH简介</h2>
-
-
-<p>之前在项目中做数据聚合去重的逻辑的时候简单看过局部敏感Hash(Locality Sensitive Hashing,简称LSH)这个东东。今天整理一下个人的理解。</p>
-
-<p>LSH可以理解为一种衡量文本相似度的算法，特点是散列前的相似点经过哈希之后，也能够在一定程度上相似，并且具有一定的概率保证。其有坚实的理论依据(98年左右理论就提出来了，99年有第一版实现)并且在高维数据空间中表现优异。简单的价格实验场景：</p>
-
-<ol>
-<li>近似检测(Near-duplicate detection): 通常运用在网页去重方面。在搜索中往往会遇到内容相似的重复页面，它们中大多是由于网站之间转载造成的。可以对页面计算LSH，通过查找相等或相近的LSH值找到Near-duplicate。</li>
-<li>图像、音频检索: 通常图像、音频文件都比较大，并且比较起来相对麻烦，我们可以事先对其计算LSH，用作信息指纹，这样可以给定一个文件的LSH值，快速找到与其相等或相近的图像和文件。</li>
-<li>聚类: 将LSH值作为样本特征，将相同或相近的LSH值的样本合并在一起作为一个类别。</li>
-<li>指纹匹配: 一个手指指纹通常由一些细节来表征，通过对比较两个手指指纹的细节的相似度就可以确定两个指纹是否相同或相似。</li>
-</ol>
-
-
-<p>LSH的发展历史可以参考： <a href="http://jacoxu.com/?p=496">http://jacoxu.com/?p=496</a></p>
-
-<h2 id="2.普通Hash">2.普通Hash</h2>
-
-
-<p>说到Hash，大家都很熟悉，是一种典型的Key-Value结构，最常见的算法莫过于MD5。其设计思想是使Key集合中的任意关键字能够尽可能均匀的变换到Value空间中，不同的Key对应不同的Value。通过建立Hash的方式我们能够得到O(1)的查找时间性能，其中关键在于选取一个hash function(md5就是一致hash function)。</p>
-
-<p>md5这种hash函数通常情况下，Key值只有轻微变化，Value值也会发生很大地变化。比如下面实验中用到的文本，仅仅是邮箱号少了个.，其md5完全不同：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp/md5$ cat 1.dat 
-</span><span class='line'>xiaobaoqiu@qunar.com
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp/md5$ cat 2.dat 
-</span><span class='line'>xiaobaoqiu@qunarcom
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp/md5$ md5sum 1.dat 
-</span><span class='line'>ca201d44a9bb6f8e0ca761cdeb678948  1.dat
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/temp/md5$ md5sum 2.dat 
-</span><span class='line'>f585aa440eb3b8bbc46f1184e2944fb9  2.dat</span></code></pre></td></tr></table></div></figure>
-
-
-<p>原始文本是极其相似的，但是hash之后这种相似性就丢失了。</p>
-
-<h2 id="3.LSH">3.LSH</h2>
-
-
-<p>局部敏感哈希的最大特点就在于保持数据的相似性。需要注意的是这里说的保持数据的相似度不是说保持100%的相似度，而是保持最大可能的相似度。换个角度来看，可以将LSH理解为数据降维的方法。</p>
-
-<p>数据对应的维度越高，信息量也就越大，相反，如果数据进行了降维，那么毫无疑问数据所反映的信息必然会有损失。哈希函数从本质上来看就是一直在扮演数据降维的角色。</p>
-
-<p>LSH的基本思想是：将原始数据空间中的两个相邻数据点通过相同的映射或投影变换后，这两个数据点在新的数据空间中仍然相邻的概率很大，而不相邻的数据点被映射到同一个桶的概率很小。</p>
-
-<p>参考：
-<a href="https://en.wikipedia.org/wiki/Locality-sensitive_hashing">https://en.wikipedia.org/wiki/Locality-sensitive_hashing</a>
-<a href="http://www.cnblogs.com/maybe2030/p/4953039.html">http://www.cnblogs.com/maybe2030/p/4953039.html</a>
-<a href="http://blog.csdn.net/weiyuweizhi/article/details/8921973">http://blog.csdn.net/weiyuweizhi/article/details/8921973</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/4">&larr; Older</a>
@@ -1318,6 +2465,10 @@
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/">Spring上传组件冲突</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/12/29/activitishi-jian-chu-li/">Activiti事件处理</a>
@@ -1355,10 +2506,6 @@
         <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1383,7 +2530,7 @@
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

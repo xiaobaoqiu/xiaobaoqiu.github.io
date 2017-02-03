@@ -9,15 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近项目中的beta环境,多个应用(10+个)连接数据库,使用的是连接池管理数据库连接. 最近应用中经常抛出数据库连接异常(我们使用的连接池是druid),简单的就是说无法获取Mysql的连接,创建连接失败(create connection error): 1
-2
-3
-4
-5
-6
-7
-8
-9 &hellip;">
+  <meta name="description" content="历经一个月的项目,使用Crate提升搜索速度终于要上线.先交代一下背景,我们使用的crate相关的依赖的版本: 1.crate-client 0.47.8
+2.crate-jdbc 1.5.1 发布之后,验证阶段一切正常,等把流量入口打开,一段时间之后, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -83,6 +76,153 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/05/20/crate-jdbccha-xun-si-xun-huan-bug/">Crate Jdbc查询死循环bug</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-05-20T05:41:17+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>20</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:41 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>历经一个月的项目,使用Crate提升搜索速度终于要上线.先交代一下背景,我们使用的crate相关的依赖的版本:</p>
+
+<pre><code>1.crate-client  0.47.8
+2.crate-jdbc    1.5.1
+</code></pre>
+
+<p>发布之后,验证阶段一切正常,等把流量入口打开,一段时间之后,猛然发现crate的一个查询服务所在的机器load飙到20往上,机器是4核CPU,4G内存的虚拟机.</p>
+
+<p>top -H发现有大量的tomcat线程(10+),每个线程占用的CPU都达到20%,并且这种线程有增多的趋势.</p>
+
+<p>vmstat命令发现r数字特别高,即正在等待CPU的线程非常多.</p>
+
+<p>jstack的结果发现runnable的线程多达300多.</p>
+
+<p>看现象,感觉问题是线程池分配没有回收,但是定位不到问题在哪.</p>
+
+<p>最终定位的问题是在特定场景下存在死循环,并且直接才crate服务器执行相同的查询逻辑正常返回,因此基本定位在crate-jdbc中.</p>
+
+<h1>1.死循环场景</h1>
+
+<pre><code>1.crate中数据为空,这是很从crate中查询数据;
+2.crate中存在满足查询条件数据,我们分页查询,假设总数据量为10页,我们因为代码问题,直接查询第11页的内容(实际上肯定不存在);
+</code></pre>
+
+<h1>2.原因</h1>
+
+<p>原因是这个版本crate-jdbc和mybatis一起存在死循环,如下,我们对crate的查询首先经过mybatis,从</p>
+
+<pre><code>1.MapperProxy.invoke
+2.MapperMethod.execute
+3.SqlSessionTemplate.selectList, SqlSessionTemplate.invoke
+4.DefaultSqlSession.selectList
+5.BaseExecutor.query, BaseExecutor.queryFromDatabase
+6.ReuseExecutor.doQuery
+7.RoutingStatementHandler.query
+8.PreparedStatementHandler.query
+9.CratePreparedStatement.execute()
+10.DefaultResultSetHandler.handleResultSets, DefaultResultSetHandler.getFirstResultSet
+</code></pre>
+
+<p>问题的代码就在DefaultResultSetHandler.getFirstResultSet中:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private ResultSetWrapper getFirstResultSet(Statement stmt) throws SQLException {
+</span><span class='line'>    ResultSet rs = stmt.getResultSet();
+</span><span class='line'>    while (rs == null) {
+</span><span class='line'>        // move forward to get the first resultset in case the driver
+</span><span class='line'>        // doesn't return the resultset as the first result (HSQLDB 2.1)
+</span><span class='line'>        if (stmt.getMoreResults()) {
+</span><span class='line'>            rs = stmt.getResultSet();
+</span><span class='line'>        } else {
+</span><span class='line'>            if (stmt.getUpdateCount() == -1) {
+</span><span class='line'>                // no more results. Must be no resultset
+</span><span class='line'>                break;
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>    return rs != null ? new ResultSetWrapper(rs, configuration) : null;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中stmt为CratePreparedStatement,其getMoreResults()实现:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>public boolean getMoreResults() throws SQLException {
+</span><span class='line'>    return false;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因此逻辑进入到else中,stmt.getUpdateCount()的实现:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>public int getUpdateCount() throws SQLException {
+</span><span class='line'>    checkClosed();  //check connection是否被关闭
+</span><span class='line'>    if (resultSet == null && sqlResponse != null) {
+</span><span class='line'>        return (int) sqlResponse.rowCount();
+</span><span class='line'>    }
+</span><span class='line'>    return -1;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中CratePreparedStatement的resultSet为null,并且sqlResponse不为空,sqlResponse的rowCount为0,因此getUpdateCount()返回值为0.因此getFirstResultSet中继续在while循环中,无法跳出.</p>
+
+<p><img src="/images/crate/crate_jdbc_bug_code.png"></p>
+
+<h1>3.绕过</h1>
+
+<p>归结起来产生问题的很简单,就是查询的结果集为空的时候,就会产生死循环,针对两种死循环场景,我们都可以绕过:</p>
+
+<pre><code>1.查询之前,先执行count查询,当count为0,即crate中没有满足我们查询条件的数据,则直接返回空数据集;
+2.分页查询的时候,先执行count查询,当分页的offset大于等于count,则值额节返回空数据集;
+</code></pre>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1567,970 +1707,6 @@ clear 100       清除屏幕上的指定行数的内容
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/04/09/spring-spelyu-fa/">Spring SpEL语法</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-04-09T07:25:44+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>9</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:25 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近项目中遇到一个问题，无意中发现Spring SpEL语法，Spring的Cache正是基于此实现的，感觉很强大，学习一下。</p>
-
-<h1>1.简介</h1>
-
-<p>SpEL官网：<a href="http://docs.spring.io/spring/docs/current/spring-framework-reference/html/expressions.html">http://docs.spring.io/spring/docs/current/spring-framework-reference/html/expressions.html</a></p>
-
-<p>Spring表达式语言全称为Spring Expression Language(缩写为SpEL)，能在运行时构建复杂表达式、存取对象图属性、对象方法调用等等，并且能与Spring功能完美整合，如能用来配置Bean定义。
-表达式语言给静态Java语言增加了动态功能。</p>
-
-<p>SpEL是单独模块，只依赖于core模块，不依赖于其他模块，可以单独使用。</p>
-
-<p>SpEL支持以下功能:</p>
-
-<pre><code>1.文本表达式(Literal expressions)
-2.布尔操作和关系操作(Boolean and relational operators)
-3.正则表达式(Regular expressions)
-4.类表达式(Class expressions)
-5.访问属性,数组,list和map(Accessing properties, arrays, lists, maps)
-6.方法调用(Method invocation)
-7.关系操作符(Relational operators)
-8.赋值(Assignment)
-9.调用构造器(Calling constructors)
-10.Bean引用(Bean references)
-11.数组构造(Array construction)
-12.内脸list(Inline lists)
-13.内联Map(Inline maps)
-14.三元运算符(Ternary operator)
-15.变量(Variables)
-16.自定义函数(User defined functions)
-17.集合投影(Collection projection)
-18.集合筛选(Collection selection)
-19.模板表达式(Templated expressions)
-</code></pre>
-
-<h1>2.SpEL使用</h1>
-
-<p>下面通过一些简单的case来示范SpEL的使用.</p>
-
-<h3>2.1 第一个SpEL</h3>
-
-<p>SpEL表达式可以直接使用ExpressionParser解析,主要是调用ExpressionParser的parseExpression()方法:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_1(){
-</span><span class='line'>    Expression expression = parser.parseExpression("'Testing Spring Expression Framework'");
-</span><span class='line'>    String message = (String) expression.getValue();
-</span><span class='line'>    System.out.println("Message is " + message);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.2 字面量表达式</h3>
-
-<p>SpEL支持的字面量包括字符串、数字类型（int、long、float、double）、bool类型、null类型,注意字符串必须要单引号括起来:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_2(){
-</span><span class='line'>    // evals to "Hello World"
-</span><span class='line'>    String helloWorld = (String) parser.parseExpression("'Hello World'").getValue();
-</span><span class='line'>    double avogadrosNumber = (Double) parser.parseExpression("6.0221415E+23").getValue();
-</span><span class='line'>
-</span><span class='line'>    // evals to 2147483647
-</span><span class='line'>    int maxValue = (Integer) parser.parseExpression("0x7FFFFFFF").getValue();
-</span><span class='line'>    boolean trueValue = (Boolean) parser.parseExpression("true").getValue();
-</span><span class='line'>    Object nullValue = parser.parseExpression("null").getValue();
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.3 算数运算表达式</h3>
-
-<p>SpEL支持加(+)、减(-)、乘(*)、除(/)、求余（%）、幂（^）运算,SpEL还提供求余（MOD）和除（DIV）而外两个运算符，与"%&ldquo;和&rdquo;/&ldquo;等价，不区分大小写:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_3(){
-</span><span class='line'>    int result1 = parser.parseExpression("1+2-3*4/2").getValue(Integer.class);
-</span><span class='line'>    int result2 = parser.parseExpression("4%3").getValue(Integer.class);
-</span><span class='line'>    int result3 = parser.parseExpression("2^3").getValue(Integer.class);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.4 关系表达式</h3>
-
-<p>等于（==）、不等于(!=)、大于(>)、大于等于(>=)、小于(&lt;)、小于等于(&lt;=)，区间（between）运算:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_4(){
-</span><span class='line'>    boolean result1 = parser.parseExpression("1&gt;2").getValue(boolean.class);
-</span><span class='line'>    boolean result2 = parser.parseExpression("1 between {1, 2}").getValue(boolean.class);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>between运算符右边操作数必须是列表类型，且只能包含2个元素。第一个元素为开始，第二个元素为结束，区间运算是包含边界值的。</p>
-
-<p>SpEL同样提供了等价的"EQ" 、"NE"、 &ldquo;GT"、"GE"、 "LT&rdquo; 、"LE"来表示等于、不等于、大于、大于等于、小于、小于等于，不区分大小写。</p>
-
-<h3>2.5 逻辑表达式</h3>
-
-<p>且（and）、或(or)、非(!或NOT),注意,逻辑运算符不支持 Java中的 &amp;&amp; 和 ||:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_5() {
-</span><span class='line'>    String expression1 = "2&gt;1 and (!true or !false)";
-</span><span class='line'>    boolean result1 = parser.parseExpression(expression1).getValue(boolean.class);
-</span><span class='line'>
-</span><span class='line'>    String expression2 = "2&gt;1 and (NOT true or NOT false)";
-</span><span class='line'>    boolean result2 = parser.parseExpression(expression2).getValue(boolean.class);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.6 字符串连接及截取表达式</h3>
-
-<p>使用"+&ldquo;进行字符串连接，使用&rdquo;&lsquo;String&rsquo;[0] [index]&ldquo;来截取一个字符，目前只支持截取一个，如&rdquo;&lsquo;Hello &rsquo; + &lsquo;World!&rsquo;&ldquo;得到"Hello World!"；而&rdquo;&lsquo;Hello World!&rsquo;[0]&ldquo;将返回"H"。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_6() {
-</span><span class='line'>//    String expression1 = "'Hello Spring SpEL'[0] [5]";
-</span><span class='line'>//    String result1 = parser.parseExpression(expression1).getValue(String.class);
-</span><span class='line'>//    System.out.println("result1=" + result1);
-</span><span class='line'>
-</span><span class='line'>    String expression2 = "'Hello' + 'Spring' + 'SpEL.'";
-</span><span class='line'>    String result2 = parser.parseExpression(expression2).getValue(String.class);
-</span><span class='line'>//    System.out.println("result1=" + result1);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.7 三目运算</h3>
-
-<p>三目运算符 &ldquo;表达式1?表达式2:表达式3"用于构造三目运算表达式，如"2>1?true:false"将返回true；</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_7() {
-</span><span class='line'>    boolean result1 = parser.parseExpression("2&gt;1?true:false").getValue(boolean.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.8 正则表达式</h3>
-
-<p>可以正则,格式为:str matches regex</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_8() {
-</span><span class='line'>    boolean result1 = parser.parseExpression("'123' matches '\\d{3}'").getValue(boolean.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.9 括号优先级表达式</h3>
-
-<p>使用"(表达式)&ldquo;构造，括号里的具有高优先级</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_9() {
-</span><span class='line'>    int result1 = parser.parseExpression("1+2-3*4/2").getValue(Integer.class);
-</span><span class='line'>    int result2 = parser.parseExpression("1+(2-3)*4/2").getValue(Integer.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.10 类类型表达式</h3>
-
-<p>使用"T(Type)&ldquo;来表示java.lang.Class实例，"Type"必须是类全限定名，"java.lang"包除外，即该包下的类可以不指定包名；使用类类型表达式还可以进行访问类静态方法及类静态字段。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_10() {
-</span><span class='line'>    //java.lang包类访问
-</span><span class='line'>    Class&lt;String&gt; result1 = parser.parseExpression("T(String)").getValue(Class.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>    //其他包类访问
-</span><span class='line'>    String expression2 = "T(com.qunar.scm.spel.SpelParser)";
-</span><span class='line'>    Class&lt;String&gt; result2 = parser.parseExpression(expression2).getValue(Class.class);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>    //类静态字段访问
-</span><span class='line'>    int result3=parser.parseExpression("T(Integer).MAX_VALUE").getValue(int.class);
-</span><span class='line'>    System.out.println("result3=" + result3);
-</span><span class='line'>    //类静态方法调用
-</span><span class='line'>    int result4 = parser.parseExpression("T(Integer).parseInt('1')").getValue(int.class);
-</span><span class='line'>    System.out.println("result4=" + result4);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.11 类实例化</h3>
-
-<p>类实例化同样使用java关键字"new"，类名必须是全限定名，但java.lang包内的类型除外，如String、Integer.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_11() {
-</span><span class='line'>    String result1 = parser.parseExpression("new String('Spring SpEL')").getValue(String.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>
-</span><span class='line'>    Date result2 = parser.parseExpression("new java.util.Date()").getValue(Date.class);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.12 instanceof表达式</h3>
-
-<p>SpEL支持instanceof运算符，跟Java内使用同义:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_12() {
-</span><span class='line'>    boolean result1 = parser.parseExpression("'Spring SpEL' instanceof T(String)").getValue(Boolean.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.13 变量定义及引用</h3>
-
-<p>变量定义通过EvaluationContext接口的setVariable(variableName, value)方法定义；在表达式中使用"#variableName"引用；</p>
-
-<p>除了引用自定义变量，SpE还允许引用根对象及当前上下文对象，使用"#root"引用根对象，使用"#this"引用当前上下文对象；</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_13() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>    context.setVariable("variable", "Spring SpEL");
-</span><span class='line'>    String result1 = parser.parseExpression("#variable").getValue(context, String.class);
-</span><span class='line'>    System.out.println("result1=" + result1);   //Spring SpEL
-</span><span class='line'>
-</span><span class='line'>    context = new StandardEvaluationContext("Spring SpEL");
-</span><span class='line'>    String result2 = parser.parseExpression("#root").getValue(context, String.class);
-</span><span class='line'>    System.out.println("result2=" + result2);   //Spring SpEL
-</span><span class='line'>    String result3 = parser.parseExpression("#this").getValue(context, String.class);
-</span><span class='line'>    System.out.println("result3=" + result3);   //Spring SpEL
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.14 自定义函数</h3>
-
-<p>学习编写自定义的函数并将其注册,这样这个函数就可以在SpEL表达式中使用.</p>
-
-<p>首先是两个工具类的代码</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class CollectionUtils {
-</span><span class='line'>    /**
-</span><span class='line'>     * 集合中的最大元素
-</span><span class='line'>     * @param collection
-</span><span class='line'>     * @return
-</span><span class='line'>     */
-</span><span class='line'>    public static Integer maxElement(Collection&lt;Integer&gt; collection) {
-</span><span class='line'>        Integer maxElement = null;
-</span><span class='line'>        Iterator iterator = collection.iterator();
-</span><span class='line'>        while (iterator.hasNext()) {
-</span><span class='line'>
-</span><span class='line'>            Integer integer = (Integer) iterator.next();
-</span><span class='line'>
-</span><span class='line'>            if (maxElement == null) {
-</span><span class='line'>                maxElement = integer;
-</span><span class='line'>            } else {
-</span><span class='line'>                if (integer.intValue() &gt; maxElement.intValue()) {
-</span><span class='line'>                    maxElement = integer;
-</span><span class='line'>                }
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>        return maxElement;
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public class MathUtils {
-</span><span class='line'>    /**
-</span><span class='line'>     * 测试一个数字是否为素数
-</span><span class='line'>     * @param number
-</span><span class='line'>     * @return
-</span><span class='line'>     */
-</span><span class='line'>    public static boolean isPrime(Integer number) {
-</span><span class='line'>
-</span><span class='line'>        if (number == 0) {
-</span><span class='line'>            return false;
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        for (int index = 2; index &lt; number; index++) {
-</span><span class='line'>            if (number % index == 0) {
-</span><span class='line'>                return false;
-</span><span class='line'>            } else {
-</span><span class='line'>                continue;
-</span><span class='line'>            }
-</span><span class='line'>        }
-</span><span class='line'>        return true;
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>下面,我们首先初始化一个EvaluationContext,具体类是StandardEvaluationContext.</p>
-
-<p>一个context evaluation object能用来存储任意多个对象,这些对象会在在随后的表达式解析中使用.
-另外evaluation context也能用来注册用户自定义的方法.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void main(String[] args) throws Exception {
-</span><span class='line'>        ExpressionParser parser = new SpelExpressionParser();
-</span><span class='line'>
-</span><span class='line'>        StandardEvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>        Method method = null;
-</span><span class='line'>        Expression expression = null;
-</span><span class='line'>        Boolean value = null;
-</span><span class='line'>
-</span><span class='line'>        // 注册方法 isPrime() 为 prime
-</span><span class='line'>        method = MathUtils.class.getMethod("isPrime", Integer.class);
-</span><span class='line'>        context.registerFunction("prime", method);
-</span><span class='line'>
-</span><span class='line'>        expression = parser.parseExpression("#prime(10)");
-</span><span class='line'>        value = expression.getValue(context, Boolean.class);
-</span><span class='line'>        System.out.println("Number 10 is prime: " + value);
-</span><span class='line'>
-</span><span class='line'>        expression = parser.parseExpression("#prime(37)");
-</span><span class='line'>        value = expression.getValue(context, Boolean.class);
-</span><span class='line'>        System.out.println("Number 37 is prime: " + value);
-</span><span class='line'>
-</span><span class='line'>        // 注册方法 maxElement() 为 max
-</span><span class='line'>        method = CollectionUtils.class.getMethod("maxElement", Collection.class);
-</span><span class='line'>        context.registerFunction("max", method);
-</span><span class='line'>
-</span><span class='line'>        // Collection为参数maxElement()
-</span><span class='line'>        expression = parser.parseExpression("#max({10, 43, 45, 98, 32, 1})");
-</span><span class='line'>        Integer maxElement = expression.getValue(context, Integer.class);
-</span><span class='line'>        System.out.println("Max element in the list is : " + maxElement);
-</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>注：EvaluationContext开销较大，所以多用于数据变化较少的情况。如果数据变化频繁，我们可以考虑直接引用对象（比如上例中的simple）以减小开销。</p>
-
-<h3>2.15 赋值表达式</h3>
-
-<p>SpEL即允许给自定义变量赋值，也允许给跟对象赋值，直接使用"#variableName=value"即可赋值：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_15() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>    //1.给自定义变量赋值
-</span><span class='line'>    context.setVariable("variable", "Spring SpEL");
-</span><span class='line'>    String result1 = parser.parseExpression("#variable").getValue(context, String.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>
-</span><span class='line'>    //修改
-</span><span class='line'>    String result2 = parser.parseExpression("#variable='ABC'").getValue(context, String.class);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.16 对象属性存取及安全导航表达式</h3>
-
-<p>对象属性获取非常简单，即使用如"a.property.property"这种点缀式获取，SpEL对于属性名首字母是不区分大小写的；修改对象属性值则可以通过赋值表达式或Expression接口的setValue方法修改。</p>
-
-<p>对于当前上下文对象属性及方法访问，可以直接使用属性或方法名访问，注意此处属性名首字母不区分大小写。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_16() {
-</span><span class='line'>    ExpressionParser parser = new SpelExpressionParser();
-</span><span class='line'>    // 1.访问root对象属性
-</span><span class='line'>    Date date = new Date();
-</span><span class='line'>    System.out.println("date=" + date);
-</span><span class='line'>    StandardEvaluationContext context = new StandardEvaluationContext(date);
-</span><span class='line'>    int result1 = parser.parseExpression("Month").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>    int result2 = parser.parseExpression("month").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>SpEL还引入了Groovy语言中的安全导航运算符"(对象|属性)?.属性"，用来避免但"?.&ldquo;前边的表达式为null时抛出空指针异常，而是返回null；</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_16() {
-</span><span class='line'>    ExpressionParser parser = new SpelExpressionParser();
-</span><span class='line'>    // 2.安全访问
-</span><span class='line'>    context.setRootObject(null);
-</span><span class='line'>    Object result3 = parser.parseExpression("#root?.year").getValue(context, Object.class);
-</span><span class='line'>    System.out.println("result3=" + result3);   //null
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.17 对象方法调用</h3>
-
-<p>对象方法调用更简单，跟Java语法一样；如"&lsquo;Spring&rsquo;.substring(2,4)&ldquo;将返回"ri"；而对于根对象可以直接调用方法；</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_17() {
-</span><span class='line'>    String result1 = parser.parseExpression("'Spring SpEL'.substring(2,4)").getValue(String.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>
-</span><span class='line'>    //root对象date方法"getYear"可以直接调用
-</span><span class='line'>    Date date = new Date();
-</span><span class='line'>    StandardEvaluationContext context = new StandardEvaluationContext(date);
-</span><span class='line'>    int result2 = parser.parseExpression("getMonth()").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result2=" + result2);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.18 Bean引用</h3>
-
-<p>SpEL支持使用"@&ldquo;符号来引用Bean，在引用Bean时需要使用BeanResolver接口实现来查找Bean，Spring提供BeanFactoryResolver实现；</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_18() {
-</span><span class='line'>    ClassPathXmlApplicationContext ctx = new ClassPathXmlApplicationContext();
-</span><span class='line'>    ctx.refresh();
-</span><span class='line'>    ExpressionParser parser = new SpelExpressionParser();
-</span><span class='line'>    StandardEvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>    context.setBeanResolver(new BeanFactoryResolver(ctx));
-</span><span class='line'>    Properties result1 = parser.parseExpression("@systemProperties").getValue(context, Properties.class);
-</span><span class='line'>    System.out.println("result1=" + result1);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>在示例中我们首先初始化了一个IoC容器，ClassPathXmlApplicationContext实现默认会把"System.getProperties()&ldquo;注册为"systemProperties"Bean，因此我们使用 &rdquo;@systemProperties"来引用该Bean。</p>
-
-<h3>2.19 内联List</h3>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_19() {
-</span><span class='line'>    // 将返回不可修改的空List
-</span><span class='line'>    List&lt;Integer&gt; result0 = parser.parseExpression("{}").getValue(List.class);
-</span><span class='line'>    System.out.println("result0=" + result0);   //[]
-</span><span class='line'>
-</span><span class='line'>    //对于字面量列表也将返回不可修改的List
-</span><span class='line'>    List&lt;Integer&gt; result1 = parser.parseExpression("{1,2,3}").getValue(List.class);
-</span><span class='line'>    System.out.println("result1=" + result1);   //[1, 2, 3]
-</span><span class='line'>    Assert.assertEquals(new Integer(1), result1.get(0));
-</span><span class='line'>    try {
-</span><span class='line'>        result1.set(0, 2);
-</span><span class='line'>        //不可能执行到这，对于字面量列表不可修改
-</span><span class='line'>    } catch (Exception e) {
-</span><span class='line'>        e.printStackTrace();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    //对于列表中只要有一个不是字面量表达式，将只返回原始List， 会进行不可修改处理
-</span><span class='line'>    String expression3 = "\{\{1+2,2+4\},\{3,4+4\}\}";
-</span><span class='line'>    List&lt;List&lt;Integer&gt;&gt; result2 = parser.parseExpression(expression3).getValue(List.class);
-</span><span class='line'>    System.out.println("result2=" + result2);   //[[3, 6], [3, 8]]
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.20 内联数组</h3>
-
-<p>和Java 数组定义类似，只是在定义时进行多维数组初始化</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_20() {
-</span><span class='line'>    //定义一维数组并初始化
-</span><span class='line'>    int[] result1 = parser.parseExpression("new int[1]{8}").getValue(int[].class);
-</span><span class='line'>    System.out.println("result1.length=" + result1.length + ",result1=" + result1);
-</span><span class='line'>
-</span><span class='line'>    // 定义多维数组但不初始化, 多维数组不能初始化
-</span><span class='line'>    String expression1 = "new int[1][2]";
-</span><span class='line'>    //String expression2 = "new int[1][2]\{\{1}\{2\}\}"; //多维数组不能初始化
-</span><span class='line'>    int[][] result2 = parser.parseExpression(expression1).getValue(int[][].class);
-</span><span class='line'>    System.out.println("result2.length=" + result2.length + ",result2=" + result2);
-</span><span class='line'>
-</span><span class='line'>    //解析到多维数据
-</span><span class='line'>    String expression3 = "\{\{3,4\},\{5,6\}\}";
-</span><span class='line'>    int[][] result3 = parser.parseExpression(expression3).getValue(int[][].class);
-</span><span class='line'>    System.out.println("result3=" + result3);   //[[3, 6], [3, 8]]
-</span><span class='line'>    for (int[] row : result3) {
-</span><span class='line'>        for(int data : row) {
-</span><span class='line'>            System.out.print(data + "   ");
-</span><span class='line'>        }
-</span><span class='line'>        System.out.println();
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.21 集合，字典元素访问</h3>
-
-<p>SpEL目前支持所有集合类型和字典类型的元素访问，使用"集合[索引]&ldquo;访问集合元素，使用"map[key]"访问字典元素；</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_21() {
-</span><span class='line'>    // SpEL内联List访问
-</span><span class='line'>    int result1 = parser.parseExpression("{1,2,3}[0]").getValue(int.class);
-</span><span class='line'>    System.out.println("result1=" + result1);   //1
-</span><span class='line'>
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>
-</span><span class='line'>    //SpEL目前支持所有集合类型的访问
-</span><span class='line'>    Collection&lt;Integer&gt; collection = new HashSet&lt;Integer&gt;();
-</span><span class='line'>    collection.add(1);
-</span><span class='line'>    collection.add(2);
-</span><span class='line'>    context.setVariable("collection", collection);
-</span><span class='line'>    int result2 = parser.parseExpression("#collection[1]").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result2=" + result2);   //2
-</span><span class='line'>
-</span><span class='line'>    //SpEL对Map字典元素访问的支持
-</span><span class='line'>    Map&lt;String, Integer&gt; map = new HashMap&lt;String, Integer&gt;();
-</span><span class='line'>    map.put("A", 3);
-</span><span class='line'>    context.setVariable("map", map);
-</span><span class='line'>    int result3 = parser.parseExpression("#map['A']").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result3=" + result3);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.22 列表，字典，数组元素修改</h3>
-
-<p>可以使用赋值表达式或Expression接口的setValue方法修改</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_22() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>
-</span><span class='line'>    //1.修改数组元素值
-</span><span class='line'>    int[] array = new int[] {1, 2};
-</span><span class='line'>    context.setVariable("array", array);
-</span><span class='line'>    int result1 = parser.parseExpression("#array[1] = 3").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result1=" + result1);   //3
-</span><span class='line'>
-</span><span class='line'>    //2.修改集合值
-</span><span class='line'>    Collection&lt;Integer&gt; collection = new ArrayList&lt;Integer&gt;();
-</span><span class='line'>    collection.add(1);
-</span><span class='line'>    collection.add(2);
-</span><span class='line'>    context.setVariable("collection", collection);
-</span><span class='line'>    int result2 = parser.parseExpression("#collection[1] = 4").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result2=" + result2);   //4
-</span><span class='line'>    parser.parseExpression("#collection[1]").setValue(context, 5);
-</span><span class='line'>    int result3 = parser.parseExpression("#collection[1]").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result3=" + result3);   //5
-</span><span class='line'>
-</span><span class='line'>    //3.修改map元素值
-</span><span class='line'>    Map&lt;String, Integer&gt; map = new HashMap&lt;String, Integer&gt;();
-</span><span class='line'>    map.put("A", 1);
-</span><span class='line'>    context.setVariable("map", map);
-</span><span class='line'>    int result4 = parser.parseExpression("#map['A'] = 6").getValue(context, int.class);
-</span><span class='line'>    System.out.println("result4=" + result4);   //6
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.23 集合投影</h3>
-
-<p>在SQL中投影指从表中选择出列，而在SpEL指根据集合中的元素中通过选择来构造另一个集合，该集合和原集合具有相同数量的元素；SpEL使用"（list|map）.![投影表达式]&ldquo;来进行投影运算.</p>
-
-<p>对于集合或数组使用如上表达式进行投影运算，其中投影表达式中"#this"代表每个集合或数组元素，可以使用比如"#this.property"来获取集合元素的属性，其中"#this"可以省略。</p>
-
-<p>SpEL投影运算还支持Map投影，但Map投影最终只能得到List结果，如上所示，对于投影表达式中的"#this"将是Map.Entry，所以可以使用"value"来获取值，使用"key"来获取键。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_23() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>
-</span><span class='line'>    //1.首先准备测试数据
-</span><span class='line'>    Collection&lt;Integer&gt; collection = new ArrayList&lt;Integer&gt;();
-</span><span class='line'>    collection.add(4);
-</span><span class='line'>    collection.add(5);
-</span><span class='line'>
-</span><span class='line'>    Map&lt;String, Integer&gt; map = new HashMap&lt;String, Integer&gt;();
-</span><span class='line'>    map.put("A", 1);
-</span><span class='line'>    map.put("B", 2);
-</span><span class='line'>
-</span><span class='line'>    //2.collection中每个值加1
-</span><span class='line'>    context.setVariable("collection", collection);
-</span><span class='line'>    Collection&lt;Integer&gt; result1 = parser.parseExpression("#collection.![#this+1]").getValue(context,
-</span><span class='line'>            Collection.class);
-</span><span class='line'>    System.out.println("result1.size()=" + result1.size() + ", result1=" + result1);//result1.size()=2, result1=[5, 6]
-</span><span class='line'>
-</span><span class='line'>    //3.测试map
-</span><span class='line'>    context.setVariable("map", map);
-</span><span class='line'>    List&lt;Integer&gt; result2 = parser.parseExpression("#map.![value+1]").getValue(context, List.class);
-</span><span class='line'>    System.out.println("result2.size()=" + result2.size() + ", result2=" + result2);    //result2.size()=2, result2=[2, 3]
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.24 集合选择</h3>
-
-<p>在SQL中指使用select进行选择行数据，而在SpEL指根据原集合通过条件表达式选择出满足条件的元素并构造为新的集合，SpEL使用"(list|map).?[选择表达式]&ldquo;，其中选择表达式结果必须是boolean类型，如果true则选择的元素将添加到新集合中，false将不添加到新集合中。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public static void test2_24() {
-</span><span class='line'>    EvaluationContext context = new StandardEvaluationContext();
-</span><span class='line'>
-</span><span class='line'>    // 1.首先准备测试数据
-</span><span class='line'>    Collection&lt;Integer&gt; collection = new ArrayList&lt;Integer&gt;();
-</span><span class='line'>    collection.add(4);
-</span><span class='line'>    collection.add(5);
-</span><span class='line'>
-</span><span class='line'>    Map&lt;String, Integer&gt; map = new HashMap&lt;String, Integer&gt;();
-</span><span class='line'>    map.put("A", 1);
-</span><span class='line'>    map.put("B", 2);
-</span><span class='line'>
-</span><span class='line'>    // 2.集合或数组测试:出集合元素值大于4的所有元素
-</span><span class='line'>    context.setVariable("collection", collection);
-</span><span class='line'>    Collection&lt;Integer&gt; result1 = parser.parseExpression("#collection.?[#this&gt;4]").getValue(context,
-</span><span class='line'>            Collection.class);
-</span><span class='line'>    System.out.println("result1.size()=" + result1.size() + ", result1=" + result1); // result1.size()=1, result1=[5]
-</span><span class='line'>
-</span><span class='line'>    // 3.字典测试:选择键值不等于"A"的,注意map选择表达式中"#this"是Map.Entry类型
-</span><span class='line'>    context.setVariable("map", map);
-</span><span class='line'>    Map&lt;String, Integer&gt; result2 = parser.parseExpression("#map.?[#this.key != 'A']").getValue(context, Map.class);
-</span><span class='line'>    System.out.println("result2=" + result2); // result2={B=2}
-</span><span class='line'>
-</span><span class='line'>    List&lt;Integer&gt; result3 = parser.parseExpression("#map.?[key != 'A'].![value+1]").getValue(context, List.class);
-</span><span class='line'>    System.out.println("result3.size()=" + result3.size() + ", result3=" + result3); // result3.size()=1,
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.25 表达式模板</h3>
-
-<h1>3.Spring Cache</h1>
-
-<p>Spring 3.1引入了激动人心的基于注释(annotation)的缓存(cache)技术，它本质上不是一个具体的缓存实现方案(例如 EHCache等)，而是一个对缓存使用的抽象,通过在既有代码中添加少量它定义的各种 annotation,即能够达到缓存方法的返回对象的效果。</p>
-
-<p>Spring Cache是使用SpEL表达式的一个地方.将会另起一篇单独介绍Sping Cache.</p>
-
-<h1>4.参考</h1>
-
-<p><a href="http://sishuok.com/forum/blogPost/list/2463.html">http://sishuok.com/forum/blogPost/list/2463.html</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/10">&larr; Older</a>
@@ -2548,6 +1724,10 @@ clear 100       清除屏幕上的指定行数的内容
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/">Spring上传组件冲突</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/12/29/activitishi-jian-chu-li/">Activiti事件处理</a>
@@ -2585,10 +1765,6 @@ clear 100       清除屏幕上的指定行数的内容
         <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -2613,7 +1789,7 @@ clear 100       清除屏幕上的指定行数的内容
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

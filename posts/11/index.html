@@ -9,10 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.Enum原理 定义一个Enum，通过编译之后的字节码，我们可以发现其实现原理： 1
-2
-3
-public enum FruitEnum { APPLE, ORAGE } 编译器是在为我们创建一个类，这个类继承自 java.lang.Enum，有两个公共的、静态的、被声明成final的属性， &hellip;">
+  <meta name="description" content="今天出现一次dubbo的Thread pool exhausted导致服务不可用。根本原因是Mysql的慢查询。 1
+Caused by: java.util.concurrent.RejectedExecutionException: Thread pool is EXHAUSTED! &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -78,6 +76,55 @@ public enum FruitEnum { APPLE, ORAGE } 编译器是在为我们创建一个类�
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/04/02/dubbo-thread-pool-exhausted/">Dubbo Thread Pool Exhausted</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-04-02T20:13:22+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>2</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>8:13 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>今天出现一次dubbo的Thread pool exhausted导致服务不可用。根本原因是Mysql的慢查询。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Caused by: java.util.concurrent.RejectedExecutionException: Thread pool is EXHAUSTED! Thread Name...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>RejectedExecutionException表示线程池已经达到最大值，并且没有空闲连，拒绝执行了一些任务。
+Thread pool exhausted通常是min和max不一样大时，表示当前已创建的连接用完，进行了一次扩充，创建了新线程，但不影响运行。</p>
+
+<p>原因可能是连接池不够用，可以在provider的配置文件中设置threads参数：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;dubbo:provider port="20920" timeout="20000" threads="200"/&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>如果线程池已经有200，还不够，通常是业务处理占用线程时间过长，
+需优化业务，可通过jstack查看进程的状态，分析当前大多数线程都在干什么，从而分析出哪个地方是瓶颈，
+比如，如果大部分线程都在处理SQL，可能是数据库连接不够，或数据源配置错误，或SQL没走索引等。</p>
+
+<p>参考：
+<a href="http://alibaba.github.io/dubbo-doc-static/FAQ-focusedCommentId=9633823.htm#FAQ-9.%E5%87%BA%E7%8E%B0java.util.concurrent.RejectedExecutionException%E6%88%96%E8%80%85Threadpoolexhausted%E6%80%8E%E4%B9%88%E5%8A%9E%EF%BC%9F">http://alibaba.github.io/dubbo-doc-static/FAQ-focusedCommentId=9633823.htm#FAQ-9.%E5%87%BA%E7%8E%B0java.util.concurrent.RejectedExecutionException%E6%88%96%E8%80%85Threadpoolexhausted%E6%80%8E%E4%B9%88%E5%8A%9E%EF%BC%9F</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -606,397 +653,6 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/03/11/guava-lazy-load/">Guava Lazy Load引发的问题</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-03-11T22:00:10+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>11</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>10:00 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近碰到一个Guava Lazy Load导致的异常未被try-catch捕获，且未被spring全局的ExceptionHanler捕获的问题。这里简单总结一下。</p>
-
-<h1>1.代码</h1>
-
-<p>service的代码大致如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>//service代码
-</span><span class='line'>public XXXVo searchList(...) {
-</span><span class='line'>    //从数据库查询
-</span><span class='line'>    List&lt;XXXEntity&gt; entityList = queryFromDb();
-</span><span class='line'>
-</span><span class='line'>    //Guava Lists.transform转换
-</span><span class='line'>    return Lists.transform(entityList, new Function&lt;XXXEntity, XXXVo&gt;() {
-</span><span class='line'>                @Override
-</span><span class='line'>                public XXXVo apply(XXXEntity input) {
-</span><span class='line'>                    return convert(input);
-</span><span class='line'>                }
-</span><span class='line'>            });
-</span><span class='line'>        });
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>controller接口层是一个json接口，代码大致如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>@RequestMapping("/search.json")
-</span><span class='line'>@ResponseBody
-</span><span class='line'>public ApiResult searchList_json(...) {
-</span><span class='line'>    return ApiResult.succ(xxxService.searchList(...));
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>代码存在的问题是没有try-catch一些业务异常。这里为了定位问题，try-catch了所有的异常：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>@RequestMapping("/search.json")
-</span><span class='line'>@ResponseBody
-</span><span class='line'>public ApiResult searchList(...) {
-</span><span class='line'>    try{
-</span><span class='line'>        return ApiResult.succ(xxxService.searchList(...));   
-</span><span class='line'>    }catch(Exception e) {
-</span><span class='line'>        logger.error("...");
-</span><span class='line'>        throw new BusinessExceptidon(...);
-</span><span class='line'>    }   
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.问题</h1>
-
-<pre><code>(1).access log显示search.json接口出现了500,但是try-catch没有抓到异常;
-(2).全局配置的ExceptionHandler也没要抓到异常
-</code></pre>
-
-<h1>3.Guava Lazy Load</h1>
-
-<p>这里使用的是Lists.transform()函数，这里涉及到一个Guava实现中常用的一个延迟加载的(Lazy Load)策略,包括在Splitter、Joinner等大量的类中广泛使用，其大致意思是，代码调用处不会真正执行实际的代码逻辑，在需要拿到处理后的数据的时候，才会去执行处理逻辑。</p>
-
-<h3>3.1 Guava Lazy Load示例</h3>
-
-<p>简单验证代码即其输出如下：
-<img src="/images/problem/lazyload_code.png"></p>
-
-<p><img src="/images/problem/lazyload_exp.png"></p>
-
-<p>日志异常中展示出引发异常的是第82行的代码，即：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>System.out.println(result.get(2));</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>3.2 Guava Lazy Load原理</h3>
-
-<p>这里简单分析一下Lists.transform()函数的Lazy Load的实现原理：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">static</span> <span class="o">&lt;</span><span class="n">F</span><span class="o">,</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="nf">transform</span><span class="o">(</span>
-</span><span class='line'>      <span class="n">List</span><span class="o">&lt;</span><span class="n">F</span><span class="o">&gt;</span> <span class="n">fromList</span><span class="o">,</span> <span class="n">Function</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">F</span><span class="o">,</span> <span class="o">?</span> <span class="kd">extends</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">function</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">return</span> <span class="o">(</span><span class="n">fromList</span> <span class="k">instanceof</span> <span class="n">RandomAccess</span><span class="o">)</span>
-</span><span class='line'>        <span class="o">?</span> <span class="k">new</span> <span class="n">TransformingRandomAccessList</span><span class="o">&lt;</span><span class="n">F</span><span class="o">,</span> <span class="n">T</span><span class="o">&gt;(</span><span class="n">fromList</span><span class="o">,</span> <span class="n">function</span><span class="o">)</span>
-</span><span class='line'>        <span class="o">:</span> <span class="k">new</span> <span class="n">TransformingSequentialList</span><span class="o">&lt;</span><span class="n">F</span><span class="o">,</span> <span class="n">T</span><span class="o">&gt;(</span><span class="n">fromList</span><span class="o">,</span> <span class="n">function</span><span class="o">);</span>
-</span><span class='line'>  <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="kd">private</span> <span class="kd">static</span> <span class="kd">class</span> <span class="nc">TransformingSequentialList</span><span class="o">&lt;</span><span class="n">F</span><span class="o">,</span> <span class="n">T</span><span class="o">&gt;</span>
-</span><span class='line'>      <span class="kd">extends</span> <span class="n">AbstractSequentialList</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="kd">implements</span> <span class="n">Serializable</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">List</span><span class="o">&lt;</span><span class="n">F</span><span class="o">&gt;</span> <span class="n">fromList</span><span class="o">;</span>
-</span><span class='line'>    <span class="kd">final</span> <span class="n">Function</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">F</span><span class="o">,</span> <span class="o">?</span> <span class="kd">extends</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">function</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="n">TransformingSequentialList</span><span class="o">(</span>
-</span><span class='line'>        <span class="n">List</span><span class="o">&lt;</span><span class="n">F</span><span class="o">&gt;</span> <span class="n">fromList</span><span class="o">,</span> <span class="n">Function</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">F</span><span class="o">,</span> <span class="o">?</span> <span class="kd">extends</span> <span class="n">T</span><span class="o">&gt;</span> <span class="n">function</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>      <span class="k">this</span><span class="o">.</span><span class="na">fromList</span> <span class="o">=</span> <span class="n">checkNotNull</span><span class="o">(</span><span class="n">fromList</span><span class="o">);</span>
-</span><span class='line'>      <span class="k">this</span><span class="o">.</span><span class="na">function</span> <span class="o">=</span> <span class="n">checkNotNull</span><span class="o">(</span><span class="n">function</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>    <span class="cm">/**</span>
-</span><span class='line'><span class="cm">     * The default implementation inherited is based on iteration and removal of</span>
-</span><span class='line'><span class="cm">     * each element which can be overkill. That&#39;s why we forward this call</span>
-</span><span class='line'><span class="cm">     * directly to the backing list.</span>
-</span><span class='line'><span class="cm">     */</span>
-</span><span class='line'>    <span class="nd">@Override</span> <span class="kd">public</span> <span class="kt">void</span> <span class="nf">clear</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>      <span class="n">fromList</span><span class="o">.</span><span class="na">clear</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>    <span class="nd">@Override</span> <span class="kd">public</span> <span class="kt">int</span> <span class="nf">size</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>      <span class="k">return</span> <span class="n">fromList</span><span class="o">.</span><span class="na">size</span><span class="o">();</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>    <span class="nd">@Override</span> <span class="kd">public</span> <span class="n">ListIterator</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span> <span class="nf">listIterator</span><span class="o">(</span><span class="kd">final</span> <span class="kt">int</span> <span class="n">index</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>      <span class="k">return</span> <span class="k">new</span> <span class="n">TransformedListIterator</span><span class="o">&lt;</span><span class="n">F</span><span class="o">,</span> <span class="n">T</span><span class="o">&gt;(</span><span class="n">fromList</span><span class="o">.</span><span class="na">listIterator</span><span class="o">(</span><span class="n">index</span><span class="o">))</span> <span class="o">{</span>
-</span><span class='line'>        <span class="nd">@Override</span>
-</span><span class='line'>        <span class="n">T</span> <span class="nf">transform</span><span class="o">(</span><span class="n">F</span> <span class="n">from</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>          <span class="k">return</span> <span class="n">function</span><span class="o">.</span><span class="na">apply</span><span class="o">(</span><span class="n">from</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>      <span class="o">};</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">serialVersionUID</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
-</span><span class='line'>  <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'><span class="c1">//AbstractSequentialList.java</span>
-</span><span class='line'><span class="kd">public</span> <span class="n">E</span> <span class="nf">get</span><span class="o">(</span><span class="kt">int</span> <span class="n">index</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">return</span> <span class="nf">listIterator</span><span class="o">(</span><span class="n">index</span><span class="o">).</span><span class="na">next</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">NoSuchElementException</span> <span class="n">exc</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">IndexOutOfBoundsException</span><span class="o">(</span><span class="s">&quot;Index: &quot;</span><span class="o">+</span><span class="n">index</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>可以看出，Lists.transform()函数会生成内部类TransformingSequentialList的示例，TransformingSequentialList会保存原始的List引用和Function引用，只有在获取某一个元素的时候才会执行Function.apply()函数。</p>
-
-<h3>3.3 Lazy Load引发的问题</h3>
-
-<p>在我们的代码中，Service代码返回List<XXXVo>数据的时候，其实是没有执行Function.apply()的逻辑，即XXXEntity到XXXVo的转换逻辑。</p>
-
-<p>逻辑到达Controller的代码中，也没有机会执行Function.apply()的逻辑，直接用ApiResult.succ()包装并正常返回了。
-这解释了为什么异常没有被try-catch捕获。</p>
-
-<h1>4.MappingJacksonHttpMessageConverter</h1>
-
-<p>下面解释一下json接口中return之后的逻辑。面是debug得到的主要两个步骤：</p>
-
-<h3>4.1 ServletInvocableHandlerMethod类对返回值进行处理</h3>
-
-<p>这里包含一系列的HandlerMethodReturnValueHandler，根据返回值的类型选择何时的返回值处理器，这里我们看到了一个RequestResponseBodyMethodProcessor，在这个处理器中就包含了我们熟悉的MappingJacksonHttpMessageConverter，用于将返回值序列化成json：</p>
-
-<p><img src="/images/problem/returnvalueHandler.png"></p>
-
-<p>在MappingJacksonHttpMessageConverter中会调用writeInternal方法将对象序列化：
-<img src="/images/problem/lazyjsonWriteValue.png"></p>
-
-<p>MappingJacksonHttpMessageConverter用于将对象转换为JSON(序列化, @ResponseBody注解)或者将JSON数据转换为对象(反序列化， @RequestBody注解)，一般配置如下：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="o">&lt;</span><span class="n">bean</span> <span class="n">id</span><span class="o">=</span><span class="s">&quot;jsonConverter&quot;</span> <span class="n">class</span><span class="o">=</span><span class="s">&quot;org.springframework.http.converter.json.MappingJacksonHttpMessageConverter&quot;</span><span class="o">&gt;</span>
-</span><span class='line'>   <span class="o">&lt;</span><span class="n">property</span> <span class="n">name</span><span class="o">=</span><span class="s">&quot;supportedMediaTypes&quot;</span> <span class="n">value</span><span class="o">=</span><span class="s">&quot;application/json&quot;</span> <span class="o">/&gt;</span>
-</span><span class='line'><span class="o">&lt;/</span><span class="n">bean</span><span class="o">&gt;</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>MappingJacksonHttpMessageConverter序列化的时候执行其writeInternal方法</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="nd">@Override</span>
-</span><span class='line'>    <span class="kd">protected</span> <span class="kt">void</span> <span class="nf">writeInternal</span><span class="o">(</span><span class="n">Object</span> <span class="n">object</span><span class="o">,</span> <span class="n">HttpOutputMessage</span> <span class="n">outputMessage</span><span class="o">)</span>
-</span><span class='line'>            <span class="kd">throws</span> <span class="n">IOException</span><span class="o">,</span> <span class="n">HttpMessageNotWritableException</span> <span class="o">{</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="n">JsonEncoding</span> <span class="n">encoding</span> <span class="o">=</span> <span class="n">getJsonEncoding</span><span class="o">(</span><span class="n">outputMessage</span><span class="o">.</span><span class="na">getHeaders</span><span class="o">().</span><span class="na">getContentType</span><span class="o">());</span>
-</span><span class='line'>        <span class="n">JsonGenerator</span> <span class="n">jsonGenerator</span> <span class="o">=</span>
-</span><span class='line'>                <span class="k">this</span><span class="o">.</span><span class="na">objectMapper</span><span class="o">.</span><span class="na">getJsonFactory</span><span class="o">().</span><span class="na">createJsonGenerator</span><span class="o">(</span><span class="n">outputMessage</span><span class="o">.</span><span class="na">getBody</span><span class="o">(),</span> <span class="n">encoding</span><span class="o">);</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="c1">// A workaround for JsonGenerators not applying serialization features</span>
-</span><span class='line'>        <span class="c1">// https://github.com/FasterXML/jackson-databind/issues/12</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="k">this</span><span class="o">.</span><span class="na">objectMapper</span><span class="o">.</span><span class="na">getSerializationConfig</span><span class="o">().</span><span class="na">isEnabled</span><span class="o">(</span><span class="n">SerializationConfig</span><span class="o">.</span><span class="na">Feature</span><span class="o">.</span><span class="na">INDENT_OUTPUT</span><span class="o">))</span> <span class="o">{</span>
-</span><span class='line'>            <span class="n">jsonGenerator</span><span class="o">.</span><span class="na">useDefaultPrettyPrinter</span><span class="o">();</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="k">this</span><span class="o">.</span><span class="na">prefixJson</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>                <span class="n">jsonGenerator</span><span class="o">.</span><span class="na">writeRaw</span><span class="o">(</span><span class="s">&quot;{} &amp;&amp; &quot;</span><span class="o">);</span>
-</span><span class='line'>            <span class="o">}</span>
-</span><span class='line'>            <span class="k">this</span><span class="o">.</span><span class="na">objectMapper</span><span class="o">.</span><span class="na">writeValue</span><span class="o">(</span><span class="n">jsonGenerator</span><span class="o">,</span> <span class="n">object</span><span class="o">);</span>    <span class="c1">//序列化逻辑</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>        <span class="k">catch</span> <span class="o">(</span><span class="n">JsonProcessingException</span> <span class="n">ex</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>            <span class="k">throw</span> <span class="k">new</span> <span class="nf">HttpMessageNotWritableException</span><span class="o">(</span><span class="s">&quot;Could not write JSON: &quot;</span> <span class="o">+</span> <span class="n">ex</span><span class="o">.</span><span class="na">getMessage</span><span class="o">(),</span> <span class="n">ex</span><span class="o">);</span>
-</span><span class='line'>        <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>更多的HttpMessageConverter见参考：
-<a href="http://www.ibm.com/developerworks/cn/web/wa-restful/">http://www.ibm.com/developerworks/cn/web/wa-restful/</a></p>
-
-<h1>5.ExceptionHandler</h1>
-
-<h3>5.1 DispatcherServlet异常处理</h3>
-
-<p>MappingJacksonHttpMessageConverter序列化出异常的时候，异常会进入著名的DispatcherServlet类的doDispatch()方法，最终进入processHandlerException()函数，这里会有一个List<HandlerExceptionResolver>处理异常，处理逻辑如下：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">ModelAndView</span> <span class="n">exMv</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
-</span><span class='line'><span class="k">for</span> <span class="o">(</span><span class="n">HandlerExceptionResolver</span> <span class="n">handlerExceptionResolver</span> <span class="o">:</span> <span class="k">this</span><span class="o">.</span><span class="na">handlerExceptionResolvers</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="n">exMv</span> <span class="o">=</span> <span class="n">handlerExceptionResolver</span><span class="o">.</span><span class="na">resolveException</span><span class="o">(</span><span class="n">request</span><span class="o">,</span> <span class="n">response</span><span class="o">,</span> <span class="n">handler</span><span class="o">,</span> <span class="n">ex</span><span class="o">);</span>
-</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">exMv</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">break</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>即某一个HandlerExceptionResolver成功处理了异常之后，后续的HandlerExceptionResolver就不会继续执行(所谓的责任链模式)。
-这里我们发现我们自定义的CtExceptionHandler，它的顺序在最后：</p>
-
-<p><img src="/images/problem/exceptionHandlerList.png"></p>
-
-<p>我们自定义的HandlerExceptionResolver默认是DispatcherServlet中List<HandlerExceptionResolver>的最后一个，前面包括三个默认的HandlerExceptionResolver：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">ExceptionHandlerExceptionResolver</span>
-</span><span class='line'><span class="n">ResponseStatusExceptionResolver</span>
-</span><span class='line'><span class="n">DefaultHandlerExceptionResolver</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>5.2 HandlerExceptionResolver顺序</h3>
-
-<p>这些HandlerExceptionResolver的顺序是通过定义其顺序值(order)决定，值越小优先级越高(即在List中排名越靠前)，默认的order是最低的优先级:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kt">int</span> <span class="n">LOWEST_PRECEDENCE</span> <span class="o">=</span> <span class="n">Integer</span><span class="o">.</span><span class="na">MAX_VALUE</span><span class="o">;</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>通过重写这个getOrder()函数，可以改变我们自定义的HandlerExceptionResolver的顺序：</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">MyExceptionResolver</span> <span class="kd">implements</span> <span class="n">HandlerExceptionResolver</span><span class="o">,</span><span class="n">Ordered</span> <span class="o">{</span>
-</span><span class='line'>    <span class="o">...</span>
-</span><span class='line'>    <span class="nd">@Override</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="kt">int</span> <span class="nf">getOrder</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">HIGHEST_PRECEDENCE</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>5.3 ExceptionHandler引发的问题</h3>
-
-<p>序列化的异常，首先会执行前三个默认的HandlerExceptionResolver，自带的HandlerExceptionResolver处理了这种异常，我们自定义的ExceptionHandler根本没有起到作用。</p>
-
-<h1>6.解决方案</h1>
-
-<p>修改自定义ExceptionHandler的Order</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/12">&larr; Older</a>
@@ -1014,6 +670,10 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/">Spring上传组件冲突</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/12/29/activitishi-jian-chu-li/">Activiti事件处理</a>
@@ -1051,10 +711,6 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
         <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1079,7 +735,7 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

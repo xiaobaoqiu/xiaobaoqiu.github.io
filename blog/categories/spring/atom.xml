@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Spring | xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/blog/categories/spring/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2017-01-11T21:24:41+08:00</updated>
+  <updated>2017-02-03T10:48:47+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,175 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Spring上传组件冲突]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/"/>
+    <updated>2016-12-30T16:53:49+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu</id>
+    <content type="html"><![CDATA[<p>最近会整理记录这一段时间组内同事以及个人遇到的一些问题。</p>
+
+<ul>
+<li><a href="#1.%E8%83%8C%E6%99%AF">1.背景</a></li>
+<li><a href="#2.Spring%E4%B8%8A%E4%BC%A0%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90">2.Spring上传机制分析</a></li>
+<li><a href="#3.%E5%86%B2%E7%AA%81%E5%88%86%E6%9E%90">3.冲突分析</a></li>
+<li><a href="#4.%E9%97%AE%E9%A2%98%E8%A7%A3%E5%86%B3">4.问题解决</a></li>
+</ul>
+
+
+<h2 id="1.背景">1.背景</h2>
+
+
+<p>问题：Spring上传组件的冲突
+背景：同事在原有的上传模块中增加了一个新的文件接口，导致就的上传接口不可用的故障。</p>
+
+<p>新增的配置就是Spring自带的上传解析器：</p>
+
+<pre><code>    &lt;bean id="multipartResolver" class="org.springframework.web.multipart.commons.CommonsMultipartResolver"&gt;
+        &lt;property name="defaultEncoding" value="utf-8"/&gt;
+    &lt;/bean&gt;
+</code></pre>
+
+<p>示例代码如下：</p>
+
+<pre><code>    ApiResult upload(@RequestParam("uploadFile") CommonsMultipartFile uploadFile) {
+        ...
+    }
+</code></pre>
+
+<p>原始的上传使用的是 commons-fileupload 组件，简单示例代码如下：</p>
+
+<pre><code>upload(HttpServletRequest request) {
+        //1.从请求中解析出文件
+        ServletFileUpload servletFileUpload = createServletFileUpload();
+        List&lt;FileItem&gt; itemList = servletFileUpload.parseRequest(request);
+        Map&lt;String, Serializable&gt; fields = getFileFields(itemList);
+        FileItem file = (FileItem) fields.get("Filedata");
+
+        //2.内容写本地
+        File f = new File(generateFilePath(...));
+        FileOutputStream out = new FileOutputStream(f);
+        out.write(file.get());
+}
+</code></pre>
+
+<h2 id="2.Spring上传机制分析">2.Spring上传机制分析</h2>
+
+
+<p>首先我们从Spring处理请求的源头开始分析，看看Spring是如何支持文件上传的。</p>
+
+<p>1.DispatcherServlet中doDispatch方法中,如果请求是文件上传,会首先将 HttpServletRequest 请求做预处理,转换为 MultipartHttpServletRequest
+```
+processedRequest = checkMultipart(request);</p>
+
+<pre><code>protected HttpServletRequest checkMultipart(HttpServletRequest request) throws MultipartException {
+    if (this.multipartResolver != null &amp;&amp; this.multipartResolver.isMultipart(request)) {    //是文件上传请求
+        if (request instanceof MultipartHttpServletRequest) {   //已经是 MultipartHttpServletRequest 了
+        }
+        else {
+            return this.multipartResolver.resolveMultipart(request);    //转换为 MultipartHttpServletRequest
+        }
+    }
+    // If not returned before: return original request.
+    return request;
+}
+</code></pre>
+
+<pre><code>这块两个问题:
+
+    1.如何判定一个请求是不是文件上传请求
+    2.转换为 MultipartHttpServletRequest 做了什么事
+
+先看如何判定审核文件上传请求,就是 multipartResolver.isMultipart 的代码,跟代码会涉及到 CommonsMultipartResolver, ServletFileUpload, FileUploadBase,发现判定有两个条件
+
+    (1). 请求是 Post 请求. 参见 ServletFileUpload.isMultipartContent()
+    (2).请求 contentType 必须以 multipart/ 开通. 参见 FileUploadBase.isMultipartContent()
+
+ 下面看第二个问题,转换 MultipartHttpServletRequest 做的什么事,这个工作由 MultipartResolver.resolveMultipart 完成,我们可以看看注释:
+</code></pre>
+
+<pre><code>/**
+ * Parse the given HTTP request into multipart files and parameters,
+ * and wrap the request inside a
+ * {@link org.springframework.web.multipart.MultipartHttpServletRequest} object
+ * that provides access to file descriptors and makes contained
+ * parameters accessible via the standard ServletRequest methods.
+ */
+MultipartHttpServletRequest resolveMultipart(HttpServletRequest request) throws MultipartException;
+</code></pre>
+
+<pre><code class="`"> 其主要的代码实现在,主要的工作是, 首先将HttpServletRequest的inputStream最终塞入了FileItemStreamImpl的stream中,随后ServletFileUpload类逐个对FileItemStream进行处理（生成FileItem）,通过Streams.copy方法对inputStream进行read操作，此时request中的inputStream被消耗(inputStream只能被读取一次), 最后将List&lt;FileItem&gt;返回,ServletFileUpload的解析方法执行完毕.
+</code></pre>
+
+<pre><code> public List&lt;FileItem&gt; parseRequest(RequestContext ctx) throws FileUploadException {
+    List&lt;FileItem&gt; items = new ArrayList&lt;FileItem&gt;();
+    FileItemIterator iter = getItemIterator(ctx);       //1. 构造FileItemStreamImpl
+    ...
+    while (iter.hasNext()) {                                            //2.逐个对FileItemStream进行处理
+        final FileItemStream item = iter.next();
+        ...
+        FileItem fileItem = fac.createItem(item.getFieldName(), item.getContentType(), item.isFormField(), fileName);       //2.1 构造一个 FileItem
+        items.add(fileItem);
+        ...
+        Streams.copy(item.openStream(), fileItem.getOutputStream(), true);      //2.2 数据读取
+    }
+    return items;   // 3. 返回
+}
+</code></pre>
+
+<p>// 下面是更详细的代码
+//1.将HttpServletRequest的inputStream最终塞入了FileItemStreamImpl的stream中
+FileItemIteratorImpl(RequestContext ctx) throws FileUploadException, IOException {
+    InputStream input = ctx.getInputStream();
+    &hellip;
+    multi = new MultipartStream(input, boundary, notifier);
+    &hellip;
+    findNextItem();
+}</p>
+
+<p>//2.2 数据读取,看看如何将 request 的 inputstream 数据拷贝到 FileItem 中
+    /<em>*
+     * Copies the contents of the given {@link InputStream} to the given {@link OutputStream}.
+     </em>/
+    public static long copy(InputStream inputStream, OutputStream outputStream, boolean closeOutputStream)
+            throws IOException {
+        return copy(inputStream, outputStream, closeOutputStream, new byte[DEFAULT_BUFFER_SIZE]);
+    }
+ ```
+ 主要代码的位置:CommonsMultipartResolver.parseRequest, FileUploadBase.parseRequest, FileItemIteratorImpl</p>
+
+<p> 一个需要注意的点,在DispatcherServlet 中, MultipartResolver 的Bean的名称是写死的:</p>
+
+<pre><code class="`">    /** Well-known name for the MultipartResolver object in the bean factory for this namespace. */
+    public static final String MULTIPART_RESOLVER_BEAN_NAME = "multipartResolver";
+
+    private void initMultipartResolver(ApplicationContext context) {
+        try {
+            this.multipartResolver = context.getBean(MULTIPART_RESOLVER_BEAN_NAME, MultipartResolver.class);    //bean的name固定
+            if (logger.isDebugEnabled()) {
+                logger.debug("Using MultipartResolver [" + this.multipartResolver + "]");
+            }
+        }
+    }
+</code></pre>
+
+<h2 id="3.冲突分析">3.冲突分析</h2>
+
+
+<p>multipartResolver是一个全局的文件上传处理器,配置上 multipartResolver 这个Bean之后,全局的文件上传都会经过 multipartResolver 处理(读取并解析request的 inputstream ).而 inputstream 仅能处理一次,导致处理完的 HttpServletRequest 中的 inputStream 已经没有内容.</p>
+
+<p>因此后面配置使用的 commons-fileupload 的 ServletFileUpload 无法从 request 中解析出文件上传内容.</p>
+
+<h2 id="4.问题解决">4.问题解决</h2>
+
+
+<p>几个解决方案:</p>
+
+<pre><code>1.全局统一使用一个解析方式(统一使用 ServletFileUpload 或者 MultipartResolver 方式);
+2.继承 CommonsMultipartResolver 实现自定义的 MultipartResolver, 覆写isMultipart方法, 仅部分 url 的上传请求走我们自定义的 MultipartResolver 处理器,保证新老逻辑兼容;
+</code></pre>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[从代理到Spring事务2-AOP]]></title>
@@ -2041,488 +2210,6 @@ public @interface Write {
 <p>&lt;/aop:config></p>
 
 <p>```</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Spring AOP无效]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/05/18/spring-aopwu-xiao/"/>
-    <updated>2015-05-18T19:31:35+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/05/18/spring-aopwu-xiao</id>
-    <content type="html"><![CDATA[<p>最近在重构项目,有一个场景:根据方法的返回值判断是否成功,成功则从入参里获取需要的参数,构造消息(Msg)并发送通知其他模块.</p>
-
-<p>因为是比较通用的逻辑(判断返回值,获取参数,发送消息),因此做成Spring注解的形式,注解中会用AOP拦截方法获取方法的返回值和参数.</p>
-
-<p>其中获取参数使用的是Spring SpEL表达式.</p>
-
-<h1>1.使用背景</h1>
-
-<p>碰到的一个问题是AOP拦截无法获取private,protected和inner方法的参数.使用场景如下:</p>
-
-<h3>1.1 注解定义</h3>
-
-<p>首先定义注解用于获取
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>@Target(ElementType.METHOD)
-</span><span class='line'>@Retention(RetentionPolicy.RUNTIME)
-</span><span class='line'>public @interface Param {
-</span><span class='line'>    /&lt;em&gt;*
-</span><span class='line'>     * 参数定义,标识了参数的获取方式,或常量值
-</span><span class='line'>     &lt;/em&gt;/
-</span><span class='line'>    String[] params();&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;/**
-</span><span class='line'> * 操作类型,标识了当前这注解该被哪个处理类来处理
-</span><span class='line'> */
-</span><span class='line'>String[] operate();
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>1.2 定义切面</h3>
-
-<pre><code>@Aspect
-public class testAspect {
-    /**
-     * 根据注解获取切面
-     */
-    @Pointcut("@annotation(com.aaa.bbb.ccc.ParamGrabber)")
-    public void aspectPointCut() {
-    }
-
-    /**
-    * AOP, 定义方法返回之后的操作
-    */
-    @AfterReturning(value = "aspectPointCut()", returning = "returnValue")
-    public void afterReturning(JoinPoint point, Object returnValue){
-        //1.获取拦截的类和方法
-
-        //2.获取方法上我们定义的特定注解
-
-        //3.根据注解的参数中的spel表达式,从方法入参中获取我们需要的参数
-
-        //4.一些列的Processor处理逻辑
-    }
-}
-</code></pre>
-
-<h3>1.3 处理类</h3>
-
-<p>定义获取的参数之后的处理类的逻辑:
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public interface Processor {
-</span><span class='line'>    /&lt;em&gt;*
-</span><span class='line'>     * 本processor可以处理的操作类型
-</span><span class='line'>     &lt;/em&gt;/
-</span><span class='line'>    List&lt;String&gt; supportOperates();&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;/**
-</span><span class='line'> *
-</span><span class='line'> * 此processor的处理逻辑
-</span><span class='line'> */
-</span><span class='line'>void process(XxxContext context);
-</span><span class='line'>
-</span><span class='line'>/**
-</span><span class='line'> * 返回值验证,是否需要执行process操作
-</span><span class='line'> */
-</span><span class='line'>boolean isReturnValid(XxxContext context, Object returnValue);
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}
-</span><span class='line'>&lt;code&gt;
-</span><span class='line'>之后利用Spring就可以获取上下问中所有的实现类:
-</span><span class='line'>&lt;/code&gt;
-</span><span class='line'>public class ProcessorSupport implements ApplicationContextAware, InitializingBean {
-</span><span class='line'>    // Spring上下文
-</span><span class='line'>    private ApplicationContext applicationContext;&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;private final Multimap&lt;String, Processor&gt; processorMap = HashMultimap.create();
-</span><span class='line'>
-</span><span class='line'>@Override
-</span><span class='line'>public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
-</span><span class='line'>    this.applicationContext = applicationContext;
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>@Override
-</span><span class='line'>public void afterPropertiesSet() throws Exception {
-</span><span class='line'>    // 从Spring上下文获取Processor的所有具体实现类
-</span><span class='line'>    Map&lt;String, Processor&gt; beansOfType = applicationContext.getBeansOfType(Processor.class);
-</span><span class='line'>    for(Processor processor : beansOfType.values()) {
-</span><span class='line'>        for(String op : processor.supportOperates()) {
-</span><span class='line'>            processorMap.put(op, processor);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>//根据注解中定义的operate来获取具体的处理类Processor
-</span><span class='line'>@Override
-</span><span class='line'>public Collection&lt;Processor&gt; getProcessor(String operate) {
-</span><span class='line'>    return processorMap.get(operate);
-</span><span class='line'>}
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>1.4 使用</h3>
-
-<p>使用的时候,首先得实现一个具体的Processor:
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class MyProcessor implements Processor {&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;public static final String SPECIFIC_PROCESSOR_KEY = "SPECIFIC_PROCESSOR_KEY";
-</span><span class='line'>
-</span><span class='line'>@Override
-</span><span class='line'>public List&lt;String&gt; supportOperates() {
-</span><span class='line'>    return ImmutableList.of(
-</span><span class='line'>            SPECIFIC_PROCESSOR_KEY
-</span><span class='line'>    );
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>@Override
-</span><span class='line'>public void process(XxxContext context) {
-</span><span class='line'>    //获取注解解析得到的参数
-</span><span class='line'>    Map&lt;String, Object&gt; parsedParam = context.getParsedParam();
-</span><span class='line'>
-</span><span class='line'>    //构建发送的消息内容
-</span><span class='line'>    Msg msg = buildNoticeMsg(parsedParam);
-</span><span class='line'>
-</span><span class='line'>    //发送消息
-</span><span class='line'>    noticeService.doNotice(msg);
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>@Override
-</span><span class='line'>public boolean isReturnValid(XxxContext context, Object returnValue) {
-</span><span class='line'>    //判断返回值是否有效...
-</span><span class='line'>}
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}
-</span><span class='line'>&lt;code&gt;
-</span><span class='line'>具体使用的地方:
-</span><span class='line'>&lt;/code&gt;
-</span><span class='line'>/&lt;em&gt;*
-</span><span class='line'>* 根据SPECIFIC_PROCESSOR_KEY找到MyProcessor
-</span><span class='line'>* params中使用SpEL获取参数中的某个属性
-</span><span class='line'>&lt;/em&gt;/
-</span><span class='line'>@Param(operate = MyProcessor.SPECIFIC_PROCESSOR_KEY, params = {
-</span><span class='line'>        CrateConstants.KEYS_KEY + &ldquo;={#p0.![propertyName]}&rdquo;})
-</span><span class='line'>public int batchInsert(List&lt;Tag&gt; tagList) {
-</span><span class='line'>    if (CollectionUtils.isEmpty(tagList)) {
-</span><span class='line'>        return 0;
-</span><span class='line'>    }&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;return tagDao.insertBatchly(tagList);
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h1>2.问题</h1>
-
-<h3>2.1 private和protected方法无效</h3>
-
-<p>private和protected方法(通常为类的inner方法)无法使用我们定义的注解来达到目的,如下:
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>//供外部调用的方法
-</span><span class='line'>public class XxxService {
-</span><span class='line'>    public int outerMethod(List&lt;Tag&gt; tagList) {
-</span><span class='line'>        return innerMethod(tagList);
-</span><span class='line'>    }
-</span><span class='line'>}&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;//被当前类的其他方法调用的内部方法
-</span><span class='line'>@Param(operate = MyProcessor.SPECIFIC_PROCESSOR_KEY, params = {
-</span><span class='line'>        CrateConstants.KEYS_KEY + &ldquo;={#p0.![propertyName]}&rdquo;})
-</span><span class='line'>private int innerMethod(List&lt;Tag&gt; tagList) {
-</span><span class='line'>    if (CollectionUtils.isEmpty(tagList)) {
-</span><span class='line'>        return 0;
-</span><span class='line'>    }&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;return tagDao.insertBatchly(tagList);
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<h3>2.2 inner public方法无效</h3>
-
-<p>定义如下:
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>//供外部调用的方法
-</span><span class='line'>public class XxxService {
-</span><span class='line'>    public int outerMethod(List&lt;Tag&gt; tagList) {
-</span><span class='line'>        return innerMethod(tagList);
-</span><span class='line'>    }
-</span><span class='line'>}&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;//被当前类的其他方法调用的内部方法
-</span><span class='line'>@Param(operate = MyProcessor.SPECIFIC_PROCESSOR_KEY, params = {
-</span><span class='line'>        CrateConstants.KEYS_KEY + &ldquo;={#p0.![propertyName]}&rdquo;})
-</span><span class='line'>public int innerMethod(List&lt;Tag&gt; tagList) {
-</span><span class='line'>    if (CollectionUtils.isEmpty(tagList)) {
-</span><span class='line'>        return 0;
-</span><span class='line'>    }&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;return tagDao.insertBatchly(tagList);
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}
-</span><span class='line'>&lt;code&gt;
-</span><span class='line'>调用的时候调用
-</span><span class='line'>&lt;/code&gt;
-</span><span class='line'>xxxServiceIns.outerMethod(&hellip;);</span></code></pre></td></tr></table></div></figure></p>
-
-<h1>3.原因</h1>
-
-<h3>3.1 private和protected方法无效</h3>
-
-<p>Spring的AOP框架基于代理实现的(proxy-based).使用原生的Java的代理是无法代理protected和private类型的方法(详见后续结束).</p>
-
-<p>而CGLIB的代理虽然在技术上可以代理protected和private类型的方法,但是用于AOP的时候不推荐代理protected和private类型的方法.</p>
-
-<p>结论就是,任何定义的pointcut只在public方法上有效.</p>
-
-<p>参考:</p>
-
-<p><a href="http://stackoverflow.com/questions/15093894/aspectj-pointcut-for-annotated-private-methods">http://stackoverflow.com/questions/15093894/aspectj-pointcut-for-annotated-private-methods</a></p>
-
-<p>spring官方文档关于AOP的解释中也有相关的说明:</p>
-
-<p><a href="http://docs.spring.io/spring/docs/3.1.x/spring-framework-reference/html/aop.html#aop-introduction-spring-defn">http://docs.spring.io/spring/docs/3.1.x/spring-framework-reference/html/aop.html#aop-introduction-spring-defn</a></p>
-
-<h3>3.2 inner public方法无效</h3>
-
-<p>原因其实就是一句话:Spring AOP是基于代理机制的.</p>
-
-<p>考虑如下场景,当你拿到一个无代理的、无任何特殊之处的对象引用时:
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class SimplePojo implements SimpleInterface {
-</span><span class='line'>    public void foo() {
-</span><span class='line'>       // this next method invocation is a direct call on the &lsquo;this&rsquo; reference
-</span><span class='line'>       this.bar();
-</span><span class='line'>    }&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;public void bar() {
-</span><span class='line'>    // some logic...
-</span><span class='line'>}
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}
-</span><span class='line'>&lt;code&gt;
-</span><span class='line'>当你调用一个对象引用的方法时,此对象引用上的方法直接被调用,如下所示:
-</span><span class='line'>&lt;/code&gt;
-</span><span class='line'>public static void main(String[] args) {
-</span><span class='line'>   SimplePojo ins = new SimplePojo();
-</span><span class='line'>   // this is a direct method call on the &lsquo;ins&rsquo; reference
-</span><span class='line'>   ins.foo();
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-<img src="/images/sping/call_native.png"></p>
-
-<p>当客户代码所持有的引用是一个代理的时候则略有不同了,当调用foo()方法时候,首先会调用原始foo()方法上的@Before的代码逻辑,然后调用原始的foo()方法,原始foo()方法内的bar()调用的是原始对象的this.bar(),即一旦调用最终抵达了目标对象 (此处为SimplePojo类的引用),任何对自身的调用例如this.bar()将对this引用进行调用而非代理。</p>
-
-<p>这一点意义重大,它意味着自我调用将不会导致和方法调用关联的AOP通知得到执行的机会。
-<code>
-SimplePojo proxy = proxyFactory.getProxy(Pojo.class);
-proxy.foo();
-</code>
-<img src="/images/sping/call_proxy.png"></p>
-
-<p>参考:
-<a href="http://m.oschina.net/blog/161387">http://m.oschina.net/blog/161387</a></p>
-
-<h1>4.Spring AOP代理</h1>
-
-<p>Spring AOP使用JDK动态代理或者CGLIB来为目标对象创建代理。</p>
-
-<p>如果被代理的目标对象实现了至少一个接口,则会使用JDK动态代理。所有该目标类型实现的接口都将被代理。 若该目标对象没有实现任何接口,则创建一个CGLIB代理。</p>
-
-<p>如果你希望强制使用CGLIB代理,(例如：希望代理目标对象的所有方法,而不只是实现自接口的方法) 那也可以。但是需要考虑以下问题:</p>
-
-<pre><code>1.无法通知(advise)final方法,因为他们不能被覆写。
-2.代理对象的构造器会被调用两次。因为在CGLIB代理模式下每一个代理对象都会 产生一个子类。每一个代理实例会生成两个对象：实际代理对象和它的一个实现了通知的子类实例 而是用JDK代理时不会出现这样的行为。通常情况下,调用代理类型的构造器两次并不是问题, 因为除了会发生指派外没有任何真正的逻辑被实现。
-3.CGLib的效率没有使用JDK代理机制高,速度平均要慢8倍左右。
-</code></pre>
-
-<p>强制使用CGLIB代理需要将&lt;aop:config>的proxy-target-class属性设为true:
-<code>
-&lt;aop:config proxy-target-class="true"&gt;
-   ...
-&lt;/aop:config&gt;
-</code></p>
-
-<p>当使用@AspectJ自动代理时要强制使用CGLIB,请将&lt;aop:aspectj-autoproxy>的proxy-target-class属性设置为true:
-<code>
-&lt;aop:aspectj-autoproxy proxy-target-class="true"/&gt;
-</code></p>
 ]]></content>
   </entry>
   

@@ -4,7 +4,7 @@
   <title><![CDATA[xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2017-01-11T21:24:41+08:00</updated>
+  <updated>2017-02-03T10:48:47+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,208 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Spring上传组件冲突]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/"/>
+    <updated>2016-12-30T16:53:49+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu</id>
+    <content type="html"><![CDATA[<p>最近会整理记录这一段时间组内同事以及个人遇到的一些问题。</p>
+
+<ul>
+<li><a href="#1.%E8%83%8C%E6%99%AF">1.背景</a></li>
+<li><a href="#2.Spring%E4%B8%8A%E4%BC%A0%E6%9C%BA%E5%88%B6%E5%88%86%E6%9E%90">2.Spring上传机制分析</a></li>
+<li><a href="#3.%E5%86%B2%E7%AA%81%E5%88%86%E6%9E%90">3.冲突分析</a></li>
+<li><a href="#4.%E9%97%AE%E9%A2%98%E8%A7%A3%E5%86%B3">4.问题解决</a></li>
+</ul>
+
+
+<h2 id="1.背景">1.背景</h2>
+
+
+<p>问题：Spring上传组件的冲突
+背景：同事在原有的上传模块中增加了一个新的文件接口，导致就的上传接口不可用的故障。</p>
+
+<p>新增的配置就是Spring自带的上传解析器：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;bean id="multipartResolver" class="org.springframework.web.multipart.commons.CommonsMultipartResolver"&gt;
+</span><span class='line'>    &lt;property name="defaultEncoding" value="utf-8"/&gt;
+</span><span class='line'>&lt;/bean&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>示例代码如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>ApiResult upload(@RequestParam("uploadFile") CommonsMultipartFile uploadFile) {
+</span><span class='line'>    ...
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>原始的上传使用的是 commons-fileupload 组件，简单示例代码如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>upload(HttpServletRequest request) {
+</span><span class='line'>        //1.从请求中解析出文件
+</span><span class='line'>        ServletFileUpload servletFileUpload = createServletFileUpload();
+</span><span class='line'>        List&lt;FileItem&gt; itemList = servletFileUpload.parseRequest(request);
+</span><span class='line'>        Map&lt;String, Serializable&gt; fields = getFileFields(itemList);
+</span><span class='line'>        FileItem file = (FileItem) fields.get("Filedata");
+</span><span class='line'>
+</span><span class='line'>        //2.内容写本地
+</span><span class='line'>        File f = new File(generateFilePath(...));
+</span><span class='line'>        FileOutputStream out = new FileOutputStream(f);
+</span><span class='line'>        out.write(file.get());
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h2 id="2.Spring上传机制分析">2.Spring上传机制分析</h2>
+
+
+<p>首先我们从Spring处理请求的源头开始分析，看看Spring是如何支持文件上传的。</p>
+
+<p>1.DispatcherServlet中doDispatch方法中,如果请求是文件上传,会首先将 HttpServletRequest 请求做预处理,转换为 MultipartHttpServletRequest</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>processedRequest = checkMultipart(request);
+</span><span class='line'>
+</span><span class='line'>    protected HttpServletRequest checkMultipart(HttpServletRequest request) throws MultipartException {
+</span><span class='line'>        if (this.multipartResolver != null && this.multipartResolver.isMultipart(request)) {    //是文件上传请求
+</span><span class='line'>            if (request instanceof MultipartHttpServletRequest) {   //已经是 MultipartHttpServletRequest 了
+</span><span class='line'>            }
+</span><span class='line'>            else {
+</span><span class='line'>                return this.multipartResolver.resolveMultipart(request);    //转换为 MultipartHttpServletRequest
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>        // If not returned before: return original request.
+</span><span class='line'>        return request;
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这块两个问题:</p>
+
+<pre><code>1.如何判定一个请求是不是文件上传请求
+2.转换为 MultipartHttpServletRequest 做了什么事
+</code></pre>
+
+<p>先看如何判定审核文件上传请求,就是 multipartResolver.isMultipart 的代码,跟代码会涉及到 CommonsMultipartResolver, ServletFileUpload, FileUploadBase,发现判定有两个条件</p>
+
+<pre><code>(1). 请求是 Post 请求. 参见 ServletFileUpload.isMultipartContent()
+(2).请求 contentType 必须以 multipart/ 开通. 参见 FileUploadBase.isMultipartContent()
+</code></pre>
+
+<p> 下面看第二个问题,转换 MultipartHttpServletRequest 做的什么事,这个工作由 MultipartResolver.resolveMultipart 完成,我们可以看看注释:</p>
+
+<pre><code class="`">    /**
+     * Parse the given HTTP request into multipart files and parameters,
+     * and wrap the request inside a
+     * {@link org.springframework.web.multipart.MultipartHttpServletRequest} object
+     * that provides access to file descriptors and makes contained
+     * parameters accessible via the standard ServletRequest methods.
+     */
+    MultipartHttpServletRequest resolveMultipart(HttpServletRequest request) throws MultipartException;
+</code></pre>
+
+<p> 其主要的代码实现在,主要的工作是, 首先将HttpServletRequest的inputStream最终塞入了FileItemStreamImpl的stream中,随后ServletFileUpload类逐个对FileItemStream进行处理（生成FileItem）,通过Streams.copy方法对inputStream进行read操作，此时request中的inputStream被消耗(inputStream只能被读取一次), 最后将List<FileItem>返回,ServletFileUpload的解析方法执行完毕.</p>
+
+<pre><code class="`">     public List&lt;FileItem&gt; parseRequest(RequestContext ctx) throws FileUploadException {
+        List&lt;FileItem&gt; items = new ArrayList&lt;FileItem&gt;();
+        FileItemIterator iter = getItemIterator(ctx);       //1. 构造FileItemStreamImpl
+        ...
+        while (iter.hasNext()) {                                            //2.逐个对FileItemStream进行处理
+            final FileItemStream item = iter.next();
+            ...
+            FileItem fileItem = fac.createItem(item.getFieldName(), item.getContentType(), item.isFormField(), fileName);       //2.1 构造一个 FileItem
+            items.add(fileItem);
+            ...
+            Streams.copy(item.openStream(), fileItem.getOutputStream(), true);      //2.2 数据读取
+        }
+        return items;   // 3. 返回
+    }
+
+// 下面是更详细的代码
+//1.将HttpServletRequest的inputStream最终塞入了FileItemStreamImpl的stream中
+FileItemIteratorImpl(RequestContext ctx) throws FileUploadException, IOException {
+    InputStream input = ctx.getInputStream();
+    ...
+    multi = new MultipartStream(input, boundary, notifier);
+    ...
+    findNextItem();
+}
+
+//2.2 数据读取,看看如何将 request 的 inputstream 数据拷贝到 FileItem 中
+    /**
+     * Copies the contents of the given {@link InputStream} to the given {@link OutputStream}.
+     */
+    public static long copy(InputStream inputStream, OutputStream outputStream, boolean closeOutputStream)
+            throws IOException {
+        return copy(inputStream, outputStream, closeOutputStream, new byte[DEFAULT_BUFFER_SIZE]);
+    }
+</code></pre>
+
+<p> 主要代码的位置:CommonsMultipartResolver.parseRequest, FileUploadBase.parseRequest, FileItemIteratorImpl</p>
+
+<p> 一个需要注意的点,在DispatcherServlet 中, MultipartResolver 的Bean的名称是写死的:</p>
+
+<pre><code class="`">    /** Well-known name for the MultipartResolver object in the bean factory for this namespace. */
+    public static final String MULTIPART_RESOLVER_BEAN_NAME = "multipartResolver";
+
+    private void initMultipartResolver(ApplicationContext context) {
+        try {
+            this.multipartResolver = context.getBean(MULTIPART_RESOLVER_BEAN_NAME, MultipartResolver.class);    //bean的name固定
+            if (logger.isDebugEnabled()) {
+                logger.debug("Using MultipartResolver [" + this.multipartResolver + "]");
+            }
+        }
+    }
+</code></pre>
+
+<h2 id="3.冲突分析">3.冲突分析</h2>
+
+
+<p>multipartResolver是一个全局的文件上传处理器,配置上 multipartResolver 这个Bean之后,全局的文件上传都会经过 multipartResolver 处理(读取并解析request的 inputstream ).而 inputstream 仅能处理一次,导致处理完的 HttpServletRequest 中的 inputStream 已经没有内容.</p>
+
+<p>因此后面配置使用的 commons-fileupload 的 ServletFileUpload 无法从 request 中解析出文件上传内容.</p>
+
+<h2 id="4.问题解决">4.问题解决</h2>
+
+
+<p>几个解决方案:</p>
+
+<pre><code>1.全局统一使用一个解析方式(统一使用 ServletFileUpload 或者 MultipartResolver 方式);
+2.继承 CommonsMultipartResolver 实现自定义的 MultipartResolver, 覆写isMultipart方法, 仅部分 url 的上传请求走我们自定义的 MultipartResolver 处理器,保证新老逻辑兼容;
+</code></pre>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Activiti事件处理]]></title>
@@ -6882,110 +7084,6 @@ Frequency 即词频率,表示此文件中包含了几个此词(Term).</p>
 <p><img src="http://xiaobaoqiu.github.io/images/lucene/score_example.png"></p>
 
 <p>于是文档二相关性最高,先返回,其次是文档一,最后是文档三.到此为止,我们可以找到我们最想要的文档了.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Mysql Join]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/09/03/mysql-join/"/>
-    <updated>2015-09-03T11:42:33+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/09/03/mysql-join</id>
-    <content type="html"><![CDATA[<p>join 用于多表中字段之间的关联,语法如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>... FROM table1 INNER|LEFT|RIGHT JOIN table2 ON conditiona</span></code></pre></td></tr></table></div></figure>
-
-
-<p>JOIN实际上是两个表的的乘积(即笛卡尔积).假设集合A={a,b}，集合B={0,1,2}，则两个集合的笛卡尔积为{(a,0),(a,1),(a,2),(b,0),(b,1), (b,2)}.</p>
-
-<p>JOIN按照功能大致分为如下三类:</p>
-
-<pre><code>INNER JOIN: 取得两个表中存在连接匹配关系的记录;
-LEFT JOIN: 取得左表完全记录，即使右表并无对应匹配记录,如果没有匹配,右侧将包含null;
-RIGHT JOIN: 与 LEFT JOIN 相反，取得右表完全记录，即使左表并无匹配对应记录;
-</code></pre>
-
-<h2>. 1.显示join和隐式join</h2>
-
-<p>另外,写join语句有所谓的显示join和隐式join的写法:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>-- 显示join
-</span><span class='line'>select * from
-</span><span class='line'>table1 inner join table2
-</span><span class='line'>on table1.name = table2.name;
-</span><span class='line'>
-</span><span class='line'>-- 隐式join
-</span><span class='line'>select table1.*, table2.*
-</span><span class='line'>from table1, table2
-</span><span class='line'>where table1.name = table2.name;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>这两种写法性能上基本没有差异,参考stackoverflow: <a href="http://stackoverflow.com/questions/44917/explicit-vs-implicit-sql-joins">http://stackoverflow.com/questions/44917/explicit-vs-implicit-sql-joins</a></p>
-
-<h2>. 2.ON条件和WHERE条件</h2>
-
-<p>在执行顺序上需要注意的是on条件和where条件执行顺序: 首先使用on条件产生初始笛卡尔积集合,再在这个集合上使用where条件筛选.所以join的时候应该首先好的on条件保证笛卡尔积集合尽可能小,从而减少Where的执行.</p>
-
-<p>比如下面两种写法,方案2写法保证产生的笛卡尔积集合很小,因而从执行性能来看第二个显然更加省时。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>-- 方案1
-</span><span class='line'>select * from A
-</span><span class='line'>inner join B on B.name = A.name
-</span><span class='line'>left join C on C.name = B.name
-</span><span class='line'>left join D on D.id = C.id
-</span><span class='line'>where C.status&gt;1 and D.status=1;
-</span><span class='line'>
-</span><span class='line'>-- 方案2
-</span><span class='line'>select * from A
-</span><span class='line'>inner join B on B.name = A.name
-</span><span class='line'>left join C on C.name = B.name and C.status&gt;1
-</span><span class='line'>left join D on D.id = C.id and D.status=1</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>. 3.STRAIGHT_JOIN和NATURAL JOIN</h2>
-
-<h4>. 3.1 STRAIGHT_JOIN</h4>
-
-<p>再Join的时候,MySQL优化器要确定以谁为驱动表，也就是说以哪个表为基准，在处理此类问题时，MySQL优化器采用了简单粗暴的解决方法：哪个表的结果集小，就以哪个表为驱动表，当然MySQL优化器实际的处理方式会复杂许多，具体可以参考：<a href="http://www.orczhou.com/index.php/2013/04/how-mysql-choose-index-in-a-join/">http://www.orczhou.com/index.php/2013/04/how-mysql-choose-index-in-a-join/</a></p>
-
-<p>说明：在EXPLAIN结果中，第一行出现的表就是驱动表。</p>
-
-<p>但是这个由的时候比较愚蠢,比如我们order by的字段在大结果集的表上,也就是说排序字段不在驱动表里，于是乎不可避免的出现了Using filesort和Using temporary.</p>
-
-<p>上面这种场景,我们就可以通过使用STRAIGHT_JOIN显示的指定驱动表</p>
-
-<p>参考: <a href="http://huoding.com/2013/06/04/261">http://huoding.com/2013/06/04/261</a></p>
-
-<h4>. 3.2 NATURAL</h4>
-
-<p>MySQL将表中具有相同名称的字段自动进行记录匹配，而这些同名字段类型可以不同。因此，NATURAL JOIN 不用指定匹配条件。</p>
-
-<p>同样包含NATURAL LEFT JOIN和NATURAL RIGHT JOIN.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>SELECT article.aid,article.title,user.username FROM article NATURAL JOIN user</span></code></pre></td></tr></table></div></figure>
-
 ]]></content>
   </entry>
   

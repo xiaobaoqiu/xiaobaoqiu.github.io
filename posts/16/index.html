@@ -9,7 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.什么是Selenium Selenium 是一种 Web 应用的自动测试工具，通过模拟用户对 Web 页面的各种操作，可以精确重现软件测试人员编写的 Test Cases 步骤。它所采用的原理是通过录制应用程序产生的线性脚本进行回放从而达到自动化测试的目的。其优点是简单， &hellip;">
+  <meta name="description" content="这里包括两种容器 ConcurrentSkipListMap
+ConcurrentSkipListSet 其中ConcurrentSkipListSet是通过ConcurrentSkipListMap实现的，它包含一个ConcurrentNavigableMap对象m， &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -75,6 +76,560 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/12/19/javabing-fa-rong-qi-zhi-skiplist/">Java并发容器之SkipList</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-12-19T05:56:59+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>19</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>5:56 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>这里包括两种容器</p>
+
+<pre><code>ConcurrentSkipListMap
+ConcurrentSkipListSet
+</code></pre>
+
+<p>其中ConcurrentSkipListSet是通过ConcurrentSkipListMap实现的，它包含一个ConcurrentNavigableMap对象m，而m对象实际上是ConcurrentNavigableMap的实现类ConcurrentSkipListMap的实例。</p>
+
+<p>ConcurrentSkipListMap中的元素是key-value键值对；而ConcurrentSkipListSet是集合，它只用到了ConcurrentSkipListMap中的key，其value是一个空的Object。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ConcurrentSkipListSet</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="kd">extends</span> <span class="n">AbstractSet</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="kd">implements</span> <span class="n">NavigableSet</span><span class="o">&lt;</span><span class="n">E</span><span class="o">&gt;,</span> <span class="n">Cloneable</span><span class="o">,</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">final</span> <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">E</span><span class="o">,</span><span class="n">Object</span><span class="o">&gt;</span> <span class="n">m</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">public</span> <span class="nf">ConcurrentSkipListSet</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">m</span> <span class="o">=</span> <span class="k">new</span> <span class="n">ConcurrentSkipListMap</span><span class="o">&lt;</span><span class="n">E</span><span class="o">,</span><span class="n">Object</span><span class="o">&gt;();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因此这里只分析ConcurrentSkipListMap的源代码。</p>
+
+<h1>1.ConcurrentSkipListMap</h1>
+
+<p>ConcurrentSkipListMap和TreeMap类似，它们虽然都是有序的哈希表。但是，第一，它们的线程安全机制不同，TreeMap是非线程安全的，而ConcurrentSkipListMap是线程安全的。第二，ConcurrentSkipListMap是通过跳表实现的，而TreeMap是通过红黑树实现的。</p>
+
+<p>ConcurrentSkipListMap的数据结构，如下图所示：</p>
+
+<p><img src="/images/concurrent/ConcurrentSkipListMap.png"></p>
+
+<p>跳表分为许多层(level)，每一层都可以看作是数据的索引，这些索引的意义就是加快跳表查找数据速度。每一层的数据都是有序的，上一层数据是下一层数据的子集，并且第一层(level 1)包含了全部的数据；层次越高，跳跃性越大，包含的数据越少。跳表包含一个表头，它查找数据时，是从上往下，从左往右进行查找。</p>
+
+<p>先以数据“7,14,21,32,37,71,85”序列为例，来对跳表进行简单说明。在跳表中查找“32”节点
+路径如下图所示：</p>
+
+<p><img src="/images/concurrent/SkipList_example.jpg"></p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">ConcurrentSkipListMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">AbstractMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span>
+</span><span class='line'>    <span class="kd">implements</span> <span class="n">ConcurrentNavigableMap</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;,</span>
+</span><span class='line'>               <span class="n">Cloneable</span><span class="o">,</span>
+</span><span class='line'>               <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
+</span><span class='line'>    <span class="c1">//head是跳表的表头</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kd">transient</span> <span class="kd">volatile</span> <span class="n">HeadIndex</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">head</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">static</span> <span class="kd">class</span> <span class="nc">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">node</span><span class="o">;</span>       <span class="c1">//哈希表节点node</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">down</span><span class="o">;</span>      <span class="c1">//下索引的指针</span>
+</span><span class='line'>    <span class="kd">volatile</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">right</span><span class="o">;</span>  <span class="c1">//右索引的指针</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">static</span> <span class="kd">final</span> <span class="kd">class</span> <span class="nc">HeadIndex</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="kt">int</span> <span class="n">level</span><span class="o">;</span>    <span class="c1">//节点所属层次</span>
+</span><span class='line'>    <span class="n">HeadIndex</span><span class="o">(</span><span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">node</span><span class="o">,</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">down</span><span class="o">,</span> <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">right</span><span class="o">,</span> <span class="kt">int</span> <span class="n">level</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">super</span><span class="o">(</span><span class="n">node</span><span class="o">,</span> <span class="n">down</span><span class="o">,</span> <span class="n">right</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">this</span><span class="o">.</span><span class="na">level</span> <span class="o">=</span> <span class="n">level</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">static</span> <span class="kd">final</span> <span class="kd">class</span> <span class="nc">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">final</span> <span class="n">K</span> <span class="n">key</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">volatile</span> <span class="n">Object</span> <span class="n">value</span><span class="o">;</span>
+</span><span class='line'>    <span class="kd">volatile</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">next</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面从ConcurrentSkipListMap的添加(put)，删除(remove)，获取(get)这3个方面对它进行分析：</p>
+
+<h1>1.1 添加</h1>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">V</span> <span class="nf">put</span><span class="o">(</span><span class="n">K</span> <span class="n">key</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">value</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="k">throw</span> <span class="k">new</span> <span class="nf">NullPointerException</span><span class="o">();</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">doPut</span><span class="o">(</span><span class="n">key</span><span class="o">,</span> <span class="n">value</span><span class="o">,</span> <span class="kc">false</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">private</span> <span class="n">V</span> <span class="nf">doPut</span><span class="o">(</span><span class="n">K</span> <span class="n">kkey</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">onlyIfAbsent</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">kkey</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span> <span class="c1">//找到key的前继节点</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>   <span class="c1">//key的前继节点的后继节点，即 插入节点 的“后继节点”</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">n</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">f</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>                <span class="c1">//如果两次获得的b.next不是相同的Node，就跳转到外层循环，重新遍历。</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">n</span> <span class="o">!=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">)</span>               <span class="c1">// inconsistent read</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;;</span>
+</span><span class='line'>                <span class="n">Object</span> <span class="n">v</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">value</span><span class="o">;</span>
+</span><span class='line'>                <span class="c1">//当n的值为null(意味着其它线程删除了n)；此时删除b的下一个节点，然后跳转到”外层for循环“，重新遍历。</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">v</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>               <span class="c1">// n is deleted</span>
+</span><span class='line'>                    <span class="n">n</span><span class="o">.</span><span class="na">helpDelete</span><span class="o">(</span><span class="n">b</span><span class="o">,</span> <span class="n">f</span><span class="o">);</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="c1">// 如果其它线程删除了b；则跳转到”外层for循环“，重新获得b和n后再遍历。</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">v</span> <span class="o">==</span> <span class="n">n</span> <span class="o">||</span> <span class="n">b</span><span class="o">.</span><span class="na">value</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="c1">// b is deleted</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">n</span><span class="o">.</span><span class="na">key</span><span class="o">);</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">b</span> <span class="o">=</span> <span class="n">n</span><span class="o">;</span>
+</span><span class='line'>                    <span class="n">n</span> <span class="o">=</span> <span class="n">f</span><span class="o">;</span>
+</span><span class='line'>                    <span class="k">continue</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="k">if</span> <span class="o">(</span><span class="n">onlyIfAbsent</span> <span class="o">||</span> <span class="n">n</span><span class="o">.</span><span class="na">casValue</span><span class="o">(</span><span class="n">v</span><span class="o">,</span> <span class="n">value</span><span class="o">))</span>
+</span><span class='line'>                        <span class="k">return</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span><span class="o">;</span>
+</span><span class='line'>                    <span class="k">else</span>
+</span><span class='line'>                        <span class="k">break</span><span class="o">;</span> <span class="c1">// restart if lost race to replace value</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="c1">// else c &lt; 0; fall through</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="c1">// 新建节点(对应是“要插入的键值对”)</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">z</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;(</span><span class="n">kkey</span><span class="o">,</span> <span class="n">value</span><span class="o">,</span> <span class="n">n</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(!</span><span class="n">b</span><span class="o">.</span><span class="na">casNext</span><span class="o">(</span><span class="n">n</span><span class="o">,</span> <span class="n">z</span><span class="o">))</span>   <span class="c1">// 设置“b的后继节点”为z</span>
+</span><span class='line'>                <span class="k">break</span><span class="o">;</span>         <span class="c1">// restart if lost race to append to b，多线程情况下，break才可能发生(其它线程对b进行了操作)</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="c1">// 随机获取一个level，然后在“第1层”到“第level层”的链表中都插入新建节点</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">level</span> <span class="o">=</span> <span class="n">randomLevel</span><span class="o">();</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">level</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                <span class="n">insertIndex</span><span class="o">(</span><span class="n">z</span><span class="o">,</span> <span class="n">level</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>doPut()的作用就是将键值对添加到“跳表”中,其主干部分(即单纯的只考虑“单线程的情况下，将key-value添加到跳表中”，即忽略“多线程相关的内容”),它的流程如下：</p>
+
+<pre><code>第1步：找到“插入位置”。找到key的前去节点(b)和key的后继节点(n)；key是要插入节点的键;
+第2步：新建并插入节点。新建节点z(key对应的节点)，并将新节点z插入到“跳表”中(设置“b的后继节点为z”，“z的后继节点为n”);
+第3步：更新跳表。即随机获取一个level，然后在“跳表”的第1层～第level层之间，每一层都插入节点z；在第level层之上就不再插入节点了。若level数值大于“跳表的层次”，则新建一层;
+</code></pre>
+
+<p>主干代码大致如下：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="n">V</span> <span class="nf">doPut</span><span class="o">(</span><span class="n">K</span> <span class="n">kkey</span><span class="o">,</span> <span class="n">V</span> <span class="n">value</span><span class="o">,</span> <span class="kt">boolean</span> <span class="n">onlyIfAbsent</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">kkey</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">// 找到key的前继节点</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>        <span class="c1">// 设置n为key的后继节点</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">// 新建节点(对应是“要被插入的键值对”)</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">z</span> <span class="o">=</span> <span class="k">new</span> <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;(</span><span class="n">kkey</span><span class="o">,</span> <span class="n">value</span><span class="o">,</span> <span class="n">n</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// 设置“b的后继节点”为z</span>
+</span><span class='line'>            <span class="n">b</span><span class="o">.</span><span class="na">casNext</span><span class="o">(</span><span class="n">n</span><span class="o">,</span> <span class="n">z</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="c1">// 随机获取一个level，然后在“第1层”到“第level层”的链表中都插入新建节点</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">level</span> <span class="o">=</span> <span class="n">randomLevel</span><span class="o">();</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">level</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                <span class="n">insertIndex</span><span class="o">(</span><span class="n">z</span><span class="o">,</span> <span class="n">level</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>1.2 删除</h1>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">V</span> <span class="nf">remove</span><span class="o">(</span><span class="n">Object</span> <span class="n">key</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">doRemove</span><span class="o">(</span><span class="n">key</span><span class="o">,</span> <span class="kc">null</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">final</span> <span class="n">V</span> <span class="nf">doRemove</span><span class="o">(</span><span class="n">Object</span> <span class="n">okey</span><span class="o">,</span> <span class="n">Object</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">okey</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span> <span class="c1">//前置节点</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>            <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">n</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">f</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">n</span> <span class="o">!=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">)</span>                    <span class="c1">// inconsistent read</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">Object</span> <span class="n">v</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">value</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">v</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>                    <span class="c1">// n is deleted</span>
+</span><span class='line'>                    <span class="n">n</span><span class="o">.</span><span class="na">helpDelete</span><span class="o">(</span><span class="n">b</span><span class="o">,</span> <span class="n">f</span><span class="o">);</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">v</span> <span class="o">==</span> <span class="n">n</span> <span class="o">||</span> <span class="n">b</span><span class="o">.</span><span class="na">value</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>      <span class="c1">// b is deleted</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">n</span><span class="o">.</span><span class="na">key</span><span class="o">);</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">b</span> <span class="o">=</span> <span class="n">n</span><span class="o">;</span>
+</span><span class='line'>                    <span class="n">n</span> <span class="o">=</span> <span class="n">f</span><span class="o">;</span>
+</span><span class='line'>                    <span class="k">continue</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">value</span> <span class="o">!=</span> <span class="kc">null</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="n">value</span><span class="o">.</span><span class="na">equals</span><span class="o">(</span><span class="n">v</span><span class="o">))</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(!</span><span class="n">n</span><span class="o">.</span><span class="na">casValue</span><span class="o">(</span><span class="n">v</span><span class="o">,</span> <span class="kc">null</span><span class="o">))</span><span class="c1">// 设置b的后继节点为null</span>
+</span><span class='line'>                    <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(!</span><span class="n">n</span><span class="o">.</span><span class="na">appendMarker</span><span class="o">(</span><span class="n">f</span><span class="o">)</span> <span class="o">||</span> <span class="o">!</span><span class="n">b</span><span class="o">.</span><span class="na">casNext</span><span class="o">(</span><span class="n">n</span><span class="o">,</span> <span class="n">f</span><span class="o">))</span>
+</span><span class='line'>                    <span class="n">findNode</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>                  <span class="c1">// Retry via findNode</span>
+</span><span class='line'>                <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>           <span class="c1">// Clean index</span>
+</span><span class='line'>                    <span class="k">if</span> <span class="o">(</span><span class="n">head</span><span class="o">.</span><span class="na">right</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
+</span><span class='line'>                        <span class="n">tryReduceLevel</span><span class="o">();</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面是删除跳表中键值对的主干步骤：</p>
+
+<pre><code>第1步：找到被删除节点的位置;找到key的前继节点(b)，key所对应的节点(n)，n的后继节点f；key是要删除节点的键;
+第2步：删除节点;将key所对应的节点n从跳表中移除，将b的后继节点设为f;
+第3步：更新跳表;遍历跳表，删除每一层的key节点(如果存在的话)。删除导致某一层为空之后，需要删除这一层;
+</code></pre>
+
+<p>主干部分的doRemove()的代码大致如下：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">final</span> <span class="n">V</span> <span class="nf">doRemove</span><span class="o">(</span><span class="n">Object</span> <span class="n">okey</span><span class="o">,</span> <span class="n">Object</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">okey</span><span class="o">);</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">// 找到key的前继节点b</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>        <span class="c1">// b--&gt;n,即n为b的后继节点，也即n节点为key的节点</span>
+</span><span class='line'>        <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="c1">// f是n的后继节点</span>
+</span><span class='line'>            <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">f</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+</span><span class='line'>            <span class="c1">// 设置n节点为null</span>
+</span><span class='line'>            <span class="n">n</span><span class="o">.</span><span class="na">casValue</span><span class="o">(</span><span class="n">v</span><span class="o">,</span> <span class="kc">null</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// 设置b的后继节点为f</span>
+</span><span class='line'>            <span class="n">b</span><span class="o">.</span><span class="na">casNext</span><span class="o">(</span><span class="n">n</span><span class="o">,</span> <span class="n">f</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// 清除跳表中每一层的key节点</span>
+</span><span class='line'>            <span class="n">findPredecessor</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>            <span class="c1">// 如果“表头的右索引为空”，则将“跳表的层次”-1</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">head</span><span class="o">.</span><span class="na">right</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
+</span><span class='line'>                <span class="n">tryReduceLevel</span><span class="o">();</span>
+</span><span class='line'>            <span class="k">return</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>1.3 获取</h1>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="n">V</span> <span class="nf">get</span><span class="o">(</span><span class="n">Object</span> <span class="n">key</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">return</span> <span class="nf">doGet</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">private</span> <span class="n">V</span> <span class="nf">doGet</span><span class="o">(</span><span class="n">Object</span> <span class="n">okey</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="n">Comparable</span><span class="o">&lt;?</span> <span class="kd">super</span> <span class="n">K</span><span class="o">&gt;</span> <span class="n">key</span> <span class="o">=</span> <span class="n">comparable</span><span class="o">(</span><span class="n">okey</span><span class="o">);</span>
+</span><span class='line'>    <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">bound</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>    <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">q</span> <span class="o">=</span> <span class="n">head</span><span class="o">;</span>    <span class="c1">//待比较节点</span>
+</span><span class='line'>    <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">r</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="na">right</span><span class="o">;</span> <span class="c1">//待比较的右边节点</span>
+</span><span class='line'>    <span class="n">Node</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">n</span><span class="o">;</span>
+</span><span class='line'>    <span class="n">K</span> <span class="n">k</span><span class="o">;</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">c</span><span class="o">;</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Index</span><span class="o">&lt;</span><span class="n">K</span><span class="o">,</span><span class="n">V</span><span class="o">&gt;</span> <span class="n">d</span><span class="o">;</span>
+</span><span class='line'>        <span class="c1">// 往右遍历</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">r</span> <span class="o">!=</span> <span class="kc">null</span> <span class="o">&amp;&amp;</span> <span class="o">(</span><span class="n">n</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="na">node</span><span class="o">)</span> <span class="o">!=</span> <span class="n">bound</span> <span class="o">&amp;&amp;</span> <span class="o">(</span><span class="n">k</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">key</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">((</span><span class="n">c</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">k</span><span class="o">))</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">q</span> <span class="o">=</span> <span class="n">r</span><span class="o">;</span>
+</span><span class='line'>                <span class="n">r</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="na">right</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">continue</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">Object</span> <span class="n">v</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">value</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">(</span><span class="n">v</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)?</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span> <span class="o">:</span> <span class="n">getUsingFindNode</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span> <span class="k">else</span>
+</span><span class='line'>                <span class="n">bound</span> <span class="o">=</span> <span class="n">n</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="c1">// 往下遍历</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">((</span><span class="n">d</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="na">down</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">q</span> <span class="o">=</span> <span class="n">d</span><span class="o">;</span>
+</span><span class='line'>            <span class="n">r</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="na">right</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">else</span>
+</span><span class='line'>            <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">// 同一层逐个往后便利</span>
+</span><span class='line'>    <span class="k">for</span> <span class="o">(</span><span class="n">n</span> <span class="o">=</span> <span class="n">q</span><span class="o">.</span><span class="na">node</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>  <span class="n">n</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">;</span> <span class="n">n</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">next</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">((</span><span class="n">k</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">key</span><span class="o">)</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">((</span><span class="n">c</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="na">compareTo</span><span class="o">(</span><span class="n">k</span><span class="o">))</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">Object</span> <span class="n">v</span> <span class="o">=</span> <span class="n">n</span><span class="o">.</span><span class="na">value</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">(</span><span class="n">v</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)?</span> <span class="o">(</span><span class="n">V</span><span class="o">)</span><span class="n">v</span> <span class="o">:</span> <span class="n">getUsingFindNode</span><span class="o">(</span><span class="n">key</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                <span class="k">break</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.ShipList的简单实现</h1>
+
+<p>很早之前写过一个简单的SkipList，贴在百度空间：
+<a href="http://hi.baidu.com/nicker2010/item/be641424bb0963c8ef10f1dc">http://hi.baidu.com/nicker2010/item/be641424bb0963c8ef10f1dc</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2990,290 +3545,6 @@ try{
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/11/11/java-atomic/">Java Atomic</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-11-11T18:02:41+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>11</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>6:02 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>在多线程环境下,Java里面的++i或者&ndash;i操作不是线程安全的，因为它其实包含了三个操作:获取当前值,++或者&ndash;,写回.
-在没有额外资源可以利用的情况下，只能使用加锁才能保证三个操作时“原子性”的.</p>
-
-<p>在Java中，协调对线程间共享字段的访问的传统方法是使用同步，确保完成对共享字段的所有访问，同时具有适当的锁定。带来的问题主要是锁定竞争太厉害（线程常常在其他线程具有锁定时要求获得该锁定那么该线程将被阻塞，直到该锁定可用），会损害吞吐量，因为竞争的同步非常昂贵,另外还存在死锁等问题。对于现代 JVM 而言，无竞争的同步现在非常便宜。</p>
-
-<p>java.util.concurrent.atomic包就是提供原子操作的类的小工具包，支持在单个变量上不用锁定(Lock-Free)的线程安全编程。</p>
-
-<h1>1.Atomic整体介绍</h1>
-
-<h3>1.1 Boolean,Integer,Long和Reference的Atomic版本:</h3>
-
-<pre><code>AtomicBoolean
-AtomicInteger
-AtomicLong
-AtomicReference
-</code></pre>
-
-<h3>1.2 Integer,Long,Reference的数组版本:</h3>
-
-<pre><code>AtomicIntegerArray
-AtomicLongArray
-AtomicReferenceArray
-</code></pre>
-
-<h3>1.3 基于反射的原子更新字段操作:</h3>
-
-<pre><code>AtomicIntegerFieldUpdater
-AtomicLongFieldUpdater
-AtomicReferenceFieldUpdater
-</code></pre>
-
-<p>约束:</p>
-
-<pre><code>1. 字段必须是volatile类型的;
-2. 字段的描述类型（修饰符public/protected/default/private）是与调用者与操作对象字段的关系一致。也就是说调用者能够直接操作对象字段，那么就可以反射进行原子操作。但是对于父类的字段，子类是不能直接操作的，尽管子类可以访问父类的字段;
-3. 只能是实例变量，不能是类变量(static变量);
-4. 只能是可修改变量，不能使final变量，因为final的语义就是不可修改,实际上final的语义和volatile是有冲突的，这两个关键字不能同时存在;
-5. 对于AtomicIntegerFieldUpdater和AtomicLongFieldUpdater只能修改int/long类型的字段，不能修改其包装类型（Integer/Long）,如果要修改包装类型就需要使用AtomicReferenceFieldUpdater;
-</code></pre>
-
-<h3>1.4 AtomicMarkableReference与AtomicStampedReference</h3>
-
-<pre><code>AtomicMarkableReference
-AtomicStampedReference
-</code></pre>
-
-<p>AtomicMarkableReference类描述的一个&lt;Object,Boolean>的对，可以原子的修改Object或者Boolean的值，这种数据结构在一些缓存或者状态描述中比较有用。这种结构在单个或者同时修改Object/Boolean的时候能够有效的提高吞吐量。</p>
-
-<p>AtomicStampedReference类维护带有整数“标志”的对象引用，可以用原子方式对其进行更新。对比AtomicMarkableReference 类的&lt;Object,Boolean>，AtomicStampedReference 维护的是一种类似&lt;Object,int>的数据结构，其实就是对对象（引用）的一个并发计数。但是与AtomicInteger 不同的是，此数据结构可以携带一个对象引用（Object），并且能够对此对象和计数同时进行原子操作。</p>
-
-<p>在后面的章节中会提到“ABA问题”，而AtomicMarkableReference/AtomicStampedReference 在解决“ABA问题”上很有用。</p>
-
-<h1>2.AtomicInteger实现</h1>
-
-<p>其内部实现不是简单的使用synchronized，而是一个更为高效的方式CAS (compare and swap) + volatile和native方法，从而避免了synchronized的高开销，执行效率大为提升。</p>
-
-<p>native的意思是使用Unsafe类,Unsafe类的功能函数是native的.</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">AtomicInteger</span> <span class="kd">extends</span> <span class="n">Number</span> <span class="kd">implements</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="n">Unsafe</span> <span class="n">unsafe</span> <span class="o">=</span> <span class="n">Unsafe</span><span class="o">.</span><span class="na">getUnsafe</span><span class="o">();</span>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">valueOffset</span><span class="o">;</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">static</span> <span class="o">{</span>
-</span><span class='line'>      <span class="k">try</span> <span class="o">{</span>
-</span><span class='line'>        <span class="n">valueOffset</span> <span class="o">=</span> <span class="n">unsafe</span><span class="o">.</span><span class="na">objectFieldOffset</span>
-</span><span class='line'>            <span class="o">(</span><span class="n">AtomicInteger</span><span class="o">.</span><span class="na">class</span><span class="o">.</span><span class="na">getDeclaredField</span><span class="o">(</span><span class="s">&quot;value&quot;</span><span class="o">));</span>
-</span><span class='line'>      <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">Exception</span> <span class="n">ex</span><span class="o">)</span> <span class="o">{</span> <span class="k">throw</span> <span class="k">new</span> <span class="nf">Error</span><span class="o">(</span><span class="n">ex</span><span class="o">);</span> <span class="o">}</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'>
-</span><span class='line'>    <span class="kd">private</span> <span class="kd">volatile</span> <span class="kt">int</span> <span class="n">value</span><span class="o">;</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>内部使用unsafe实现,value存真正的int值,valueOffset存value在AtomicInteger对象内的内存偏移地址.</p>
-
-<h3>2.1 volatile语义</h3>
-
-<p>volatile相当于synchronized的弱实现，也就是说volatile实现了类似synchronized的语义，却又没有锁机制.它确保对volatile字段的更新以可预见的方式告知其他的线程.</p>
-
-<p>volatile包含以下语义：</p>
-
-<pre><code>(1).Java存储模型不会对valatile指令的操作进行重排,这个保证对volatile变量的操作时按照指令的出现顺序执行的.
-(2).volatile变量不会被缓存在寄存器中（只有拥有线程可见）或者其他对CPU不可见的地方，每次总是从主存中读取volatile变量的结果.也就是说对于volatile变量的修改，其它线程总是可见的，并且不是使用自己线程栈内部的变量。也就是在happens-before法则中，对一个valatile变量的写操作后，其后的任何读操作理解可见此写操作的结果.
-</code></pre>
-
-<p>尽管volatile变量的特性不错，但是volatile并不能保证线程安全的，也就是说volatile字段的操作不是原子性的，volatile变量只能保证可见性（一个线程修改后其它线程能够理解看到此变化后的结果）.</p>
-
-<h3>2.2 常用函数</h3>
-
-<p>getAndIncrement()相当于i++</p>
-
-<p>incrementAndGet()相当于++i</p>
-
-<p>getAndDecrement()相当于i&ndash;</p>
-
-<p>decrementAndGet()相当于&ndash;i</p>
-
-<h3>2.3 特殊函数</h3>
-
-<p><strong>2.3.1 set() VS lazySet</strong></p>
-
-<p>set设置为给定值，直接修改原始值；</p>
-
-<p>lazySet延时设置变量值，这个等价于set()方法，但是由于value是volatile类型的，因此此字段的修改会比普通字段(非volatile字段)有稍微的性能延时(尽管可以忽略)，所以如果不是想立即读取设置的新值，允许在“后台”修改值，那么此方法就很有用.</p>
-
-<p><strong>2.3.2 compareAndSet() VS weakCompareAndSet</strong></p>
-
-<p>接受2个参数，一个是期望数据(expected)，一个是新数据(new)；如果atomic里面的数据和期望数据一 致，则将新数据设定给atomic的数据，返回true，表明成功；否则就不设定，并返回false。</p>
-
-<p>按照JSR规范,调用weakCompareAndSet时并不能保证不存在happen- before的发生（也就是可能存在指令重排序导致此操作失败）.</p>
-
-<p>实际实现中,compareAndSet()和weakCompareAndSet没有区别:</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">compareAndSet</span><span class="o">(</span><span class="kt">int</span> <span class="n">expect</span><span class="o">,</span> <span class="kt">int</span> <span class="n">update</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">return</span> <span class="n">unsafe</span><span class="o">.</span><span class="na">compareAndSwapInt</span><span class="o">(</span><span class="k">this</span><span class="o">,</span> <span class="n">valueOffset</span><span class="o">,</span> <span class="n">expect</span><span class="o">,</span> <span class="n">update</span><span class="o">);</span>
-</span><span class='line'><span class="o">}</span>
-</span><span class='line'><span class="kd">public</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">weakCompareAndSet</span><span class="o">(</span><span class="kt">int</span> <span class="n">expect</span><span class="o">,</span> <span class="kt">int</span> <span class="n">update</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">return</span> <span class="n">unsafe</span><span class="o">.</span><span class="na">compareAndSwapInt</span><span class="o">(</span><span class="k">this</span><span class="o">,</span> <span class="n">valueOffset</span><span class="o">,</span> <span class="n">expect</span><span class="o">,</span> <span class="n">update</span><span class="o">);</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.CAS操作</h1>
-
-<p>在JDK 5之前Java语言是靠synchronized关键字保证同步的，这会导致有锁.</p>
-
-<p>锁机制存在以下问题：</p>
-
-<pre><code>(1)在多线程竞争下，加锁、释放锁会导致比较多的上下文切换和调度延时，引起性能问题。
-(2)一个线程持有锁会导致其它所有需要此锁的线程挂起。
-(3)如果一个优先级高的线程等待一个优先级低的线程释放锁会导致优先级倒置，引起性能风险。
-</code></pre>
-
-<p>volatile是不错的机制，但是volatile不能保证原子性。因此对于同步最终还是要回到锁机制上来。</p>
-
-<h3>3.1 悲观锁和乐观锁</h3>
-
-<p>独占锁是一种悲观锁，synchronized就是一种独占锁，会导致其它所有需要锁的线程挂起，等待持有锁的线程释放锁;</p>
-
-<p>而另一个更加有效的锁就是乐观锁。所谓乐观锁就是，每次不加锁而是假设没有冲突而去完成某项操作，如果因为冲突失败就重试，直到成功为止。</p>
-
-<h3>3.2 比较并交换</h3>
-
-<p>上面的乐观锁用到的机制就是比较并交换(CAS，Compare and Swap).</p>
-
-<p>CAS 操作包含三个操作数:内存位置（V）、预期原值（A）和新值(B)。如果内存位置的值与预期原值相匹配，那么处理器会自动将该位置值更新为新值。否则，处理器不做任何操作。通常将 CAS 用于同步的方式是从地址 V 读取值 A，执行多步计算来获得新值 B，然后使用 CAS 将 V 的值从 A 改为 B。如果 V 处的值尚未同时更改，则 CAS 操作成功。</p>
-
-<p>类似于 CAS 的指令允许算法执行读-修改-写操作，而无需害怕其他线程同时修改变量，因为如果其他线程修改变量，那么 CAS 会检测它（并失败），算法可以对该操作重新计算。</p>
-
-<h3>3.3 硬件同步原语</h3>
-
-<p>大多数现代处理器都包含对多处理的支持。当然这种支持包括多处理器可以共享外部设备和主内存，同时它通常还包括对指令系统的增加来支持多处理的特殊要求。特别是，几乎每个现代处理器都有通过可以检测或阻止其他处理器的并发访问的方式来更新共享变量的指令.</p>
-
-<p>拿出AtomicInteger来研究在没有锁的情况下是如何做到数据正确性的。</p>
-
-<p>首先毫无以为，在没有锁的机制下可能需要借助volatile原语，保证线程间的数据是可见的（共享的）。这样才获取变量的值的时候才能直接读取。</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">private</span> <span class="kd">volatile</span> <span class="kt">int</span> <span class="n">value</span><span class="o">;</span>
-</span><span class='line'><span class="o">...</span>
-</span><span class='line'><span class="kd">public</span> <span class="kd">final</span> <span class="kt">int</span> <span class="nf">get</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">value</span><span class="o">;</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>然后来看看++i是怎么做到的。</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">final</span> <span class="kt">int</span> <span class="nf">incrementAndGet</span><span class="o">()</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>  <span class="c1">//重试</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">current</span> <span class="o">=</span> <span class="n">get</span><span class="o">();</span>
-</span><span class='line'>        <span class="kt">int</span> <span class="n">next</span> <span class="o">=</span> <span class="n">current</span> <span class="o">+</span> <span class="mi">1</span><span class="o">;</span>
-</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">compareAndSet</span><span class="o">(</span><span class="n">current</span><span class="o">,</span> <span class="n">next</span><span class="o">))</span>
-</span><span class='line'>            <span class="k">return</span> <span class="n">next</span><span class="o">;</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>在这里采用了CAS操作，每次从内存中读取数据然后将此数据和+1后的结果进行CAS操作，如果成功就返回结果，否则重试直到成功为止。</p>
-
-<p>而compareAndSet利用JNI来完成CPU指令的操作。</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">compareAndSet</span><span class="o">(</span><span class="kt">int</span> <span class="n">expect</span><span class="o">,</span> <span class="kt">int</span> <span class="n">update</span><span class="o">)</span> <span class="o">{</span>
-</span><span class='line'>    <span class="k">return</span> <span class="n">unsafe</span><span class="o">.</span><span class="na">compareAndSwapInt</span><span class="o">(</span><span class="k">this</span><span class="o">,</span> <span class="n">valueOffset</span><span class="o">,</span> <span class="n">expect</span><span class="o">,</span> <span class="n">update</span><span class="o">);</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>整体的过程就是这样子的，利用CPU的CAS指令，同时借助JNI来完成Java的非阻塞算法。</p>
-
-<h1>4.指令重排</h1>
-
-<p>Java语言规范规定了JVM线程内部维持顺序化语义，也就是说只要程序的最终结果等同于它在严格的顺序化环境下的结果，那么指令的执行顺序就可能与代码的顺序不一致,这个过程通过叫做指令的重排序。</p>
-
-<p>指令重排序存在的意义在于：JVM能够根据处理器的特性（CPU的多级缓存系统、多核处理器等）适当的重新排序机器指令，使机器指令更符合CPU的执行特点，最大限度的发挥机器的性能。</p>
-
-<h1>5.Happen-Before</h1>
-
-<p>Java语言中有一个“先行发生”（happen—before）的规则，它是Java内存模型中定义的两项操作之间的偏序关系，如果操作A先行发生于操作B，其意思就是说，在发生操作B之前，操作A产生的影响都能被操作B观察到，“影响”包括修改了内存中共享变量的值、发送了消息、调用了方法等，它与时间上的先后发生基本没有太大关系。这个原则特别重要，它是判断数据是否存在竞争、线程是否安全的主要依据。</p>
-
-<p>举例来说，假设存在如下三个线程，分别执行对应的操作:</p>
-
-<pre><code>线程A中执行如下操作：i=1
-线程B中执行如下操作：j=i
-线程C中执行如下操作：i=2
-</code></pre>
-
-<p>假设线程A中的操作”i=1“ happen—before线程B中的操作“j=i”，那么就可以保证在线程B的操作执行后，变量j的值一定为1，即线程B观察到了线程A中操作“i=1”所产生的影响；现在，我们依然保持线程A和线程B之间的happen—before关系，同时线程C出现在了线程A和线程B的操作之间，但是C与B并没有happen—before关系，那么j的值就不确定了，线程C对变量i的影响可能会被线程B观察到，也可能不会，这时线程B就存在读取到不是最新数据的风险，不具备线程安全性。</p>
-
-<h1>6.ABA 问题</h1>
-
-<p>CAS操作通常存在ABA问题.</p>
-
-<p>因为在更改 V 之前，CAS 主要询问“V 的值是否仍为 A”，所以在第一次读取 V 以及对 V 执行 CAS 操作之前，如果将值从 A 改为 B，然后再改回 A，会使基于 CAS 的算法混乱。在这种情况下，CAS 操作会成功，但是在一些情况下，结果可能不是您所预期的。这类问题称为 ABA 问题，通常通过将标记或版本编号与要进行 CAS 操作的每个值相关联，并原子地更新值和标记，来处理这类问题。AtomicStampedReference 类支持这种方法.</p>
-
-<h1>7.参考</h1>
-
-<p><a href="https://www.ibm.com/developerworks/cn/java/j-jtp11234/">https://www.ibm.com/developerworks/cn/java/j-jtp11234/</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/17">&larr; Older</a>
@@ -3291,6 +3562,10 @@ AtomicStampedReference
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/">Spring上传组件冲突</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/12/29/activitishi-jian-chu-li/">Activiti事件处理</a>
@@ -3328,10 +3603,6 @@ AtomicStampedReference
         <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -3356,7 +3627,7 @@ AtomicStampedReference
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

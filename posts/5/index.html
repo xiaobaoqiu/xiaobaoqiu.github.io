@@ -9,10 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="Java诊断我相信再日常开发中都十分需要.相信大家都使用过以下几种诊断方式: 1.肉眼诊断
-就是出现问题时候企图通过肉眼来发现代码问题.通常很明显的问题有效;
-2.日志诊断
-通过给出问题的代码入参或者上下游加上日志,或者出问题的时候加上日志来诊断;这种方式的问题就是出现问题你需要重新拉分支,加日志 &hellip;">
+  <meta name="description" content="join 用于多表中字段之间的关联,语法如下: 1
+... FROM table1 INNER|LEFT|RIGHT JOIN table2 ON conditiona JOIN实际上是两个表的的乘积(即笛卡尔积).假设集合A={a,b}，集合B={0,1,2}，则两个集合的笛卡尔积为{(a,0 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -78,6 +76,130 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/09/03/mysql-join/">Mysql Join</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-09-03T11:42:33+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>11:42 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>join 用于多表中字段之间的关联,语法如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>... FROM table1 INNER|LEFT|RIGHT JOIN table2 ON conditiona</span></code></pre></td></tr></table></div></figure>
+
+
+<p>JOIN实际上是两个表的的乘积(即笛卡尔积).假设集合A={a,b}，集合B={0,1,2}，则两个集合的笛卡尔积为{(a,0),(a,1),(a,2),(b,0),(b,1), (b,2)}.</p>
+
+<p>JOIN按照功能大致分为如下三类:</p>
+
+<pre><code>INNER JOIN: 取得两个表中存在连接匹配关系的记录;
+LEFT JOIN: 取得左表完全记录，即使右表并无对应匹配记录,如果没有匹配,右侧将包含null;
+RIGHT JOIN: 与 LEFT JOIN 相反，取得右表完全记录，即使左表并无匹配对应记录;
+</code></pre>
+
+<h2>. 1.显示join和隐式join</h2>
+
+<p>另外,写join语句有所谓的显示join和隐式join的写法:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-- 显示join
+</span><span class='line'>select * from
+</span><span class='line'>table1 inner join table2
+</span><span class='line'>on table1.name = table2.name;
+</span><span class='line'>
+</span><span class='line'>-- 隐式join
+</span><span class='line'>select table1.*, table2.*
+</span><span class='line'>from table1, table2
+</span><span class='line'>where table1.name = table2.name;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这两种写法性能上基本没有差异,参考stackoverflow: <a href="http://stackoverflow.com/questions/44917/explicit-vs-implicit-sql-joins">http://stackoverflow.com/questions/44917/explicit-vs-implicit-sql-joins</a></p>
+
+<h2>. 2.ON条件和WHERE条件</h2>
+
+<p>在执行顺序上需要注意的是on条件和where条件执行顺序: 首先使用on条件产生初始笛卡尔积集合,再在这个集合上使用where条件筛选.所以join的时候应该首先好的on条件保证笛卡尔积集合尽可能小,从而减少Where的执行.</p>
+
+<p>比如下面两种写法,方案2写法保证产生的笛卡尔积集合很小,因而从执行性能来看第二个显然更加省时。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-- 方案1
+</span><span class='line'>select * from A
+</span><span class='line'>inner join B on B.name = A.name
+</span><span class='line'>left join C on C.name = B.name
+</span><span class='line'>left join D on D.id = C.id
+</span><span class='line'>where C.status&gt;1 and D.status=1;
+</span><span class='line'>
+</span><span class='line'>-- 方案2
+</span><span class='line'>select * from A
+</span><span class='line'>inner join B on B.name = A.name
+</span><span class='line'>left join C on C.name = B.name and C.status&gt;1
+</span><span class='line'>left join D on D.id = C.id and D.status=1</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>. 3.STRAIGHT_JOIN和NATURAL JOIN</h2>
+
+<h4>. 3.1 STRAIGHT_JOIN</h4>
+
+<p>再Join的时候,MySQL优化器要确定以谁为驱动表，也就是说以哪个表为基准，在处理此类问题时，MySQL优化器采用了简单粗暴的解决方法：哪个表的结果集小，就以哪个表为驱动表，当然MySQL优化器实际的处理方式会复杂许多，具体可以参考：<a href="http://www.orczhou.com/index.php/2013/04/how-mysql-choose-index-in-a-join/">http://www.orczhou.com/index.php/2013/04/how-mysql-choose-index-in-a-join/</a></p>
+
+<p>说明：在EXPLAIN结果中，第一行出现的表就是驱动表。</p>
+
+<p>但是这个由的时候比较愚蠢,比如我们order by的字段在大结果集的表上,也就是说排序字段不在驱动表里，于是乎不可避免的出现了Using filesort和Using temporary.</p>
+
+<p>上面这种场景,我们就可以通过使用STRAIGHT_JOIN显示的指定驱动表</p>
+
+<p>参考: <a href="http://huoding.com/2013/06/04/261">http://huoding.com/2013/06/04/261</a></p>
+
+<h4>. 3.2 NATURAL</h4>
+
+<p>MySQL将表中具有相同名称的字段自动进行记录匹配，而这些同名字段类型可以不同。因此，NATURAL JOIN 不用指定匹配条件。</p>
+
+<p>同样包含NATURAL LEFT JOIN和NATURAL RIGHT JOIN.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>SELECT article.aid,article.title,user.username FROM article NATURAL JOIN user</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1030,155 +1152,6 @@ agent方式启动的btrace的标准输出位于你的SqlMapTracer.class所在目
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/08/08/oomkiller/">Oomkiller</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-08-08T12:33:53+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>8</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>12:33 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer.</p>
-
-<p>其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用,每个Tomcat至少要求了0.5G的内存,很多要求的是默认的2G的内存.</p>
-
-<p>这里主要简单介绍一下oomkiller是什么东西,原理是什么,以及对我们的影响.</p>
-
-<h1>1.oomkiller简介</h1>
-
-<p>简单的说,Linux 内核有个机制叫OOM killer(Out-Of-Memory killer)，该机制会监控那些占用内存过大，尤其是瞬间很快消耗大量内存的进程(为什么后面会讲到)，为了防止内存耗尽而内核会把该进程杀掉,从而腾出内存留给系统用。</p>
-
-<p>现象就是相关的日志文件(/var/log/messages)里面会看到下面类似的 Out of memory: Kill process 信息(日志里面把机器host去掉了),还包括一些如pid，process name，cpu mask，trace等信息:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Aug  4 22:03:18  kernel: Out of memory: Kill process 21447 (java) score 81 or sacrifice child
-</span><span class='line'>Aug  4 22:03:18  kernel: Killed process 21447, UID 40001, (java) total-vm:4242176kB, anon-rss:711240kB, file-rss:1832kB
-</span><span class='line'>Aug  5 01:17:21  ntpd[1195]: synchronized to Xx.xx.xxx.xx, stratum 3
-</span><span class='line'>Aug  5 01:35:52  kernel: java invoked oom-killer: gfp_mask=0xd0, order=0, oom_adj=0, oom_score_adj=0
-</span><span class='line'>Aug  5 01:35:52  kernel: java cpuset=/ mems_allowed=0
-</span><span class='line'>Aug  5 01:35:52  kernel: Pid: 17391, comm: java Not tainted 2.6.32-358.23.2.el6.x86_64 #1</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.oomkiller原理</h1>
-
-<p>Linux 内核根据应用程序的要求分配内存，通常来说应用程序分配了内存但是并没有实际全部使用，为了提高性能，这部分没用的内存可以留作它用，这部分内存是属于每个进程的，内核直接回收利用的话比较麻烦，所以内核采用一种过度分配内存(over-commit memory)的办法来间接利用这部分 “空闲” 的内存，提高整体内存的使用效率。</p>
-
-<p>所谓的过度分配内存,可以理解为"打白条",进程A告诉系统我需要2G内存,系统只会答应不会拒绝,因为系统认为任何一个进程不可能每时每刻都全部占用其申请的内存.所以实际上系统并没有给进程A完整的2G内存,而是需要使用的时候才临时分配.这就好像银行现金肯定远远小于所以储户的总值,因为银行认为不可能所以储户同一时间把所以的钱都取出来.</p>
-
-<p>一般来说这样做没有问题，但当大多数应用程序都消耗完自己的内存的时候麻烦就来了，因为这些应用程序的内存需求加起来超出了物理内存(包括 swap)的容量，内核(OOM killer)必须杀掉一些进程才能腾出空间保障系统正常运行。</p>
-
-<p>用银行的例子来讲可能更容易懂一些，部分储户取钱的时候银行不怕，银行有足够的存款应付，当全国所以的储户(或者绝大多数储户)都取钱而且每个人都想把自己钱取完的时候银行的麻烦就来了，银行实际上是没有这么多钱给大家取的。</p>
-
-<h3>2.1 根据什么kill</h3>
-
-<p>内核检测到系统内存不足,然后挑选并杀掉某个进程的过程可以参考内核源代码 linux/mm/oom_kill.c，当系统内存不足的时候，oom_kill被触发，然后选择一个进程杀掉，如何判断和选择一个进程呢，总不能随机选吧?系统会根据进程使用内存的情况给进程打分,选择进程kill的时候主要根据这个分数,打分的机制很朴素:最占用内存的进程。</p>
-
-<p>每个进程的分数都由进程的oom_score记录:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$cat /proc/26893/oom_score
-</span><span class='line'>76
-</span><span class='line'>[baoqiu.xiao@Xxx ~]$ cat /proc/14969/oom_score
-</span><span class='line'>82</span></code></pre></td></tr></table></div></figure>
-
-
-<p>另外一个重要的参数就是进程的oom_adj,表示该pid进程被oom killer杀掉的权重，介于 [-17,15]之间，越高的权重，意味着更可能被oom killer选中，-17表示禁止被kill掉。默认为0.</p>
-
-<p>一些其他的细节:</p>
-
-<pre><code>1.子进程会继承父进程的oom_adj;
-2.OOM不适合于解决内存泄漏(Memory leak)的问题;
-3.有时free查看还有充足的内存，但还是会触发OOM，是因为该进程可能占用了特殊的内存地址空间;
-</code></pre>
-
-<h3>2.2 如何关闭oomkiller</h3>
-
-<p>有几种方法关闭oomkiller机制:</p>
-
-<ul>
-<li>1.调整oom_adj
-将进程的oom_adj设置为17即禁止了该进程被kill.</li>
-</ul>
-
-
-<p>比如系统的ssh一般是禁止oom的:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@ ~]$ ps aux | grep sshd
-</span><span class='line'>root      1208  0.0  0.0  64116   296 ?        Ss   May28   1:47 /usr/sbin/sshd
-</span><span class='line'>[baoqiu.xiao@ ~]$ cat /proc/1208/oom_adj 
-</span><span class='line'>-17</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其他需要禁用,可以如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>pgrep -f "sshd" | while read PID; do echo -17 &gt; /proc/$PID/oom_adj;done</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其实在oom-killer的日志中我们是可以看到未-17的一些应用:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Aug  5 01:35:52 l-crm4.des.dev.cn0 kernel: [ pid ]   uid  tgid total_vm      rss cpu oom_adj oom_score_adj name
-</span><span class='line'>...
-</span><span class='line'>Aug  5 01:35:52 l-crm4.des.dev.cn0 kernel: [ 1187]     0  1187    16029       73   2     -17         -1000 sshd
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<ul>
-<li><p>2.修改内核参数
-sysctl 下有2个可配置选项：</p>
-
-<p>  vm.panic_on_oom = 0                 #内存不够时内核是否直接panic,0表示开启
-  vm.oom_kill_allocating_task = 1         #oom-killer是否选择当前正在申请内存的进程进行kill</p></li>
-</ul>
-
-
-<p>只要设置/etc/sysctl.conf文件中vm.panic_on_oom=1就表示关闭oom-killer(线上环境一般不推荐):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># sysctl -w vm.panic_on_oom=1
-</span><span class='line'>vm.panic_on_oom = 1   //1表示关闭，默认为0表示开启OOM
-</span><span class='line'># sysctl -p</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参考: <a href="http://lwn.net/Articles/317814/">http://lwn.net/Articles/317814/</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/6">&larr; Older</a>
@@ -1196,6 +1169,10 @@ sysctl 下有2个可配置选项：</p>
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/">Spring上传组件冲突</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/12/29/activitishi-jian-chu-li/">Activiti事件处理</a>
@@ -1233,10 +1210,6 @@ sysctl 下有2个可配置选项：</p>
         <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1261,7 +1234,7 @@ sysctl 下有2个可配置选项：</p>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

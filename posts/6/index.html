@@ -9,11 +9,7 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.toString实现 测试不同的toString实现方式的效率，目前包括的case： 1.String的+连接生成；
-2.StringBuilder生成；
-3.StringBuffer生成；
-4.Guava的ToStringHelper生成；
-5.Apache.commons. &hellip;">
+  <meta name="description" content="最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer. 其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -79,6 +75,155 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/08/08/oomkiller/">Oomkiller</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-08-08T12:33:53+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>8</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>12:33 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近dev环境的Tomcat服务,还有dev环境的crate服务老是出现问题,现象就是Tomcat应用自己停了.导致测试中老是感觉莫名其妙.跟了一下原因,发现背后就是著名的oom-killer.</p>
+
+<p>其实出现这个问题早就预料到了,8G内存的虚拟机器上面跑了接近20个Tomcat应用,每个Tomcat至少要求了0.5G的内存,很多要求的是默认的2G的内存.</p>
+
+<p>这里主要简单介绍一下oomkiller是什么东西,原理是什么,以及对我们的影响.</p>
+
+<h1>1.oomkiller简介</h1>
+
+<p>简单的说,Linux 内核有个机制叫OOM killer(Out-Of-Memory killer)，该机制会监控那些占用内存过大，尤其是瞬间很快消耗大量内存的进程(为什么后面会讲到)，为了防止内存耗尽而内核会把该进程杀掉,从而腾出内存留给系统用。</p>
+
+<p>现象就是相关的日志文件(/var/log/messages)里面会看到下面类似的 Out of memory: Kill process 信息(日志里面把机器host去掉了),还包括一些如pid，process name，cpu mask，trace等信息:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Aug  4 22:03:18  kernel: Out of memory: Kill process 21447 (java) score 81 or sacrifice child
+</span><span class='line'>Aug  4 22:03:18  kernel: Killed process 21447, UID 40001, (java) total-vm:4242176kB, anon-rss:711240kB, file-rss:1832kB
+</span><span class='line'>Aug  5 01:17:21  ntpd[1195]: synchronized to Xx.xx.xxx.xx, stratum 3
+</span><span class='line'>Aug  5 01:35:52  kernel: java invoked oom-killer: gfp_mask=0xd0, order=0, oom_adj=0, oom_score_adj=0
+</span><span class='line'>Aug  5 01:35:52  kernel: java cpuset=/ mems_allowed=0
+</span><span class='line'>Aug  5 01:35:52  kernel: Pid: 17391, comm: java Not tainted 2.6.32-358.23.2.el6.x86_64 #1</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.oomkiller原理</h1>
+
+<p>Linux 内核根据应用程序的要求分配内存，通常来说应用程序分配了内存但是并没有实际全部使用，为了提高性能，这部分没用的内存可以留作它用，这部分内存是属于每个进程的，内核直接回收利用的话比较麻烦，所以内核采用一种过度分配内存(over-commit memory)的办法来间接利用这部分 “空闲” 的内存，提高整体内存的使用效率。</p>
+
+<p>所谓的过度分配内存,可以理解为"打白条",进程A告诉系统我需要2G内存,系统只会答应不会拒绝,因为系统认为任何一个进程不可能每时每刻都全部占用其申请的内存.所以实际上系统并没有给进程A完整的2G内存,而是需要使用的时候才临时分配.这就好像银行现金肯定远远小于所以储户的总值,因为银行认为不可能所以储户同一时间把所以的钱都取出来.</p>
+
+<p>一般来说这样做没有问题，但当大多数应用程序都消耗完自己的内存的时候麻烦就来了，因为这些应用程序的内存需求加起来超出了物理内存(包括 swap)的容量，内核(OOM killer)必须杀掉一些进程才能腾出空间保障系统正常运行。</p>
+
+<p>用银行的例子来讲可能更容易懂一些，部分储户取钱的时候银行不怕，银行有足够的存款应付，当全国所以的储户(或者绝大多数储户)都取钱而且每个人都想把自己钱取完的时候银行的麻烦就来了，银行实际上是没有这么多钱给大家取的。</p>
+
+<h3>2.1 根据什么kill</h3>
+
+<p>内核检测到系统内存不足,然后挑选并杀掉某个进程的过程可以参考内核源代码 linux/mm/oom_kill.c，当系统内存不足的时候，oom_kill被触发，然后选择一个进程杀掉，如何判断和选择一个进程呢，总不能随机选吧?系统会根据进程使用内存的情况给进程打分,选择进程kill的时候主要根据这个分数,打分的机制很朴素:最占用内存的进程。</p>
+
+<p>每个进程的分数都由进程的oom_score记录:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$cat /proc/26893/oom_score
+</span><span class='line'>76
+</span><span class='line'>[baoqiu.xiao@Xxx ~]$ cat /proc/14969/oom_score
+</span><span class='line'>82</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外一个重要的参数就是进程的oom_adj,表示该pid进程被oom killer杀掉的权重，介于 [-17,15]之间，越高的权重，意味着更可能被oom killer选中，-17表示禁止被kill掉。默认为0.</p>
+
+<p>一些其他的细节:</p>
+
+<pre><code>1.子进程会继承父进程的oom_adj;
+2.OOM不适合于解决内存泄漏(Memory leak)的问题;
+3.有时free查看还有充足的内存，但还是会触发OOM，是因为该进程可能占用了特殊的内存地址空间;
+</code></pre>
+
+<h3>2.2 如何关闭oomkiller</h3>
+
+<p>有几种方法关闭oomkiller机制:</p>
+
+<ul>
+<li>1.调整oom_adj
+将进程的oom_adj设置为17即禁止了该进程被kill.</li>
+</ul>
+
+
+<p>比如系统的ssh一般是禁止oom的:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@ ~]$ ps aux | grep sshd
+</span><span class='line'>root      1208  0.0  0.0  64116   296 ?        Ss   May28   1:47 /usr/sbin/sshd
+</span><span class='line'>[baoqiu.xiao@ ~]$ cat /proc/1208/oom_adj 
+</span><span class='line'>-17</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其他需要禁用,可以如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>pgrep -f "sshd" | while read PID; do echo -17 &gt; /proc/$PID/oom_adj;done</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其实在oom-killer的日志中我们是可以看到未-17的一些应用:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Aug  5 01:35:52 l-crm4.des.dev.cn0 kernel: [ pid ]   uid  tgid total_vm      rss cpu oom_adj oom_score_adj name
+</span><span class='line'>...
+</span><span class='line'>Aug  5 01:35:52 l-crm4.des.dev.cn0 kernel: [ 1187]     0  1187    16029       73   2     -17         -1000 sshd
+</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li><p>2.修改内核参数
+sysctl 下有2个可配置选项：</p>
+
+<p>  vm.panic_on_oom = 0                 #内存不够时内核是否直接panic,0表示开启
+  vm.oom_kill_allocating_task = 1         #oom-killer是否选择当前正在申请内存的进程进行kill</p></li>
+</ul>
+
+
+<p>只要设置/etc/sysctl.conf文件中vm.panic_on_oom=1就表示关闭oom-killer(线上环境一般不推荐):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># sysctl -w vm.panic_on_oom=1
+</span><span class='line'>vm.panic_on_oom = 1   //1表示关闭，默认为0表示开启OOM
+</span><span class='line'># sysctl -p</span></code></pre></td></tr></table></div></figure>
+
+
+<p>参考: <a href="http://lwn.net/Articles/317814/">http://lwn.net/Articles/317814/</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1792,204 +1937,6 @@ _ : 单个字符
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/07/16/xi-tong-dang-qian-yong-hu/">系统当前用户</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-07-16T04:25:57+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>4:25 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>经常需要查看当前服务器哪些用户在登录,以及他们都在干什么.</p>
-
-<p>下面总结一些命令,其中last应该是最常用的命令.</p>
-
-<h1>1.w</h1>
-
-<p>w - Show who is logged on and what they are doing.</p>
-
-<p>主要字段:</p>
-
-<pre><code>LOGIN@: 什么时间登录的
-PCPU: 当前进程所用时间
-WHAT: 用户当前正在使用的命令
-</code></pre>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ w
-</span><span class='line'> 20:32:42 up  9:59, 15 users,  load average: 1.80, 1.26, 1.17
-</span><span class='line'>USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
-</span><span class='line'>xiaobaoq tty7     :0               10:34    9:58m 22:26   0.48s init --user
-</span><span class='line'>xiaobaoq pts/1    :0               10:35    2:22m  0.12s  0.12s /bin/bash
-</span><span class='line'>xiaobaoq pts/2    :0               11:12   44:10   0.26s  0.19s ssh cn6
-</span><span class='line'>xiaobaoq pts/7    :0               11:12    9:02m  0.15s  0.09s ssh cn6
-</span><span class='line'>xiaobaoq pts/8    :0               11:28    5:56m  0.09s  0.03s ssh cn5
-</span><span class='line'>xiaobaoq pts/12   :0               13:09    3:03m  0.30s  0.24s ssh cn0
-</span><span class='line'>xiaobaoq pts/13   :0               13:09    3:14m  0.13s  0.07s mysql -h...
-</span><span class='line'>xiaobaoq pts/14   :0               13:09    3:00m  1.23s  1.17s ssh cn0
-</span><span class='line'>xiaobaoq pts/18   :0               13:09    3:03m  3.42s  3.35s ssh cn0
-</span><span class='line'>xiaobaoq pts/20   :0               13:14    3:01m  0.45s  0.39s mysql -h...
-</span><span class='line'>xiaobaoq pts/22   :0               13:26    7:01m  0.13s  0.07s ssh cn0
-</span><span class='line'>xiaobaoq pts/23   :0               14:02   40:34   0.17s  0.17s /bin/bash
-</span><span class='line'>xiaobaoq pts/24   :0               14:03    2.00s  0.23s  0.00s w
-</span><span class='line'>xiaobaoq pts/25   :0               14:36    2:02   0.24s  0.18s ssh cn5
-</span><span class='line'>xiaobaoq pts/26   :0               17:41    2:47m  0.09s  0.09s /bin/bash</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.who</h1>
-
-<p>who - show who is logged on</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who
-</span><span class='line'>xiaobaoqiu tty7         2015-07-15 10:34 (:0)
-</span><span class='line'>xiaobaoqiu pts/1        2015-07-15 10:35 (:0)
-</span><span class='line'>xiaobaoqiu pts/2        2015-07-15 11:12 (:0)
-</span><span class='line'>xiaobaoqiu pts/7        2015-07-15 11:12 (:0)
-</span><span class='line'>xiaobaoqiu pts/8        2015-07-15 11:28 (:0)
-</span><span class='line'>xiaobaoqiu pts/12       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/13       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/14       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/18       2015-07-15 13:09 (:0)
-</span><span class='line'>xiaobaoqiu pts/20       2015-07-15 13:14 (:0)
-</span><span class='line'>xiaobaoqiu pts/22       2015-07-15 13:26 (:0)
-</span><span class='line'>xiaobaoqiu pts/23       2015-07-15 14:02 (:0)
-</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)
-</span><span class='line'>xiaobaoqiu pts/25       2015-07-15 14:36 (:0)
-</span><span class='line'>xiaobaoqiu pts/26       2015-07-15 17:41 (:0)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.users</h1>
-
-<p>users - print the user names of users currently logged in to the current host</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ users
-</span><span class='line'>xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu xiaobaoqiu</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.whoami</h1>
-
-<p>whoami - print effective userid</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ whoami
-</span><span class='line'>xiaobaoqiu
-</span><span class='line'>
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who am i
-</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)
-</span><span class='line'>
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ who mom likes
-</span><span class='line'>xiaobaoqiu pts/24       2015-07-15 14:03 (:0)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>5.id</h1>
-
-<p>id - print real and effective user and group IDs</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ id
-</span><span class='line'>uid=1000(xiaobaoqiu) gid=1000(xiaobaoqiu) 组=1000(xiaobaoqiu),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),108(lpadmin),124(sambashare)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>6.last</h1>
-
-<p>last, lastb - show listing of last logged in users</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ last
-</span><span class='line'>xiaobaoq pts/26       :0               Wed Jul 15 17:41   still logged in   
-</span><span class='line'>xiaobaoq pts/25       :0               Wed Jul 15 14:36   still logged in   
-</span><span class='line'>xiaobaoq pts/24       :0               Wed Jul 15 14:03   still logged in   
-</span><span class='line'>xiaobaoq pts/23       :0               Wed Jul 15 14:02   still logged in   
-</span><span class='line'>xiaobaoq pts/22       :0               Wed Jul 15 13:26   still logged in   
-</span><span class='line'>xiaobaoq pts/20       :0               Wed Jul 15 13:14   still logged in   
-</span><span class='line'>xiaobaoq pts/20       :0               Wed Jul 15 13:14 - 13:14  (00:00)    
-</span><span class='line'>xiaobaoq pts/18       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/14       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/13       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/12       :0               Wed Jul 15 13:09   still logged in   
-</span><span class='line'>xiaobaoq pts/8        :0               Wed Jul 15 11:28   still logged in   
-</span><span class='line'>xiaobaoq pts/7        :0               Wed Jul 15 11:12   still logged in   
-</span><span class='line'>xiaobaoq pts/2        :0               Wed Jul 15 11:12   still logged in   
-</span><span class='line'>xiaobaoq pts/1        :0               Wed Jul 15 10:35   still logged in</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/7">&larr; Older</a>
@@ -2007,6 +1954,10 @@ WHAT: 用户当前正在使用的命令
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/12/30/springshang-chuan-zu-jian-chong-tu/">Spring上传组件冲突</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2016/12/29/activitishi-jian-chu-li/">Activiti事件处理</a>
@@ -2044,10 +1995,6 @@ WHAT: 用户当前正在使用的命令
         <a href="/blog/2016/04/06/activitiru-men/">Activiti入门</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/03/11/cong-dai-li-dao-springshi-wu/">从代理到Spring事务1-代理</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -2072,7 +2019,7 @@ WHAT: 用户当前正在使用的命令
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (6)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
