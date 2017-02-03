@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Spring | xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/blog/categories/spring/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2017-02-03T11:50:41+08:00</updated>
+  <updated>2017-02-03T16:01:24+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,204 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[ShallowEtagHeaderFilter]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2017/02/03/shallowetagheaderfilter/"/>
+    <updated>2017-02-03T11:56:21+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2017/02/03/shallowetagheaderfilter</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.%E8%83%8C%E6%99%AF">1.背景</a></li>
+<li><a href="#2.Mysql%E6%B5%81%E5%BC%8F%E8%AF%BB%E5%8F%96">2.Mysql流式读取</a></li>
+<li><a href="#3.ShallowEtagHeaderFilter">3.ShallowEtagHeaderFilter</a></li>
+</ul>
+
+
+<h2 id="1.背景">1.背景</h2>
+
+
+<p>之前组内遇到的一个 ShallowEtagHeaderFilter 导致流式导出失效的问题, 具体的问题分析不是我做的, 这里记录下问题及原理.</p>
+
+<p>现象就是一个数据导出接口, 用户的频繁调用导致线上内存吃满, 进而频繁 GC 导致 CPU 过高最终影响用户请求.</p>
+
+<h2 id="2.Mysql流式读取">2.Mysql流式读取</h2>
+
+
+<p>先交代一下导出接口的实现方式, 考虑到导出数据可能比较大导致撑爆内存, 数据导出是流式导出的.</p>
+
+<p>默认情况下, 我们的select从服务器一次取出所有数据放在客户端内存中, 当一条SQL返回数据量较大时可能会出现OOM.</p>
+
+<p>这里首先涉及到Mysql如何配置流式读取数据, 涉及到两个配置(第一个配置很重要很容易被忘记)</p>
+
+<pre><code>1.Mysql连接串中配置上参数useCursorFetch=true;
+2.Sql中配置上FetchSize等参数
+</code></pre>
+
+<p>下面以MyBatis为例子, 通过设置Mapper文件中select的属性来启用这一特性</p>
+
+<pre><code>&lt;select id="xxx" fetchSize="100" resultSetType="FORWARD_ONLY"&gt;
+    ...
+&lt;/select&gt;
+</code></pre>
+
+<p>然后, 配合 ResultHandler 就可以实现逐行流式处理数据库中的记录.</p>
+
+<p>我们就是采用这种方式, 流式获取数据写到 Response 的输出流中.</p>
+
+<h2 id="3.ShallowEtagHeaderFilter">3.ShallowEtagHeaderFilter</h2>
+
+
+
+
+<h4 id="3.1 Content-Length 和 Transfer-Encoding">3.1 Content-Length 和 Transfer-Encoding</h4>
+
+
+<p>在描述问题之前, 我们先普及一下 Http 请求中 Content-Length 和 Transfer-Encoding 的知识.</p>
+
+<p>Content-Length 用于描述HTTP消息实体的传输长度(the transfer-length of the message-body), 需要注意消息实体长度和消息实体传输长度是有区别, 比如说gzip压缩下, 消息实体长度是压缩前的长度, 消息实体的传输长度是gzip压缩后的长度.</p>
+
+<p>通过读取 Content-Length 这个信息, 服务器/客户端可以预先知道数据量的大小, 以便预先分配空间.</p>
+
+<p>Transfer-Encoding 所描述的是消息请求(request)和响应(response)所附带的实体对象(entity)的传输形式. 可选值有: chunked 和 identity, 其中chunked指把要发送传输的数据切割成一系列的块数据传输, identity指传输时不做任何处理, 自身的本质数据形式传输. 举个例子, 如果我们要传输一本小说到服务器, chunked方式就会先把这本小说分成一章一章的, 然后逐个章节上传, 而identity方式则是从小说的第一个字按顺序传输到最后一个字结束.</p>
+
+<p>HTTP/1.1 规定, 所有服务器必须支持 Chunked 类型的 Transfer-Encoding, 通过这个头部, 服务器不必在返回回应报文的时候预先知道返回 Body 的大小, 而是将数据分割到一个一个的 Chunk 中(每个 Chunk 通过特定的头部和尾部区分, 最后一个 Chunk 大小为 0, 以表示报文结束), 然后持续不断地写入 TCP 流, 通过这个机制, 可以实现服务器数据到客户端的流式输出.</p>
+
+<p>注意关于 Content-Length 和 Transfer-Encoding 一个准则: 有了Transfer-Encoding, 则不能有Content-Length</p>
+
+<p>参考:
+<a href="https://tools.ietf.org/html/rfc2616#section-4.4.">https://tools.ietf.org/html/rfc2616#section-4.4.</a>
+<a href="http://www.cnblogs.com/jcli/archive/2012/10/19/2730440.html">http://www.cnblogs.com/jcli/archive/2012/10/19/2730440.html</a>
+<a href="http://blog.csdn.net/pud_zha/article/details/8809878">http://blog.csdn.net/pud_zha/article/details/8809878</a></p>
+
+<h4 id="3.2 问题分析">3.2 问题分析</h4>
+
+
+<p>按照我们上面的分析, 我们的 Response 的 Transfer-Encoding 肯定是 chunked, 并且没有设置 Content-Length.但是我们发现请求的 Response 中存在 Content-Length 字段.</p>
+
+<p>我们将请求的 Response 分为三个阶段:
+    (1).从数据库读取数据;
+    (2).服务器端整理数据发往浏览器端;
+    (3).浏览器端接受数据;</p>
+
+<p>现在已知从 Mysql 中读取数据是流式的, 而浏览器接收到的数据不是流式的, 因此问题审核出在服务器端.</p>
+
+<p>最终定位到的罪魁祸首是一个 ShallowEtagHeaderFilter 的 Filter.</p>
+
+<h4 id="3.3 ShallowEtagHeaderFilter原理">3.3 ShallowEtagHeaderFilter原理</h4>
+
+
+<p>ShallowEtagHeaderFilter 继承了 OncePerRequestFilter, 我们可以分析一下 ShallowEtagHeaderFilter 的主要代码逻辑:</p>
+
+<pre><code>    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
+
+        response = new ShallowEtagResponseWrapper(response);    //1.将所有的请求包装成 ShallowEtagResponseWrapper
+
+        filterChain.doFilter(request, response);        //2. 其他 filter
+
+        updateResponse(request, response);      //3.返回给客户端之前处理一次 response
+    }
+</code></pre>
+
+<p>看一下包装 ShallowEtagResponseWrapper 做了什么:
+(其实看注释就已经知道, 将所有写到 output stream 和 writer 的内容缓冲起来放到, 并提供 oByteArray() 方法用于读取缓冲的数据):</p>
+
+<pre><code>    /**
+     * {@link HttpServletRequest} wrapper that buffers all content written to the
+     * {@linkplain #getOutputStream() output stream} and {@linkplain #getWriter() writer},
+     * and allows this content to be retrieved via a {@link #toByteArray() byte array}.
+     */
+    private static class ShallowEtagResponseWrapper extends HttpServletResponseWrapper {
+
+        private final ByteArrayOutputStream content = new ByteArrayOutputStream();
+
+        private final ServletOutputStream outputStream = new ResponseServletOutputStream();
+
+        private PrintWriter writer;
+        ...
+        public PrintWriter getWriter() throws IOException { //获取 writer, 采用自定义的 ResponsePrintWriter, 后续的写会将内容写到 content 中
+            if (this.writer == null) {
+                String characterEncoding = getCharacterEncoding();
+                this.writer = (characterEncoding != null ? new ResponsePrintWriter(characterEncoding) :
+                        new ResponsePrintWriter(WebUtils.DEFAULT_CHARACTER_ENCODING));
+            }
+            return this.writer;
+        }
+        private byte[] toByteArray() {  // 读取 content 内容
+            return this.content.toByteArray();
+        }
+
+        // 自定义 ServletOutputStream, write操作将内容写入到 content 中
+        private class ResponseServletOutputStream extends ServletOutputStream {
+            @Override
+            public void write(int b) throws IOException {
+                content.write(b);   //写到 content 中
+            }
+            ...
+        }
+
+        // 自定义 PrintWriter, 写入到 content 中
+        private class ResponsePrintWriter extends PrintWriter {
+            private ResponsePrintWriter(String characterEncoding) throws UnsupportedEncodingException {
+                super(new OutputStreamWriter(content, characterEncoding));
+            }
+            ...
+        }
+    }
+</code></pre>
+
+<p>最后我们看看 updateResponse 做了什么事:</p>
+
+<pre><code>    private void updateResponse(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        ...
+        byte[] body = responseWrapper.toByteArray();        //缓冲起来的数据
+        int statusCode = responseWrapper.getStatusCode();
+
+        if (isEligibleForEtag(request, responseWrapper, statusCode, body)) {
+            String responseETag = generateETagHeaderValue(body);    //基于内容生成 ETag
+            response.setHeader(HEADER_ETAG, responseETag);      //设置 ETag Header
+
+            String requestETag = request.getHeader(HEADER_IF_NONE_MATCH);   //If-None-Match 
+            if (responseETag.equals(requestETag)) {                 //请求的If-None-Match和ETag相同, 则304
+                response.setStatus(HttpServletResponse.SC_NOT_MODIFIED);    //304
+            } else {
+                copyBodyToResponse(body, response);     //将缓冲的内容写入到 response 中
+            }
+        } else {
+            ...
+            copyBodyToResponse(body, response);
+        }
+    }
+
+    private void copyBodyToResponse(byte[] body, HttpServletResponse response) throws IOException {
+        if (body.length &gt; 0) {
+            response.setContentLength(body.length);         //设置 Content-Length
+            FileCopyUtils.copy(body, response.getOutputStream());       //ShallowEtagResponseWrapper数据拷贝到response中
+        }
+    }
+</code></pre>
+
+<p>总结 ShallowEtagHeaderFilter 作用:
+    1.ShallowEtagHeaderFilter 缓冲了写到 response 的所有数据;
+    2.如果请求的 If-None-Match 头部信息和当前根据内容生成的 ETag 相同,则请求为 304;
+    3.最后 ShallowEtagHeaderFilter 将缓冲的所有内容一次性写到 response 中;</p>
+
+<p>需要注意的是, 使用这个 ShallowEtagHeaderFilter, 服务端的性能并没有得到提高, 因为请求逻辑还是执行了, 只是没往客户端发送, 因此节省了一定的网络带宽.</p>
+
+<p>另外, 这个 ShallowEtagHeaderFilter 会让 Transfer-Encoding=Chunked 失效(我们这里就是这种情况).</p>
+
+<h4 id="3.4 解决方案">3.4 解决方案</h4>
+
+
+<p>根据上面的分析, 我们这里的问题就很好解释了, ShallowEtagHeaderFilter 将我们的流式写缓冲起来, 最后一次性写给客户端并且设置上了 Content-Length 字段.</p>
+
+<p>关于这个问题, 其实很多人都遇到坑了, 有人给 Spring 提 Bug 了, 但是官网认为只是误用(我赞同这种观点).
+参考: <a href="https://jira.spring.io/browse/SPR-10855">https://jira.spring.io/browse/SPR-10855</a></p>
+
+<p>解决很简单, 去掉 ShallowEtagHeaderFilter 这个过滤器, 或者给 ShallowEtagHeaderFilter 配置 url pattern 的时候排除掉流式的接口.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Spring上传组件冲突]]></title>
@@ -1729,487 +1927,6 @@ spring transaction源码分析&ndash;事务架构：<a href="http://www.cnblogs.
 
 <p>AopProxy
 DefaultAopProxyFactory</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[动态数据源]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/06/02/dong-tai-shu-ju-yuan/"/>
-    <updated>2015-06-02T02:42:35+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/06/02/dong-tai-shu-ju-yuan</id>
-    <content type="html"><![CDATA[<h1>1.数据库层面的动态数据源</h1>
-
-<p>比如多个读库(Read),可以配置一个虚拟IP,每次读数据库的请求被均衡的分配到各个读库(使用Keepalived等).</p>
-
-<p>这中方式对应用程序是透明的.</p>
-
-<h1>2.数据库Proxy</h1>
-
-<p>很多现成的数据库Proxy,在Proxy中可以做负载均衡(一般使用LVS,Keepalived等现成应用),权限验证,过滤,业务缓存等控制逻辑.比如:</p>
-
-<pre><code>1.360基于mysql-proxy的Atlas
-Atlas是由 Qihoo 360,Web平台部基础架构团队开发维护的一个基于MySQL协议的数据中间层项目。它是在mysql-proxy 0.8.2版本的基础上，对其进行了优化，增加了一些新的功能特性。360内部使用Atlas运行的mysql业务，每天承载的读写请求数达几十亿条。
-github:https://github.com/Qihoo360/Atlas
-参考:https://github.com/Qihoo360/Atlas/wiki/Atlas%E7%9A%84%E6%9E%B6%E6%9E%84
-
-2.阿里的DRDS
-分布式关系型数据库服务（Distribute Relational Database Service，简称DRDS）是一种水平拆分、可平滑扩缩容、读写分离的在线分布式数据库服务。前身为淘宝开源的TDDL，是近千个应用首选组件，已稳定服务了七年以上。已经商业化.
-参考:http://docs.aliyun.com/?spm=5176.7622920.9.2.qGx2nq#/pub/drds/brief-manual/summary&amp;summary
-
-3.网易的分布式数据库中间件DDB
-DDB（Distributed database）是网易杭研院立项最早，应用最为广泛的后台产品之一，也是国内最早出现的基于现有database之上开发的分布式数据库中间件，目前依然在为网易易信，云音乐，云阅读等大型互联网产品提供稳定的数据库服务。
-参考:http://www.majin163.com/2014/09/24/ddb-introduce/
-
-4.百度DDBS
-</code></pre>
-
-<h1>3.代码层面</h1>
-
-<p>使用Spring实现数据源动态配置,可以在代码层面达到Master-Slave数据库分离的效果.</p>
-
-<p>其实原理很简单,需要做两个工作:</p>
-
-<pre><code>1.实现一个根据不同key使用不同实际DataSource的自定义DataSource;
-2.在请求的ThreadLocal中保存当前请求需要使用的数据库的key;
-</code></pre>
-
-<p>其中第一个工作Spring已经帮我们做了,见类org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource.</p>
-
-<h3>3.1 AbstractRoutingDataSource简介</h3>
-
-<p>下面简单介绍这个类:</p>
-
-<pre><code>/**
- * 抽象的javax.sql.DataSource实现，可以完成基于一个查找key来路由 #getConnection()到某些特性目标DataSourcesd的一个。一般通过绑定线程上下文来决定。
- */
-public abstract class AbstractRoutingDataSource extends AbstractDataSource implements InitializingBean {
-private Map&lt;Object, Object&gt; targetDataSources;
-
-    private Object defaultTargetDataSource;
-
-    private boolean lenientFallback = true;
-
-    private DataSourceLookup dataSourceLookup = new JndiDataSourceLookup();
-
-    private Map&lt;Object, DataSource&gt; resolvedDataSources;
-
-    private DataSource resolvedDefaultDataSource;
-
-    /**
-     * 设置目标DataSources的map映射，其中查找key作为 map的key。
-     * 这个映射的value可以是对象的DataSource实例，或者是一个数据源name的字符串（可以被DataSourceLookup解析）。
-     *
-     * key可以是任意的类型，只要实现了普通的查找处理。
-     * 具体的key表示形式，将会被resolveSpecifiedLookupKey和determineCurrentLookupKey处理
-     *
-     */
-    public void setTargetDataSources(Map&lt;Object, Object&gt; targetDataSources) {
-        this.targetDataSources = targetDataSources;
-    }
-
-    /**
-     * 设置默认目标数据源。如果我们在map中找不到对应的key时，则会使用这里设置的默认数据源
-     */
-    public void setDefaultTargetDataSource(Object defaultTargetDataSource) {
-        this.defaultTargetDataSource = defaultTargetDataSource;
-    }
-
-    /**
-     * 指定默认的DataSource，当通过指定的查找key不能找到对应的DataSource。
-     * 如果为false，则直接返回失败，如果为true，则使用默认的数据源。默认为true
-     */
-    public void setLenientFallback(boolean lenientFallback) {
-        this.lenientFallback = lenientFallback;
-    }
-
-    /**
-     * 设置DataSourceLookup的实现类，该实现类可以把字符串配置的数据源，解析成我们需要的DataSource类.默认使用JndiDataSourceLookup。
-     *
-     * JndiDataSourceLookup方法使用ref bean方式获取配置文件中配置的dataSource数据源，也就是我们一般使用xml中配置datasource的方式就是jndi。
-     */
-    public void setDataSourceLookup(DataSourceLookup dataSourceLookup) {
-        this.dataSourceLookup = (dataSourceLookup != null ? dataSourceLookup : new JndiDataSourceLookup());
-    }
-
-    /**
-    * 初始化,将targetDataSources转换成resolvedDataSources
-    */
-    public void afterPropertiesSet() {
-        if (this.targetDataSources == null) {
-            throw new IllegalArgumentException("Property 'targetDataSources' is required");
-        }
-        this.resolvedDataSources = new HashMap&lt;Object, DataSource&gt;(this.targetDataSources.size());
-        for (Map.Entry entry : this.targetDataSources.entrySet()) {
-            Object lookupKey = resolveSpecifiedLookupKey(entry.getKey());
-            DataSource dataSource = resolveSpecifiedDataSource(entry.getValue());
-            this.resolvedDataSources.put(lookupKey, dataSource);
-        }
-        if (this.defaultTargetDataSource != null) {
-            this.resolvedDefaultDataSource = resolveSpecifiedDataSource(this.defaultTargetDataSource);
-        }
-    }
-
-    /**
-     * 根据lookupKey获取map中存放的key值，默认两者是一样的
-     */
-    protected Object resolveSpecifiedLookupKey(Object lookupKey) {
-        return lookupKey;
-    }
-    /**
-     * 转换从获取map中存放的dataSource
-     */
-    protected DataSource resolveSpecifiedDataSource(Object dataSource) throws IllegalArgumentException {
-        if (dataSource instanceof DataSource) {
-            return (DataSource) dataSource;
-        }
-        else if (dataSource instanceof String) {
-            return this.dataSourceLookup.getDataSource((String) dataSource);
-        }
-        else {
-            throw new IllegalArgumentException(
-                    "Illegal data source value - only [javax.sql.DataSource] and String supported: " + dataSource);
-        }
-    }
-
-    /**
-    * 这里就是抽象类给我们实现的接口方法，根据我们的配置上下文，抽象类决定实现哪个连接
-    */
-    public Connection getConnection() throws SQLException {
-        return determineTargetDataSource().getConnection();
-    }
-
-    public Connection getConnection(String username, String password) throws SQLException {
-        return determineTargetDataSource().getConnection(username, password);
-    }
-
-    protected DataSource determineTargetDataSource() {
-        Assert.notNull(this.resolvedDataSources, "DataSource router not initialized");
-        Object lookupKey = determineCurrentLookupKey();
-        DataSource dataSource = this.resolvedDataSources.get(lookupKey);
-        if (dataSource == null &amp;&amp; (this.lenientFallback || lookupKey == null)) {
-            dataSource = this.resolvedDefaultDataSource;
-        }
-        if (dataSource == null) {
-            throw new IllegalStateException("Cannot determine target DataSource for lookup key [" + lookupKey + "]");
-        }
-        return dataSource;
-    }
-
-    /**
-    * 这里是我们使用这个抽象类需要实现的方法，主要就是告诉该抽象类，当前需要使用的数据源的key是什么，这样抽象类就可以知道使用哪个数据库连接
-    */
-    protected abstract Object determineCurrentLookupKey();
-}
-</code></pre>
-
-<p>我们可以继承这个类实现自己的RoutingDataSource,只需要实现determineCurrentLookupKey()方法.下面是一个实现示例,其中DataSourceKeyHolder用来在ThreadLocal中保存key,而我们的RoutingDataSource就可以从ThreadLocal中获取key来决定使用那个具体的数据源:</p>
-
-<pre><code>public class RoutingDataSource extends AbstractRoutingDataSource {
-    @Override
-    protected Object determineCurrentLookupKey() {
-        return DataSourceKeyHolder.getDataSource();
-    }
-}
-
-public class DataSourceKeyHolder {
-    private static final ThreadLocal&lt;String&gt; holder = new ThreadLocal&lt;String&gt;();
-
-    public static String getDataSource() {
-        return holder.get();
-    }
-
-    public static void putDataSource(String value) {
-        holder.set(value);
-    }
-
-    public static void clear(){
-        holder.remove();
-    }
-}
-</code></pre>
-
-<h3>3.2 自己实现RoutingDataSource</h3>
-
-<p>Spring自带的AbstractRoutingDataSource功能强大,但是略先麻烦(最终使用的其实只有resolvedDataSources这个Map).我们完全可以自己实现一个简单的RoutingDataSource,比如我们要实现读写分离的动态数据库,一个简单实现如下:</p>
-
-<pre><code>public class RoutingDataSource extends AbstractDataSource implements InitializingBean {
-    /**
-     * 写库, key是String
-     */
-    private Map&lt;String, DataSource&gt; writeDataSourceMap;
-    /**
-     * 读库, key是String
-     */
-    private Map&lt;String, DataSource&gt; readDataSourceMap;
-
-    @Override
-    public Connection getConnection() throws SQLException {
-        //从上下文中获取key
-        ConnectionKey connectionKey = ConnectionKeyHolder.get();
-        try {
-            //默认情况,返回随机一个写库
-            if (connectionKey == null) {
-                return fetchConnection(writeDataSourceMap, null);
-            }
-
-            //只读
-            if (connectionKey.getType().equals(ConnectionKey.READ)) {
-                return fetchConnection(readDataSourceMap, connectionKey.getKey());
-            }
-
-            //可读可写
-            if (connectionKey.getType().equals(ConnectionKey.READ_WRITE)) {
-                return fetchConnection(writeDataSourceMap, connectionKey.getKey());
-            }
-        } catch (Exception e) {
-            logger.error("getConnectionError", e);
-            if (e instanceof SQLException) {
-                throw (SQLException) e;
-            } else {
-                throw new SQLException(e);
-            }
-        }
-
-        // impossible code
-        throw new IllegalArgumentException("invalid connection type: " + connectionKey.getType() + ", key: "
-                + connectionKey.getKey());
-    }
-
-    /**
-     * 根据key从对应的Map中获取数据库连接
-     *
-     * @param dbSourceMap
-     * @param key
-     * @return
-     * @throws SQLException
-     */
-    private Connection fetchConnection(final Map&lt;String, DataSource&gt; dbSourceMap, String key) throws SQLException {
-        if (key == null || key.length() == 0) { // null key, return a random read connection
-            key = randomKey(dbSourceMap);
-        }
-        if (dbSourceMap.get(key) == null) {
-            key = randomKey(dbSourceMap);
-        }
-        return dbSourceMap.get(key).getConnection();
-    }
-
-    /**
-     * 随机获取一个Key
-     * @return
-     */
-    private String randomKey(final Map&lt;String, DataSource&gt; dbSourceMap) {
-        String[] keys = dbSourceMap.keySet().toArray(new String[0]);
-        int size = dbSourceMap.size();
-        int rand = new Random().nextInt(size);
-        return keys[rand];
-    }
-
-    @Override
-    public Connection getConnection(String username, String password) throws SQLException {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void afterPropertiesSet() throws Exception {
-        Preconditions.checkArgument(MapUtils.isNotEmpty(writeDataSourceMap));
-        Preconditions.checkArgument(MapUtils.isNotEmpty(readDataSourceMap));
-    }
-
-    public void setWriteDataSource(Map&lt;String, DataSource&gt; writeDataSourceMap) {
-        this.writeDataSourceMap = writeDataSourceMap;
-    }
-
-    public void setReadDataSourceMap(Map&lt;String, DataSource&gt; readDataSourceMap) {
-        this.readDataSourceMap = readDataSourceMap;
-    }
-}
-
-public class ConnectionKey {
-    /**
-     * 读库,只读
-     */
-    public static final String READ = "R";
-    /**
-     * 写库,可读可写
-     */
-    public static final String READ_WRITE = "RW";
-
-    private String type;
-    private String key;
-
-    public ConnectionKey() {
-    }
-
-    public ConnectionKey(String type, String key) {
-        this.type = type;
-        this.key = key;
-    }
-
-    public String getType() {
-        return type;
-    }
-
-    public String getKey() {
-        return key;
-    }
-
-    public void setType(String type) {
-        this.type = type;
-    }
-
-    public void setKey(String key) {
-        this.key = key;
-    }
-}
-
-public class ConnectionKeyHolder {
-    private static ThreadLocal&lt;ConnectionKey&gt; connType = new ThreadLocal&lt;ConnectionKey&gt;();
-
-    public static void set(ConnectionKey type) {
-        connType.set(type);
-    }
-
-    public static ConnectionKey get() {
-        return connType.get();
-    }
-
-    public static void release() {
-        connType.remove();
-    }
-}
-</code></pre>
-
-<h3>3.3 使用实现动态数据源</h3>
-
-<p>以我们自己实现的为例子,我们简单展示一下如何使用Spring加上AOP使用我们的动态数据源.</p>
-
-<p>首先定义使用读库和使用写库的注解:</p>
-
-<pre><code>/**
-* 使用读库的注解,value()代表key
-*/
-@Target({ ElementType.TYPE, ElementType.METHOD })
-@Retention(RetentionPolicy.RUNTIME)
-@Documented
-public @interface Read {
-    String value() default "";
-}
-/**
-* 使用写库的注解,value()代表key
-*/
-@Target({ ElementType.TYPE, ElementType.METHOD })
-@Retention(RetentionPolicy.RUNTIME)
-@Documented
-public @interface Write {
-    String value() default "";
-}
-</code></pre>
-
-<p>然后定义Aspect,逻辑很简单,只是在执行我们的业务逻辑之前给线程上文写入ConnectionKey信息:</p>
-
-<pre><code>public class RoutingAop {
-
-    protected Logger log = LoggerFactory.getLogger(getClass());
-
-    /**
-     * 解析读库的注解
-     *
-     * @param pjp
-     * @param read
-     * @return
-     * @throws Throwable
-     */
-    public Object aroundRead(ProceedingJoinPoint pjp, Read read) throws Throwable {
-        ConnectionKey origType = ConnectionKeyHolder.get();
-        try {
-            ConnectionKey newType = ConnectionKey.buildReadConnectionKey(read.value());
-            ConnectionKeyHolder.set(newType);
-            return pjp.proceed();
-        } catch (Throwable throwable) {
-            log.warn("error while processing read method", throwable);
-            throw throwable;
-        } finally {
-            if (origType != null) {
-                ConnectionKeyHolder.set(origType);
-            } else {
-                ConnectionKeyHolder.release();
-            }
-        }
-    }
-
-    /**
-     * 解析写库的注解
-     *
-     * @param pjp
-     * @param write
-     * @return
-     * @throws Throwable
-     */
-    public Object aroundWrite(ProceedingJoinPoint pjp, Write write) throws Throwable {
-        ConnectionKey origType = ConnectionKeyHolder.get();
-        try {
-            ConnectionKey newType = ConnectionKey.buildWriteConnectionKey(write.value());
-            ConnectionKeyHolder.set(newType);
-            return pjp.proceed();
-        } catch (Throwable throwable) {
-            log.warn("error while processing write method", throwable);
-            throw throwable;
-        } finally {
-            if (origType != null) {
-                ConnectionKeyHolder.set(origType);
-            } else {
-                ConnectionKeyHolder.release();
-            }
-        }
-    }
-}
-</code></pre>
-
-<p>在Spring配置文件中定义好各个读库和各个写库,定义我们的RoutingDataSource的bean,之后扫描注解就可以了:</p>
-
-<p>```</p>
-
-<!-- DataSource 写库  -->
-
-
-<p><bean id="writeDataSource" class="..."></p>
-
-<!-- DataSource 读库  -->
-
-
-<p><bean id="readDataSource" class="..."></p>
-
-<p><bean id="routingDataSource" class="com.Xxx.RoutingDataSource">
-    <property name="writeDataSourceMap">
-        <map key-type="java.lang.String" value-type="javax.sql.DataSource">
-            <entry key="write1" value-ref="writeDataSource"/>
-        </map>
-    </property>
-    <property name="readDataSourceMap">
-        <map key-type="java.lang.String" value-type="javax.sql.DataSource">
-            <entry key="read1" value-ref="readDataSource"/>
-        </map>
-    </property>
-</bean></p>
-
-<p><bean id="routingAop" class="com.Xxx.RoutingAop"/></p>
-
-<!-- 定义Read Write注解扫描  -->
-
-
-<p>&lt;aop:config>
-    &lt;aop:aspect ref=&ldquo;routingAop&rdquo;>
-        &lt;aop:around method=&ldquo;aroundRead&rdquo; arg-names=&ldquo;read&rdquo; pointcut=&ldquo;@annotation(read) &amp;&amp; execution(public * com.Xxx.controller.<em>.</em>(..))&rdquo; />
-    &lt;/aop:aspect></p>
-
-<pre><code>&lt;aop:aspect ref="routingAop"&gt;
-    &lt;aop:around method="aroundWrite" arg-names="write" pointcut="@annotation(write) &amp;amp;&amp;amp; execution(public * com.Xxx.controller.*.*(..)) " /&gt;
-&lt;/aop:aspect&gt;
-</code></pre>
-
-<p>&lt;/aop:config></p>
-
-<p>```</p>
 ]]></content>
   </entry>
   

@@ -9,7 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="学习一下虚拟IP和IP漂移的概念。 1.虚拟IP 在 TCP/IP 的架构下，所有想上网的电脑，不论是用何种方式连上网路，都必须要有一个唯一的 IP-address。事实上IP地址是主机硬件地址的一种抽象，简单的说，MAC地址是物理地址，IP地址是逻辑地址。 虚拟IP， &hellip;">
+  <meta name="description" content="这里想总结一下使用Mysql的一些架构，注意不是Mysql源码的架构。 1.单点 数据量不大，业务简单的情况下，直接单点的mysql instance足够。 1.1 优点 1.简单，不存在数据一致性等问题; 1.2 缺点瓶颈 1.单机存储数据量有限;
+2.数据索引单机内存可能放不下, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -75,6 +76,203 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/04/03/mysqljia-gou/">Mysql架构</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-04-03T04:07:44+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>4:07 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>这里想总结一下使用Mysql的一些架构，注意不是Mysql源码的架构。</p>
+
+<h1>1.单点</h1>
+
+<p>数据量不大，业务简单的情况下，直接单点的mysql instance足够。</p>
+
+<p><img src="/images/mysql/one_instance.PNG"></p>
+
+<h3>1.1 优点</h3>
+
+<pre><code>1.简单，不存在数据一致性等问题;
+</code></pre>
+
+<h3>1.2 缺点瓶颈</h3>
+
+<pre><code>1.单机存储数据量有限;
+2.数据索引单机内存可能放不下,导致和只能加载部分索引，印象性能;
+3.单机访问速度有极限;
+4.读写混合，不正当的写操作导致的锁表等问题，可能导致读操作也失败，进而拖死整个系统;
+5.无法容灾;
+</code></pre>
+
+<p>很多业务场景简单的，单表可以一般足够，比如对于用户信息这类表 （3个索引），16G内存能放下大概2000W行数据的索引，简单的读和写混合访问量3000/s左右没有问题。</p>
+
+<h1>2.垂直拆分</h1>
+
+<p>当单表遇到瓶颈的时候，最简单的想法是垂直拆分，从业务角度来看，将关联性不强的数据拆分到不同的instance上，从而达到消除瓶颈的目标。</p>
+
+<p>另外，绝大部分的业务常见读写复合2-8原则，即80%的数据库操作会是读操作，因此对于重复读类型比较多的场景，我们还可以加一层cache，来减少对DB的压力。</p>
+
+<p><img src="/images/mysql/v_multi_instance.PNG"></p>
+
+<h3>2.1 优点</h3>
+
+<pre><code>1.业务隔离，互不影响;
+</code></pre>
+
+<h3>2.2 缺点瓶颈</h3>
+
+<pre><code>1.读写混合的问题依然存在;
+</code></pre>
+
+<h1>3.Master-Slave</h1>
+
+<p>基于业务的读写2-8原则，我们将读写分离，即读和写打到不同的数据库服务器，通常读服务器会有多台，这即典型的Master-Slave结构，主库(Master)抗写压力，通过从库(Slave)来分担读压力。MS结构非常适合读多写少的应用场景，比如博客类网站等。</p>
+
+<p><img src="/images/mysql/master_slave.PNG"></p>
+
+<p>Slave通过binlog来同步Master的数据变更：
+<img src="/images/mysql/master-salve.jpg"></p>
+
+<p>主从机器的硬件配置和MySQL版本、各种参数配置最好都要一样，这样才能保证出问题时应用程 序能够平滑地从主库切换到备库上。</p>
+
+<h3>3.1 优点</h3>
+
+<pre><code>1.读写分离，减少相互影响;
+2.实时备份;
+</code></pre>
+
+<h3>3.2 缺点瓶颈</h3>
+
+<pre><code>1.数据一致性难以保障;
+2.主从切换麻烦，而且切换所带来的麻烦会随着备库的增多而逐步上升;
+</code></pre>
+
+<h1>4.Proxy</h1>
+
+<p>在Application和DB中间加以层Proxy，Proxy来解析sql协议，按sharding key 来寻找cluster, 判断是读操作还是写操作来请求主服务器或者从服务器，这一切内部的细节都由proxy来屏蔽。</p>
+
+<p>Proxy做的工作包括：</p>
+
+<pre><code>1.SQL解析
+2.SQL改写
+3.查询Dispatch
+4.读写分离、主从切换逻辑
+5.缓冲区控制
+6.归并+排序
+</code></pre>
+
+<h1>5.Heartbeat+DRBD</h1>
+
+<h3>5.1 Heartbeat介绍</h3>
+
+<p>heartbeat可以资源(VIP地址及程序服务)从一台有故障的服务器快速的转移到另一台正常的服务器提供服务，heartbeat和keepalived相似，heartbeat可以实现failover功能，但不能实现对后端的健康检查。</p>
+
+<p><a href="http://linux-ha.org/wiki/Main_Page">http://linux-ha.org/wiki/Main_Page</a></p>
+
+<h3>5.2 DRBD介绍</h3>
+
+<p>DRBD(Distributed Replicated Block Device)是一个基于块设备级别在远程服务器直接同步和镜像数据的软件，用软件实现的、无共享的、服务器之间镜像块设备内容的存储复制解决方案。</p>
+
+<p>它可以实现在网络中两台服务器之间基于块设备级别的实时镜像或同步复制(两台服务器都写入成功)/异步复制(本地服务器写入成功)，相当于网络的RAID1，由于是基于块设备(磁盘，LVM逻辑卷)，在文件系统的底层，所以数据复制要比cp命令更快。DRBD已经被MySQL官方写入文档手册作为推荐的高可用的方案之一。</p>
+
+<p>官方站点：<a href="http://www.drbd.org/">http://www.drbd.org/</a></p>
+
+<h3>5.3 Heartbeat+DRBD</h3>
+
+<p>适用于数据库访问量不太大，短期内访问量增长不会太快，对数据库可用性要求非常高的场景。</p>
+
+<h1>6.MMM</h1>
+
+<p>主从切换是Master-Slave结构的一个硬伤，如果备库只是用来实时备份数据和承担小部分读压力，那么MM结构将会是取代MS结构的不二之选。MM(Master-Master)就是主主结构,任意一个时刻，只有一个实际意义上的Master，另外一个作为Slave，只有当前的Master出现故障或者问题的使用，两台Master的角色切换，即原始的Master变为Slave，而原始的Slave切换为Master。</p>
+
+<p>MMM(Master-Master replication manager for MySQ)是一套支持双主故障切换和双主日常管理的脚本程序。MMM使用Perl语言开发，主要用来监控和管理MySQL Master-Master复制。</p>
+
+<p>MMM项目来自 Google：<a href="http://code.google.com/p/mysql-master-master">http://code.google.com/p/mysql-master-master</a></p>
+
+<p>官方网站为：<a href="http://mysql-mmm.org">http://mysql-mmm.org</a></p>
+
+<p>虽然叫做双主复制，但是业务上同一时刻只允许对一个主进行写入，另一台备选主上提供部分读服务，以加速在主主切换时刻备选主的预热，可以说MMM这套脚本程序一方面实现了故障切换的功能，另一方面其内部附加的工具脚本也可以实现多个slave的read负载均衡。</p>
+
+<h3>6.1 MMM两种典型的使用</h3>
+
+<p>典型的MM结构，即只有两台数据库Master服务器：
+<img src="/images/mysql/MMM-usage1.png"></p>
+
+<p>MM+Slaves结构，即两台数据库Master服务器加多台Slave服务器：
+<img src="/images/mysql/MMM-usage2.png"></p>
+
+<h3>6.2 Master切换的原理</h3>
+
+<p>MMM主要的功能通过下面三个脚本来实现：</p>
+
+<pre><code>mmm_mond： 负责所有的监控工作的监控守护进程，决定节点的活动;
+mmm_agentd：运行在mysql服务器上的代理守护进程，通过远程服务提供给监控节点;
+mmm_control：通过命令行管理mmm_mond进程;
+</code></pre>
+
+<p>mysql-mmm的监管端会提供多个虚拟IP(VIP)，包括一个可写VIP，多个可读VIP，通过监管端每十秒种(默认间隔)轮询一次MySQL节点来检查其状态，仅其中的一台服务器接收到写入器角色(写的VIP，Master的某一个)，其他的可以拥有阅读器角色(读VIP，包括一个备份的Master),当写库不可用(比如宕机等)，MMM会自动将写VIP给另外一台Master。</p>
+
+<p>Mysql需要创建一个mmm_monitor和多个mmm_agent账户并授权。</p>
+
+<h3>6.3 优点</h3>
+
+<pre><code>1.克服了MS结构主从切换困难的问题;
+2.是一种HA(高可用)架构(Easy Failover)
+</code></pre>
+
+<h3>6.4 缺点瓶颈</h3>
+
+<pre><code>1.MMM不适用于对数据一致性要求很高的环境,某种情况下存在双写的问题
+</code></pre>
+
+<p>其他问题参考：</p>
+
+<pre><code>1.[What's wrong with MMM?](http://www.xaprb.com/blog/2011/05/04/whats-wrong-with-mmm/)
+2.[Problems with MMM for MySQL](http://code.openark.org/blog/mysql/problems-with-mmm-for-mysql)
+</code></pre>
+
+<p>最近我们系统遇到过一次MMM导致的问题：</p>
+
+<pre><code>1.在当前的主Master(称之为Master-A)上有读写请求，从T1时刻开始，由于大量的慢查询，且这台机器善有多个Mysql Instance，导致在业务高峰期，当前的主Master对Monitor(Master-A)没有响应，因此Monitor认为这个Master(Master-A)宕机了，因此在T2时刻将读和写的VIP都漂移到另外一台备份Master(Master-B)上，这种情况下，Master-A和Master-B之间的双写复制中断，但是实际上Master-A上的写操作还在进行，即在T2之后的一段时间内，Master-A和Master-B上都存在写操作，并且不存在双写复制，当Master-A机器恢复，读VIP漂移到Master-A上，开始执行双写复制，发现存在冲突，因此双写导致数据存在冲突(比如自增ID)。
+</code></pre>
+
+<h1>7.PXC</h1>
+
+<h3>7.1 优点</h3>
+
+<h3>7.2 缺点瓶颈</h3>
+
+<p><a href="http://www.infoq.com/cn/news/2013/03/MySQL-Reference-Architectures">http://www.infoq.com/cn/news/2013/03/MySQL-Reference-Architectures</a>
+<a href="http://www.admin10000.com/document/4539.html">http://www.admin10000.com/document/4539.html</a>
+<a href="http://www.open-open.com/lib/view/open1341302877043.html">http://www.open-open.com/lib/view/open1341302877043.html</a>
+<a href="http://mysql-mmm.org/mysql-mmm.html">http://mysql-mmm.org/mysql-mmm.html</a>
+<a href="http://www.cnblogs.com/gomysql/p/3671896.html">http://www.cnblogs.com/gomysql/p/3671896.html</a>
+<a href="http://www.luocs.com/archives/849.http">http://www.luocs.com/archives/849.http</a>
+html://wiki.corp.qunar.com/download/attachments/63242976/%E5%91%A8%E5%BD%A6%E4%BC%9F%E3%80%8AMySQL%E9%AB%98%E5%8F%AF%E7%94%A8%E6%9E%B6%E6%9E%84%E6%BC%94%E5%8F%98%E4%B9%8B%E8%B7%AF_%E4%BB%8EMMM%E5%88%B0PXC%E3%80%8B.pdf?version=1&amp;modificationDate=1418272276416</p>
+
+<p><a href="http://www.cnblogs.com/bamboos/p/3543309.html">http://www.cnblogs.com/bamboos/p/3543309.html</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -520,135 +718,6 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/03/14/mysqlyou-hua/">Mysql优化</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-03-14T05:02:34+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>14</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:02 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>最近项目组遇到的慢查询比较多，大家的慢查询意识逐渐有了，同事做的工作中使用到的优化慢查询的方法分享，这里简单总结一些，便于以后使用。</p>
-
-<p>通常这些优化方式是组合使用的。</p>
-
-<h1>1.合理使用索引</h1>
-
-<h3>1.1 一个表只会使用一个索引</h3>
-
-<p>假设customer表有两个索引：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  KEY `idx_create_time` (`create_time`) USING BTREE,
-</span><span class='line'>  KEY `idx_city` (`city`)</span></code></pre></td></tr></table></div></figure>
-
-
-<p>sql语句的where条件包含create_time和city</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where city = 'beijing' and create_time &gt; '2015-01-01';</span></code></pre></td></tr></table></div></figure>
-
-
-<p>这个sql语句只会走一个索引。</p>
-
-<h3>1.2 索引区分度越大越好</h3>
-
-<p>索引的区分读越大越好，可以使用show index from table看表的索引情况。</p>
-
-<h3>1.3 行数越少越好</h3>
-
-<p>执行计划中sql搜索的行数(rows)越小越好。</p>
-
-<h3>1.4 查询条件字段不要套函数，无法使用索引</h3>
-
-<p>比如下面这个sql是不走索引的</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where left(city, 2) = 'be';</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.不要复合条件查询</h1>
-
-<p>将复合条件根据规则转换为单个条件，避免多个字段去or。</p>
-
-<p>比如我们在city上面建立了索引，但是我们没有在name上建立索引，下面这个sql会走全表而不走索引</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where city = 'beijing' or name = 'beijing';</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.减少join</h1>
-
-<p>利用Mybatis的动态SQL，保证同一时刻JOIN的表最少。即满足某一个条件的时候才join。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>select * from customer
-</span><span class='line'>&lt;if test="conditions.name != null and conditions.name != ''"&gt;
-</span><span class='line'>    join user on user.id = customer.user_id
-</span><span class='line'>&lt;/if&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>4.分步查询</h1>
-
-<p>比如一个sql需要大量的join，并且每个join表的数据量都很大，这时候，尝试将单独的sql拆分成多个sql。</p>
-
-<p>我们可以从搜索条件入手，不包含搜索条件的表一定可以拆分成单独的sql。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>select *
-</span><span class='line'>from A
-</span><span class='line'>join B on ...
-</span><span class='line'>join C on ...
-</span><span class='line'>join D on ...
-</span><span class='line'>join E on ...
-</span><span class='line'>where
-</span><span class='line'>A.name = ...
-</span><span class='line'>and B.city = ...</span></code></pre></td></tr></table></div></figure>
-
-
-<p>这是可以考虑对C，D，E表的查询单独拆分出来。</p>
-
-<h1>5.合理使用Cache</h1>
-
-<p>通常根据条件Count比较耗时，可以将Count数Cache，比如list接口的count通常成千上万，count数只是用来展示页数，这时候可以考虑缓存下来，但是需要考虑好缓存策略。</p>
-
-<h1>6.业务逻辑上优化</h1>
-
-<p>当我们使用上述步骤无法优化时，可以考虑从逻辑上优化。</p>
-
-<p>比如join很多个表查询的时候，我们需要确认应用方所有的字段都需要，通常减少字段能让我们少join表。</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/12">&larr; Older</a>
@@ -666,6 +735,10 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/shallowetagheaderfilter/">ShallowEtagHeaderFilter</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
@@ -703,10 +776,6 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
         <a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务2-AOP</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -731,7 +800,7 @@ Acceptor是接收socket,然后从Worker线程池中找出空闲的线程处理so
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

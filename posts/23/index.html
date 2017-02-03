@@ -9,44 +9,11 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="环境:Ubuntu 13.04 1.保存下述代码为 sublime-imfix.c 文件 1
+  <meta name="description" content="第二章：线程安全 1.什么是线程安全 当多个线程并发的访问一个类,如果不用考虑多个线程运行时的调度执行顺序,且不需要做额外的同步及代码调用时候的限制,这个类的结果依然是正确的,则可以称之为线程安全. 无状态的类是线程安全的,无状态指不包含域也没有引用其他类的域.如下面这个类: 1
 2
 3
 4
-5
-6
-7
-8
-9
-10
-11
-12
-13
-14
-15
-16
-17
-18
-19
-20
-21
-22
-23
-24
-25
-26
-27
-28
-29
-30
-31
-32
-33
-34
-35
-36
-37
-38 &hellip;">
+5 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -112,6 +79,245 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/05/30/java-concurrency-in-practice-2/">Java Concurrency in Practice 2 : 线程安全</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2014-05-30T15:52:06+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>30</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>3:52 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p><strong>第二章：线程安全</strong></p>
+
+<h3>1.什么是线程安全</h3>
+
+<p>当多个线程并发的访问一个类,如果不用考虑多个线程运行时的调度执行顺序,且不需要做额外的同步及代码调用时候的限制,这个类的结果依然是正确的,则可以称之为线程安全.</p>
+
+<p>无状态的类是线程安全的,无状态指不包含域也没有引用其他类的域.如下面这个类:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">StateLess</span> <span class="kd">extends</span> <span class="n">HttpServlet</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 从请求中获取两个数字,并计算两个数字的最大公约数,返回</span>
+</span><span class='line'><span class="cm">     *</span>
+</span><span class='line'><span class="cm">     * @param req</span>
+</span><span class='line'><span class="cm">     * @param resp</span>
+</span><span class='line'><span class="cm">     * @throws ServletException</span>
+</span><span class='line'><span class="cm">     * @throws IOException</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="nd">@Override</span>
+</span><span class='line'>    <span class="kd">protected</span> <span class="kt">void</span> <span class="nf">service</span><span class="o">(</span><span class="n">HttpServletRequest</span> <span class="n">req</span><span class="o">,</span> <span class="n">HttpServletResponse</span> <span class="n">resp</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">ServletException</span><span class="o">,</span> <span class="n">IOException</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">Pair</span><span class="o">&lt;</span><span class="n">Integer</span><span class="o">,</span> <span class="n">Integer</span><span class="o">&gt;</span> <span class="n">number</span> <span class="o">=</span> <span class="n">extract</span><span class="o">(</span><span class="n">req</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">result</span> <span class="o">=</span> <span class="n">computer</span><span class="o">(</span><span class="n">number</span><span class="o">.</span><span class="na">getLeft</span><span class="o">(),</span> <span class="n">number</span><span class="o">.</span><span class="na">getRight</span><span class="o">());</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">setToResponse</span><span class="o">(</span><span class="n">resp</span><span class="o">,</span> <span class="n">result</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2.原子性</h3>
+
+<p>常见的竞争条件1:检查再运行(check_then_act).检查再运行指使用潜在的过期值来做决策或者执行计算.如下面的代码:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Account</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 余额</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">float</span> <span class="n">balance</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 取款</span>
+</span><span class='line'><span class="cm">     * @param count</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">withdrawing</span><span class="o">(</span><span class="kt">float</span> <span class="n">count</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span><span class="o">(</span><span class="n">balance</span> <span class="o">&gt;</span> <span class="n">count</span><span class="o">){</span>         <span class="c1">//check</span>
+</span><span class='line'>            <span class="n">doWithdrawing</span><span class="o">(</span><span class="n">count</span><span class="o">);</span>     <span class="c1">//act</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">void</span> <span class="nf">doWithdrawing</span><span class="o">(</span><span class="kt">float</span> <span class="n">count</span><span class="o">){</span>
+</span><span class='line'>        <span class="n">balance</span> <span class="o">-=</span> <span class="n">count</span><span class="o">;</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>常见的竞争条件2:读-改-写.如count++ 这种非原子的操作,其实包含三个原子操作</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">Read</span>
+</span><span class='line'><span class="n">Add</span>
+</span><span class='line'><span class="n">Write</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>什么是原子操作:</p>
+
+<p>假设有操作A,在其他线程来看,执行操作A的线程执行时,要么操作A执行完成,要么一点都没有执行.则称之为原子操作.</p>
+
+<p>如果前面的例子是原子的,则不会出现检查再运行和读-改-写的竞争条件.</p>
+
+<p>为例保证线程安全,操作必须原子的执行.</p>
+
+<p>比如count++,我们可以使用AtomicInteger:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">count</span><span class="o">.</span><span class="na">getAndIncrement</span><span class="o">();</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>3.锁</h3>
+
+<p>java提供了强制原子性的内置锁机制:synchronized块.一个synchronized块包含两部分:1.锁对象的引用;2.锁对象保护的代码块;</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">synchronized</span><span class="o">(</span><span class="n">lock</span><span class="o">){</span>
+</span><span class='line'>  <span class="c1">// code</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>每个java对象都代表一个互斥锁(称之为内部锁或者监视器锁),因此每个java对象都可以扮演lock的角色.对于方法级别的synchronized,获取的是方法所在对象的锁.对于静态方法,从Class对象上获取锁.</p>
+
+<p>当一个线程请求另外一个线程持有的锁时候,请求线程将会被阻塞.但是,内部锁是可以重入(Reentrancy)的,即线程请求它自己占有的锁的时候,是会成功的.这表示锁的请求是基于每个线程(per-thread)的,而不是基于每个调用(per-invocation)的.</p>
+
+<h3>4.用锁来保护状态</h3>
+
+<p>对于可以被多个线程访问的可变状态变量,如果所有访问它的线程在执行时都占有同一个锁,则称这个变量是由这个锁保护的.</p>
+
+<p>并不是所有数据都需要锁的保护,只有哪些被多个线程访问的可变数据.</p>
+
+<p>如果类的不变约束涉及到多个变量,则需要用同一个锁来保护这多个变量.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Account</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 余额</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">float</span> <span class="n">balance</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 操作次数</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">private</span> <span class="kt">int</span> <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="cm">/**</span>
+</span><span class='line'><span class="cm">     * 取款</span>
+</span><span class='line'><span class="cm">     * @param value</span>
+</span><span class='line'><span class="cm">     */</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">withdrawing</span><span class="o">(</span><span class="kt">float</span> <span class="n">value</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="kd">synchronized</span> <span class="o">(</span><span class="k">this</span><span class="o">){</span>    <span class="c1">//同一个锁保护多个可变变量</span>
+</span><span class='line'>            <span class="k">if</span><span class="o">(</span><span class="n">balance</span> <span class="o">&gt;</span> <span class="n">value</span><span class="o">){</span>
+</span><span class='line'>                <span class="n">doWithdrawing</span><span class="o">(</span><span class="n">value</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>            <span class="n">count</span><span class="o">++;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>5.活跃度和性能</h3>
+
+<p>为了达到安全的目的,我们完全可以将方法设置为synchronized,但是这样带来的问题是:我们期房方法能提供并发访问,但是为了安全,实际上变成的串行访问.</p>
+
+<p>因此在使用synchronized的时候需要考虑安全(不能妥协),简单性和性能.</p>
+
+<p>比如网络或者IO这种耗时的操作器件,不应该占用锁.</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -815,544 +1021,6 @@ A[i-1] &lt; B[j] &lt; A[i]
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/05/20/postgresql/">PostgreSQL</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-05-20T21:37:19+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>20</span><span class='date-suffix'>th</span>, <span class='date-year'>2014</span></span> <span class='time'>9:37 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h2>1.什么是PostgreSQL</h2>
-
-<p>The World&rsquo;s most advanced open source database.</p>
-
-<p>PostgreSQL is a powerful, open source object-relational database system.</p>
-
-<p>主页：<a href="http://www.postgresql.org/">http://www.postgresql.org/</a></p>
-
-<p>支持的系统：Linux, UNIX (AIX, BSD, HP-UX, SGI IRIX, Mac OS X, Solaris, Tru64), and Windows.</p>
-
-<p>功能：has full support for foreign keys, joins, views, triggers, and stored procedures.</p>
-
-<p>数据类型：It includes most SQL:2008 data types, including INTEGER, NUMERIC, BOOLEAN, CHAR, VARCHAR, DATE, INTERVAL, and TIMESTAMP. It also supports storage of binary large objects, including pictures, sounds, or video.此外，用户可以创建自定义数据类型，通常通过PostgreSQL的GiST机制，它们也能被很好得索引，比如PostGIS地理信息系统的数据类型.</p>
-
-<p>语言支持：It has native programming interfaces for C/C++, Java, .Net, Perl, Python, Ruby, Tcl, ODBC, among others, and exceptional documentation.</p>
-
-<p>用户手册：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>http://www.postgresql.org/docs/manuals/
-</span><span class='line'>http://www.highgo.com.cn/docs/docs90cn/index.html</span></code></pre></td></tr></table></div></figure>
-
-
-<p>大小限制：</p>
-
-<p>Maximum Database Size   Unlimited</p>
-
-<p>Maximum Table Size  32 TB</p>
-
-<p>Maximum Row Size    1.6 TB</p>
-
-<p>Maximum Field Size  1 GB</p>
-
-<p>Maximum Rows per Table  Unlimited</p>
-
-<p>Maximum Columns per Table   250 - 1600 depending on column types</p>
-
-<p>Maximum Indexes per Table   Unlimited</p>
-
-<p>扩展库：</p>
-
-<p>(1)地理数据对象：PostGIS GPL</p>
-
-<p>(2)全文检索：通过Tsearch2或OpenFTS</p>
-
-<p>人物：老何</p>
-
-<h2>2.PostgreSQL历史</h2>
-
-<p>参见wiki：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>http://zh.wikipedia.org/wiki/PostgreSQL</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>3.PostgreSQL VS MySQL</h2>
-
-<p>MySQL：Slashdot、Twitter、Facebook、Wikipedia</p>
-
-<p>PostgreSQL：Yahoo、Disqus</p>
-
-<h2>4.PostgreSQL安装</h2>
-
-<h4>1. 命令行安装（Ubuntu为例子）</h4>
-
-<h5>(1)安装PostgreSQL客户端</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install postgresql-client</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>(2)安装PostgreSQL服务器</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install postgresql</span></code></pre></td></tr></table></div></figure>
-
-
-<p>正常情况下，安装完成后，PostgreSQL服务器会自动在本机的5432端口开启。</p>
-
-<h5>(3)安装图形管理界面：</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install pgadmin3</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>(4)安装PostGis：</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install postgresql-9.1-postgis</span></code></pre></td></tr></table></div></figure>
-
-
-<p>本机安装的时候，postgresql-9.1-postgis最终的postgis版本为1.5</p>
-
-<h4>2. 可视化安装</h4>
-
-<h5>(1)安装包：</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>http://www.enterprisedb.com/products-services-training/pgdownload</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>(2)安装PostgreSQL</h5>
-
-<p>下载完成之后，直接安装（Ubuntu为例）：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Download$ sudo ./postgresql-9.3.4-3-linux-x64.run</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>(3)安装PostGis</h5>
-
-<p>在安装快结束的时候要将StackBuilder那个勾打上，可以用来下载安装扩展工具包。Finish之后进入StackBuiler选择本地的PostgreSQL，点next，之后在展开Spatial Extensions下勾选PostGIS，则会下载安装PostGis。</p>
-
-<h5>(4)设置环境变量</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/etc/profile 加上 /opt/PostgreSQL/9.3/bin</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>5.PostgreSQL简单使用</h2>
-
-<h5>1. 查看版本</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:/var/run/postgresql$ psql --version
-</span><span class='line'>psql (PostgreSQL) 9.3.4</span></code></pre></td></tr></table></div></figure>
-
-
-<p>初次安装后，默认生成一个名为postgres的数据库和一个名为postgres的数据库用户。这里需要注意的是，同时还生成了一个名为postgres的Linux系统用户。</p>
-
-<h5>2. 登录 psql -h host -U user -d database_name -p port</h5>
-
-<p>PostgreSQL默认端口为5432,-d参数指定数据库名称：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:/var/run/postgresql$ psql -h localhost -U postgres
-</span><span class='line'>Password for user postgres: 
-</span><span class='line'>psql.bin (9.3.4)
-</span><span class='line'>Type "help" for help.</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>3. 退出</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>\q</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>4. 所有用户</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>postgis_template=# \du
-</span><span class='line'>                             List of roles
-</span><span class='line'> Role name |                   Attributes                   | Member of 
-</span><span class='line'>-----------+------------------------------------------------+-----------
-</span><span class='line'> postgres  | Superuser, Create role, Create DB, Replication | {}</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>4. 连接信息</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>postgres=# \conninfo
-</span><span class='line'>You are connected to database "postgres" as user "postgres" on host "localhost" at port "5432".</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>4. show databases</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>hotel=# \l
-</span><span class='line'>                                      List of databases
-</span><span class='line'>        Name         |  Owner   | Encoding |  Collate   |   Ctype    |   Access privileges   
-</span><span class='line'>---------------------+----------+----------+------------+------------+-----------------------
-</span><span class='line'> fb_stat             | postgres | UTF8     | en_US.utf8 | en_US.utf8 | </span></code></pre></td></tr></table></div></figure>
-
-
-<h5>5. switch database</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>postgres=# \c postgis_template
-</span><span class='line'>You are now connected to database "postgis_template" as user "postgres".</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>6. show tables</h5>
-
-<p>\d 显示所有表</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>postgis_template=# \d
-</span><span class='line'>                 List of relations
-</span><span class='line'>  Schema  |       Name        |   Type   |  Owner   
-</span><span class='line'>----------+-------------------+----------+----------
-</span><span class='line'> public   | geography_columns | view     | postgres
-</span><span class='line'> public   | geometry_columns  | view     | postgres
-</span><span class='line'> public   | spatial_ref_sys   | table    | postgres
-</span><span class='line'> topology | layer             | table    | postgres
-</span><span class='line'> topology | topology          | table    | postgres
-</span><span class='line'> topology | topology_id_seq   | sequence | postgres
-</span><span class='line'>(6 rows)
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>\d table_name</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>postgis_template=# \d geography_columns
-</span><span class='line'>     View "public.geography_columns"
-</span><span class='line'>       Column       |  Type   | Modifiers 
-</span><span class='line'>--------------------+---------+-----------
-</span><span class='line'> f_table_catalog    | name    | 
-</span><span class='line'> f_table_schema     | name    | 
-</span><span class='line'> f_table_name       | name    | 
-</span><span class='line'> f_geography_column | name    | 
-</span><span class='line'> coord_dimension    | integer | 
-</span><span class='line'> srid               | integer | 
-</span><span class='line'> type               | text    |
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>7. 数据库操作</h5>
-
-<p>基本的数据库操作，就是使用一般的SQL语言:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'># 创建表 
-</span><span class='line'>CREATE TABLE user_tbl(name VARCHAR(20), signup_date DATE);
-</span><span class='line'>
-</span><span class='line'># 插入数据 
-</span><span class='line'>INSERT INTO user_tbl(name, signup_date) VALUES('张三', '2013-12-22');
-</span><span class='line'>
-</span><span class='line'># 选择记录 
-</span><span class='line'>SELECT * FROM user_tbl;
-</span><span class='line'>
-</span><span class='line'># 更新数据 
-</span><span class='line'>UPDATE user_tbl set name = '李四' WHERE name = '张三';
-</span><span class='line'>
-</span><span class='line'># 删除记录 
-</span><span class='line'>DELETE FROM user_tbl WHERE name = '李四' ;
-</span><span class='line'>
-</span><span class='line'># 添加列
-</span><span class='line'>ALTER TABLE user_tbl ADD email VARCHAR(40);
-</span><span class='line'>
-</span><span class='line'># 更新表结构 
-</span><span class='line'>ALTER TABLE user_tbl ALTER COLUMN signup_date SET NOT NULL;
-</span><span class='line'>
-</span><span class='line'># 更名列 
-</span><span class='line'>ALTER TABLE user_tbl RENAME COLUMN signup_date TO signup;
-</span><span class='line'>
-</span><span class='line'># 删除列 
-</span><span class='line'>ALTER TABLE user_tbl DROP COLUMN email;
-</span><span class='line'>
-</span><span class='line'># 表格更名 
-</span><span class='line'>ALTER TABLE user_tbl RENAME TO backup_tbl;
-</span><span class='line'>
-</span><span class='line'># 删除表格 
-</span><span class='line'>DROP TABLE IF EXISTS backup_tbl;
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>8. PostgreSQL Client支持的一些命令（直接在shell运行）：</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>clusterdb -- cluster a PostgreSQL database
-</span><span class='line'>createdb -- create a new PostgreSQL database
-</span><span class='line'>createlang -- install a PostgreSQL procedural language
-</span><span class='line'>createuser -- define a new PostgreSQL user account
-</span><span class='line'>dropdb -- remove a PostgreSQL database
-</span><span class='line'>droplang -- remove a PostgreSQL procedural language
-</span><span class='line'>dropuser -- remove a PostgreSQL user account
-</span><span class='line'>ecpg -- embedded SQL C preprocessor
-</span><span class='line'>pg_basebackup -- take a base backup of a PostgreSQL cluster
-</span><span class='line'>pg_config -- retrieve information about the installed version of PostgreSQL
-</span><span class='line'>pg_dump --  extract a PostgreSQL database into a script file or other archive file
-</span><span class='line'>pg_dumpall -- extract a PostgreSQL database cluster into a script file
-</span><span class='line'>pg_receivexlog -- streams transaction logs from a PostgreSQL cluster
-</span><span class='line'>pg_restore --  restore a PostgreSQL database from an archive file created by pg_dump
-</span><span class='line'>psql --  PostgreSQL interactive terminal
-</span><span class='line'>reindexdb -- reindex a PostgreSQL database
-</span><span class='line'>vacuumdb -- garbage-collect and analyze a PostgreSQL database
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>6.Client</h2>
-
-<h5>1.JDBC Driver</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>http://jdbc.postgresql.org/
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h5>2.maven package:</h5>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;!--postgresql--&gt;
-</span><span class='line'>&lt;dependency&gt;
-</span><span class='line'>    &lt;groupId&gt;postgresql&lt;/groupId&gt;
-</span><span class='line'>    &lt;artifactId&gt;postgresql&lt;/artifactId&gt;
-</span><span class='line'>&lt;/dependency&gt;
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>7.PostGis</h2>
-
-<p>PostGIS是一个重要的开源GIS基础软件，因为目前它是为数不多的开源空间数据库存储方案之一，它为PostgreSQL提供了存储空间地理数据的支持，使PostgreSQL成为了一个空间数据库，能够进行空间数据管理、数量测量与几何拓扑分析。</p>
-
-<p>支持空间对象模型：点、折线、多边形、多点、多折线、多多边形与几何集合。</p>
-
-<p>空间分析功能：如求交、求并、求差、缓冲区等;</p>
-
-<p>空间索引：利用R-tree与GiST实现了空间索引，大大加快了正交查询的速度;</p>
-
-<p>存储：Well-known text与well-known binary，前者是一种用文本表示空间对象的注记方法，后者是一种用二进制流表示空间对象的存储方法。PostGIS使用中两种格式在数据库中存储空间对象。</p>
-
-<p>手册：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>http://postgis.net/docs/manual-2.0/
-</span><span class='line'>http://workshops.boundlessgeo.com/postgis-intro/
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Geography：latitude/longitude，球坐标</p>
-
-<p>常用4326坐标系统，4326坐标系统指的是WGS 84（World Geodetic System，世界坐标系）标准提供地球的球体参照面，是全球定位系统（Global Positioning System，简称 GPS）使用的空间参照系。WGS 84的坐标原点是地球的质心，精度可达到 ±1 米。WGS 84坐标单位是度，其中，第一个坐标是经度，范围是 -180 到 180；第二个坐标是纬度，范围是 -90 到 90。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Los Angeles: POINT(-118.4079 33.9434)
-</span><span class='line'>Paris: POINT(2.3490 48.8533)
-</span><span class='line'>#距离
-</span><span class='line'>SELECT ST_Distance(
-</span><span class='line'>  ST_GeometryFromText('POINT(-118.4079 33.9434)', 4326), -- Los Angeles (LAX)
-</span><span class='line'>  ST_GeometryFromText('POINT(2.5559 49.0083)', 4326)     -- Paris (CDG)
-</span><span class='line'>  );
-</span><span class='line'>121.898285970107度
-</span><span class='line'>#距离米
-</span><span class='line'>SELECT ST_Distance(
-</span><span class='line'>  ST_GeographyFromText('POINT(-118.4079 33.9434)'), -- Los Angeles (LAX)
-</span><span class='line'>  ST_GeographyFromText('POINT(2.5559 49.0083)')     -- Paris (CDG)
-</span><span class='line'>  );
-</span><span class='line'>9124665.26917268米
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Geometry ：几何坐标</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>ST_AsText
-</span><span class='line'>
-</span><span class='line'>#点
-</span><span class='line'>ST_X ST_Y
-</span><span class='line'>#线
-</span><span class='line'>ST_Length 线长度
-</span><span class='line'>ST_StartPoint 起点
-</span><span class='line'>ST_EndPoint 终点
-</span><span class='line'>ST_NPoints 点数
-</span><span class='line'>#多边形
-</span><span class='line'>ST_Area(geometry)面积
-</span><span class='line'>ST_NRings(geometry)环个数
-</span><span class='line'>ST_ExteriorRing(geometry) 外接环
-</span><span class='line'>ST_InteriorRingN(geometry,n) 内接环
-</span><span class='line'>ST_Perimeter(geometry) 所有环的长度
-</span><span class='line'>#集合
-</span><span class='line'>MultiPoint, a collection of points
-</span><span class='line'>MultiLineString, a collection of linestrings
-</span><span class='line'>MultiPolygon, a collection of polygons
-</span><span class='line'>GeometryCollection, a heterogeneous collection of any geometry (including other collections)
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>
-实用case：
-gpoint表示坐标：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> gpoint       | geography(Point,4326)       |
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>距离坐标(117.28243891065 39.096105298613)最近的10个地标数据（在1km以内搜索）：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>SELECT id, name, city_code, st_astext(gpoint) FROM poi
-</span><span class='line'>WHERE ST_DWithin(GeomFromText('POINT(117.28243891065 39.096105298613)',4326), gpoint, 1000)
-</span><span class='line'>ORDER BY ST_Distance(GeomFromText('POINT(117.28243891065 39.096105298613)',4326), gpoint)
-</span><span class='line'>LIMIT 10;
-</span></code></pre></td></tr></table></div></figure>
-
-
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/24">&larr; Older</a>
@@ -1370,6 +1038,10 @@ gpoint表示坐标：</p>
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/shallowetagheaderfilter/">ShallowEtagHeaderFilter</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
@@ -1407,10 +1079,6 @@ gpoint表示坐标：</p>
         <a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务2-AOP</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1435,7 +1103,7 @@ gpoint表示坐标：</p>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

@@ -9,23 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="Dubbo 2.0.5版本以后支持telnet命令，可以用来debug各个dubbo接口。 Dubbo官网：http://dubbo.io/User+Guide-zh.htm telnet涉及的命令包括： 1
-2
-3
-4
-5
-6
-7
-8
-9
-10
-11
-12
-ls
-ps
-cd
-pwd
-trace &hellip;">
+  <meta name="description" content="1.Crate简介 最近工作中使用Crate来做搜索.总结工作中Crate的知识. 官方网站:https://crate.io/ 2.Crate安装要求 Crate最低版本要求Java 7,并且Crate的所有节点和客户端需要使用相同的JVM版本.
+并且Java 7要求update &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -91,6 +76,507 @@ trace &hellip;">
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/04/28/cratehuan-jing-da-jian/">Crate环境搭建</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-04-28T01:42:15+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>28</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>1:42 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><h1>1.Crate简介</h1>
+
+<p>最近工作中使用Crate来做搜索.总结工作中Crate的知识.</p>
+
+<p>官方网站:<a href="https://crate.io/">https://crate.io/</a></p>
+
+<h1>2.Crate安装要求</h1>
+
+<p>Crate最低版本要求Java 7,并且Crate的所有节点和客户端需要使用相同的JVM版本.
+并且Java 7要求update 55或者之后的版本,Java 8则要求update 20或者之后的版本.</p>
+
+<p>警告:JAVA 7之前的版本会造成脏数据和数据丢失.</p>
+
+<h1>3.Crate安装</h1>
+
+<p>这里选择最基本的通过下载tar.gz安装包的形式安装,还可以通过Docker等形式安装</p>
+
+<p>详见:<a href="https://crate.io/docs/en/latest/installation.html">https://crate.io/docs/en/latest/installation.html</a></p>
+
+<h3>3.1.下载</h3>
+
+<p>从下面的url下载最新的稳定版本:
+<a href="https://crate.io/download/">https://crate.io/download/</a></p>
+
+<p>所有可下载版本见:
+<a href="https://cdn.crate.io/downloads/releases/">https://cdn.crate.io/downloads/releases/</a></p>
+
+<p>这里下载的是0.47.7版本:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>wget https://cdn.crate.io/downloads/releases/crate-0.47.7.tar.gz --no-check-certificate</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>3.2.解压</h3>
+
+<p>自动生成crate-0.47.7目录</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>cd /home/work
+</span><span class='line'>sudo tar zxf ~/crate-0.47.7.tar.gz</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.Crate配置</h1>
+
+<p>Crate配置参考:
+<a href="https://crate.io/docs/en/latest/configuration.html">https://crate.io/docs/en/latest/configuration.html</a></p>
+
+<p>Crate的有一套默认配置,通常情况下不需要额外的配置.</p>
+
+<p>Crate的配置主要通过config/crate.yml文件,下载中的config/crate.yml包含了所有的配置项,包括其默认值和注释.</p>
+
+<p>启动Crate的时候可以指定自己的配置文件</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>./bin/crate -Des.config=/path/to/config.yml</span></code></pre></td></tr></table></div></figure>
+
+
+<p>任何配置都可以在配置文件中指定或者作为启动时候的系统属性.比如据群名称的设置可以在启动时设置:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>./bin/crate -Des.cluster.name=cluster</span></code></pre></td></tr></table></div></figure>
+
+
+<p>也可以在配置文件中配置:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>cluster.name = cluster</span></code></pre></td></tr></table></div></figure>
+
+
+<p>配置的优先级如下,越往后优先级越大(即后面的配置会覆盖前面的配置):</p>
+
+<pre><code>1.internal defaults
+2.system properties
+3.options from config file
+4.command-line properties
+</code></pre>
+
+<h3>4.1 基本配置</h3>
+
+<p>一些基本的配置,工作目录和机器列表等:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>path.data: /home/work/crate/data
+</span><span class='line'>path.work: /home/work/crate/work
+</span><span class='line'>path.logs: /home/work/crate/logs
+</span><span class='line'>
+</span><span class='line'>discovery.zen.minimum_master_nodes: 2
+</span><span class='line'>discovery.zen.ping.timeout: 6s
+</span><span class='line'>discovery.zen.ping.multicast.enabled: false
+</span><span class='line'>discovery.zen.ping.unicast.hosts: ["192.168.1.100:4300", "192.168.1.101:4300", "192.168.1.102:4300"]
+</span><span class='line'>discovery.zen.fd.ping_interval: 10s
+</span><span class='line'>
+</span><span class='line'>cluster.name: crate1
+</span><span class='line'>transport.tcp.port: 4300
+</span><span class='line'>http.port: 4200</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>5.Crate运行</h1>
+
+<h3>5.1.启动</h3>
+
+<p>在前台运行(可以通过Control-C中断其运行):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>cd ./crate-0.47.7
+</span><span class='line'>./bin/crate</span></code></pre></td></tr></table></div></figure>
+
+
+<p>加上-d参数让crate在后台运行.</p>
+
+<h3>5.2.Crash</h3>
+
+<p>bin下面还包含Crash(The Crate Shell),需要python环境运行,可以通过这个Crash输入诸如sql等命令</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[/workspace/crate/bin]$ ./crash
+</span><span class='line'>...
+</span><span class='line'>CONNECT OK
+</span><span class='line'>cr&gt; select count(1) from test;
+</span><span class='line'>+----------+
+</span><span class='line'>| count(1) |
+</span><span class='line'>+----------+
+</span><span class='line'>|   522835 |
+</span><span class='line'>+----------+
+</span><span class='line'>SELECT 1 row in set (0.032 sec)</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>5.3.Admin</h3>
+
+<p>Crate同时也提供了一个基于web的administration接口.在端口4200上提供服务,可以在浏览器中通过机器名访问:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>http://host1.example.com:4200/_plugin/crate-admin/#/console</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个Admin在Crate的每个节点上都可以运行.</p>
+
+<h1>6.Crate安装简单示例</h1>
+
+<p>这里使用3台机器搭建Crate集群,假设三台机器的IP如下:</p>
+
+<pre><code>host1.example.com    192.168.1.100
+host2.example.com    192.168.1.101
+host3.example.com    192.168.1.102
+</code></pre>
+
+<p>每台机器上做相同的工作:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1.将Crate下载到自己的目录
+</span><span class='line'>wget https://cdn.crate.io/downloads/releases/crate-0.47.7.tar.gz --no-check-certificate
+</span><span class='line'>
+</span><span class='line'>2.解压
+</span><span class='line'>cd /home/work
+</span><span class='line'>sudo tar zxf ~/crate-0.47.7.tar.gz
+</span><span class='line'>
+</span><span class='line'>3.创建Crate工作目录
+</span><span class='line'>cd /home/work
+</span><span class='line'>sudo mkdir crate
+</span><span class='line'>cd crate
+</span><span class='line'>sudo mkdir data
+</span><span class='line'>sudo mkdir logs
+</span><span class='line'>sudo mkdir work
+</span><span class='line'>
+</span><span class='line'>4.修改基本配置(/config/crate.yml文件)
+</span><span class='line'>path.data: /home/work/crate/data
+</span><span class='line'>path.work: /home/work/crate/work
+</span><span class='line'>path.logs: /home/work/crate/logs
+</span><span class='line'>
+</span><span class='line'>discovery.zen.minimum_master_nodes: 2
+</span><span class='line'>discovery.zen.ping.timeout: 6s
+</span><span class='line'>discovery.zen.ping.multicast.enabled: false
+</span><span class='line'>discovery.zen.ping.unicast.hosts: ["192.168.1.100:4300", "192.168.1.101:4300", "192.168.1.102:4300"]
+</span><span class='line'>discovery.zen.fd.ping_interval: 10s
+</span><span class='line'>
+</span><span class='line'>5.配置内存大小(/bin/crate文件)
+</span><span class='line'>CRATE_HEAP_SIZE=4g
+</span><span class='line'>
+</span><span class='line'>6.启动Crate
+</span><span class='line'>sudo /home/work/crate-0.47.7/bin/crate -d
+</span><span class='line'>
+</span><span class='line'>7.查看启动日志
+</span><span class='line'>tail -f /home/work/crate/logs/crate.log</span></code></pre></td></tr></table></div></figure>
+
+
+<p>三台机器都启动了,它们之间会相互感应,形成一个集群.</p>
+
+<h1>7.Crate SQL</h1>
+
+<p>crate的sql操作和mysql基本一致,详细可以参考:
+<a href="https://crate.io/docs/en/latest/sql/index.html">https://crate.io/docs/en/latest/sql/index.html</a></p>
+
+<h1>8.Crate运维脚本</h1>
+
+<p>因为dev环境需求,搭建了6套dev的crate环境,发现每次启动停止crate比较麻烦,因此自己写了点基本的维护脚本,只适用于我当前的环境,即在/home/q/crate_workspace下存在6套环境,其他环境可以根据情况自行修改使用:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>drwxr-xr-x 4 root root 4096 Apr 28 17:37 crate1
+</span><span class='line'>drwxr-xr-x 4 root root 4096 Apr 28 17:37 crate2
+</span><span class='line'>drwxr-xr-x 4 root root 4096 Apr 28 17:37 crate3
+</span><span class='line'>drwxr-xr-x 4 root root 4096 Apr 30 11:25 crate4
+</span><span class='line'>drwxr-xr-x 4 root root 4096 Apr 28 17:37 crate5
+</span><span class='line'>drwxr-xr-x 4 root root 4096 Apr 28 17:37 crate6
+</span><span class='line'>-rwxr-xr-x 1 root root   53 Apr 28 15:41 restart_crate.sh
+</span><span class='line'>-rwxr-xr-x 1 root root  724 Apr 28 16:31 start_crate.sh
+</span><span class='line'>-rwxr-xr-x 1 root root 1041 Apr 28 17:15 stop_crate.sh</span></code></pre></td></tr></table></div></figure>
+
+
+<p>每套环境之下有自己的配置(crate-source)和工作目录(crate)和一个存放crate线程id的文件:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>drwxr-xr-x 6 root root 4096 Apr 28 15:05 crate
+</span><span class='line'>drwxr-xr-x 6 root root 4096 Apr 28 15:54 crate-source
+</span><span class='line'>-rw-r--r-- 1 root root    5 Apr 28 17:37 pid</span></code></pre></td></tr></table></div></figure>
+
+
+<p>脚本如下,启动crate的脚本start_crate.sh:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
+</span><span class='line'>
+</span><span class='line'>if echo $1 | grep -q "/home/q/crate_workspace"
+</span><span class='line'>then
+</span><span class='line'>    export CRATE_BASE=${1%/}
+</span><span class='line'>else
+</span><span class='line'>    export CRATE_BASE=/home/q/crate_workspace/${1%/}
+</span><span class='line'>fi
+</span><span class='line'>echo -e $CRATE_BASE
+</span><span class='line'>
+</span><span class='line'>if ! [ -e $CRATE_BASE/crate-source/bin/crate ]
+</span><span class='line'>then
+</span><span class='line'>    echo -e " usage: $0 home/q/crate_workspace/CRATE_DIR\n"
+</span><span class='line'>    exit 1;
+</span><span class='line'>fi
+</span><span class='line'>
+</span><span class='line'>if [ -e $CRATE_BASE/pid ]
+</span><span class='line'>then
+</span><span class='line'>    CRATE_ID=`cat $CRATE_BASE/pid`
+</span><span class='line'>    echo "crate(${CRATE_ID}) still running now , please shutdown it firest";
+</span><span class='line'>    exit 2;
+</span><span class='line'>fi
+</span><span class='line'>
+</span><span class='line'>#CRATE_START_LOG=`$CRATE_BASE/crate-source/bin/crate -p $CRATE_BASE/pid -d`
+</span><span class='line'>$CRATE_BASE/crate-source/bin/crate -p $CRATE_BASE/pid -d
+</span><span class='line'>
+</span><span class='line'>if [ "$?" = "0" ]; then
+</span><span class='line'>    echo "$0 ${1%/} start succeed"
+</span><span class='line'>else
+</span><span class='line'>    echo "$0 ${1%/} start failed"
+</span><span class='line'>    echo $CRATE_START_LOG
+</span><span class='line'>fi</span></code></pre></td></tr></table></div></figure>
+
+
+<p>停止crate的脚本stop_crate.sh:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
+</span><span class='line'>
+</span><span class='line'>if echo $1 | grep -q "/home/q/crate_workspace"
+</span><span class='line'>then
+</span><span class='line'>    export CRATE_BASE=${1%/}
+</span><span class='line'>else
+</span><span class='line'>    export CRATE_BASE=/home/q/crate_workspace/${1%/}
+</span><span class='line'>fi
+</span><span class='line'>echo -e $CRATE_BASE
+</span><span class='line'>
+</span><span class='line'>if ! [ -e $CRATE_BASE/crate-source/bin/crate ]
+</span><span class='line'>then
+</span><span class='line'>    echo -e " usage: $0 home/q/crate_workspace/CRATE_DIR\n"
+</span><span class='line'>    exit 1;
+</span><span class='line'>fi
+</span><span class='line'>
+</span><span class='line'>if ! [ -e $CRATE_BASE/pid ]
+</span><span class='line'>then
+</span><span class='line'>    echo "crate instance not found : ${1%/}";
+</span><span class='line'>    exit;
+</span><span class='line'>fi
+</span><span class='line'>
+</span><span class='line'>CRATE_ID=`cat $CRATE_BASE/pid`
+</span><span class='line'>
+</span><span class='line'>for i in {1..10}; do
+</span><span class='line'>    if [ -e $CRATE_BASE/pid ]; then
+</span><span class='line'>        CRATE_ID=`cat $CRATE_BASE/pid`
+</span><span class='line'>        if [ "$i" = "1" ]; then
+</span><span class='line'>            echo -n "trying stop ($CRATE_ID): $i"
+</span><span class='line'>        else
+</span><span class='line'>            echo -n -e "\b$i"
+</span><span class='line'>        fi
+</span><span class='line'>        
+</span><span class='line'>        if [ $i -ge 5 ]; then
+</span><span class='line'>            kill "$CRATE_ID"
+</span><span class='line'>            rm -f "$CRATE_BASE/pid"
+</span><span class='line'>        fi
+</span><span class='line'>
+</span><span class='line'>        sleep 1 
+</span><span class='line'>    else
+</span><span class='line'>        if [ $i -gt 5 ]; then
+</span><span class='line'>            echo -e "\n$CRATE_BASE was killed($i)"
+</span><span class='line'>        else
+</span><span class='line'>            echo -e "\n$CRATE_BASE was stoped"
+</span><span class='line'>        fi
+</span><span class='line'>
+</span><span class='line'>        exit;
+</span><span class='line'>    fi
+</span><span class='line'>done;
+</span><span class='line'>
+</span><span class='line'>kill -9 "$CRATE_ID"
+</span><span class='line'>
+</span><span class='line'>echo "$CRATE_BASE was force killed"</span></code></pre></td></tr></table></div></figure>
+
+
+<p>重启crate的脚本restart_crate.sh:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>#!/bin/bash
+</span><span class='line'>
+</span><span class='line'>./stop_crate.sh $1
+</span><span class='line'>
+</span><span class='line'>./start_crate.sh $1</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1452,203 +1938,6 @@ clear 100       清除屏幕上的指定行数的内容
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/04/03/mysqljia-gou/">Mysql架构</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-04-03T04:07:44+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2015</span></span> <span class='time'>4:07 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>这里想总结一下使用Mysql的一些架构，注意不是Mysql源码的架构。</p>
-
-<h1>1.单点</h1>
-
-<p>数据量不大，业务简单的情况下，直接单点的mysql instance足够。</p>
-
-<p><img src="/images/mysql/one_instance.PNG"></p>
-
-<h3>1.1 优点</h3>
-
-<pre><code>1.简单，不存在数据一致性等问题;
-</code></pre>
-
-<h3>1.2 缺点瓶颈</h3>
-
-<pre><code>1.单机存储数据量有限;
-2.数据索引单机内存可能放不下,导致和只能加载部分索引，印象性能;
-3.单机访问速度有极限;
-4.读写混合，不正当的写操作导致的锁表等问题，可能导致读操作也失败，进而拖死整个系统;
-5.无法容灾;
-</code></pre>
-
-<p>很多业务场景简单的，单表可以一般足够，比如对于用户信息这类表 （3个索引），16G内存能放下大概2000W行数据的索引，简单的读和写混合访问量3000/s左右没有问题。</p>
-
-<h1>2.垂直拆分</h1>
-
-<p>当单表遇到瓶颈的时候，最简单的想法是垂直拆分，从业务角度来看，将关联性不强的数据拆分到不同的instance上，从而达到消除瓶颈的目标。</p>
-
-<p>另外，绝大部分的业务常见读写复合2-8原则，即80%的数据库操作会是读操作，因此对于重复读类型比较多的场景，我们还可以加一层cache，来减少对DB的压力。</p>
-
-<p><img src="/images/mysql/v_multi_instance.PNG"></p>
-
-<h3>2.1 优点</h3>
-
-<pre><code>1.业务隔离，互不影响;
-</code></pre>
-
-<h3>2.2 缺点瓶颈</h3>
-
-<pre><code>1.读写混合的问题依然存在;
-</code></pre>
-
-<h1>3.Master-Slave</h1>
-
-<p>基于业务的读写2-8原则，我们将读写分离，即读和写打到不同的数据库服务器，通常读服务器会有多台，这即典型的Master-Slave结构，主库(Master)抗写压力，通过从库(Slave)来分担读压力。MS结构非常适合读多写少的应用场景，比如博客类网站等。</p>
-
-<p><img src="/images/mysql/master_slave.PNG"></p>
-
-<p>Slave通过binlog来同步Master的数据变更：
-<img src="/images/mysql/master-salve.jpg"></p>
-
-<p>主从机器的硬件配置和MySQL版本、各种参数配置最好都要一样，这样才能保证出问题时应用程 序能够平滑地从主库切换到备库上。</p>
-
-<h3>3.1 优点</h3>
-
-<pre><code>1.读写分离，减少相互影响;
-2.实时备份;
-</code></pre>
-
-<h3>3.2 缺点瓶颈</h3>
-
-<pre><code>1.数据一致性难以保障;
-2.主从切换麻烦，而且切换所带来的麻烦会随着备库的增多而逐步上升;
-</code></pre>
-
-<h1>4.Proxy</h1>
-
-<p>在Application和DB中间加以层Proxy，Proxy来解析sql协议，按sharding key 来寻找cluster, 判断是读操作还是写操作来请求主服务器或者从服务器，这一切内部的细节都由proxy来屏蔽。</p>
-
-<p>Proxy做的工作包括：</p>
-
-<pre><code>1.SQL解析
-2.SQL改写
-3.查询Dispatch
-4.读写分离、主从切换逻辑
-5.缓冲区控制
-6.归并+排序
-</code></pre>
-
-<h1>5.Heartbeat+DRBD</h1>
-
-<h3>5.1 Heartbeat介绍</h3>
-
-<p>heartbeat可以资源(VIP地址及程序服务)从一台有故障的服务器快速的转移到另一台正常的服务器提供服务，heartbeat和keepalived相似，heartbeat可以实现failover功能，但不能实现对后端的健康检查。</p>
-
-<p><a href="http://linux-ha.org/wiki/Main_Page">http://linux-ha.org/wiki/Main_Page</a></p>
-
-<h3>5.2 DRBD介绍</h3>
-
-<p>DRBD(Distributed Replicated Block Device)是一个基于块设备级别在远程服务器直接同步和镜像数据的软件，用软件实现的、无共享的、服务器之间镜像块设备内容的存储复制解决方案。</p>
-
-<p>它可以实现在网络中两台服务器之间基于块设备级别的实时镜像或同步复制(两台服务器都写入成功)/异步复制(本地服务器写入成功)，相当于网络的RAID1，由于是基于块设备(磁盘，LVM逻辑卷)，在文件系统的底层，所以数据复制要比cp命令更快。DRBD已经被MySQL官方写入文档手册作为推荐的高可用的方案之一。</p>
-
-<p>官方站点：<a href="http://www.drbd.org/">http://www.drbd.org/</a></p>
-
-<h3>5.3 Heartbeat+DRBD</h3>
-
-<p>适用于数据库访问量不太大，短期内访问量增长不会太快，对数据库可用性要求非常高的场景。</p>
-
-<h1>6.MMM</h1>
-
-<p>主从切换是Master-Slave结构的一个硬伤，如果备库只是用来实时备份数据和承担小部分读压力，那么MM结构将会是取代MS结构的不二之选。MM(Master-Master)就是主主结构,任意一个时刻，只有一个实际意义上的Master，另外一个作为Slave，只有当前的Master出现故障或者问题的使用，两台Master的角色切换，即原始的Master变为Slave，而原始的Slave切换为Master。</p>
-
-<p>MMM(Master-Master replication manager for MySQ)是一套支持双主故障切换和双主日常管理的脚本程序。MMM使用Perl语言开发，主要用来监控和管理MySQL Master-Master复制。</p>
-
-<p>MMM项目来自 Google：<a href="http://code.google.com/p/mysql-master-master">http://code.google.com/p/mysql-master-master</a></p>
-
-<p>官方网站为：<a href="http://mysql-mmm.org">http://mysql-mmm.org</a></p>
-
-<p>虽然叫做双主复制，但是业务上同一时刻只允许对一个主进行写入，另一台备选主上提供部分读服务，以加速在主主切换时刻备选主的预热，可以说MMM这套脚本程序一方面实现了故障切换的功能，另一方面其内部附加的工具脚本也可以实现多个slave的read负载均衡。</p>
-
-<h3>6.1 MMM两种典型的使用</h3>
-
-<p>典型的MM结构，即只有两台数据库Master服务器：
-<img src="/images/mysql/MMM-usage1.png"></p>
-
-<p>MM+Slaves结构，即两台数据库Master服务器加多台Slave服务器：
-<img src="/images/mysql/MMM-usage2.png"></p>
-
-<h3>6.2 Master切换的原理</h3>
-
-<p>MMM主要的功能通过下面三个脚本来实现：</p>
-
-<pre><code>mmm_mond： 负责所有的监控工作的监控守护进程，决定节点的活动;
-mmm_agentd：运行在mysql服务器上的代理守护进程，通过远程服务提供给监控节点;
-mmm_control：通过命令行管理mmm_mond进程;
-</code></pre>
-
-<p>mysql-mmm的监管端会提供多个虚拟IP(VIP)，包括一个可写VIP，多个可读VIP，通过监管端每十秒种(默认间隔)轮询一次MySQL节点来检查其状态，仅其中的一台服务器接收到写入器角色(写的VIP，Master的某一个)，其他的可以拥有阅读器角色(读VIP，包括一个备份的Master),当写库不可用(比如宕机等)，MMM会自动将写VIP给另外一台Master。</p>
-
-<p>Mysql需要创建一个mmm_monitor和多个mmm_agent账户并授权。</p>
-
-<h3>6.3 优点</h3>
-
-<pre><code>1.克服了MS结构主从切换困难的问题;
-2.是一种HA(高可用)架构(Easy Failover)
-</code></pre>
-
-<h3>6.4 缺点瓶颈</h3>
-
-<pre><code>1.MMM不适用于对数据一致性要求很高的环境,某种情况下存在双写的问题
-</code></pre>
-
-<p>其他问题参考：</p>
-
-<pre><code>1.[What's wrong with MMM?](http://www.xaprb.com/blog/2011/05/04/whats-wrong-with-mmm/)
-2.[Problems with MMM for MySQL](http://code.openark.org/blog/mysql/problems-with-mmm-for-mysql)
-</code></pre>
-
-<p>最近我们系统遇到过一次MMM导致的问题：</p>
-
-<pre><code>1.在当前的主Master(称之为Master-A)上有读写请求，从T1时刻开始，由于大量的慢查询，且这台机器善有多个Mysql Instance，导致在业务高峰期，当前的主Master对Monitor(Master-A)没有响应，因此Monitor认为这个Master(Master-A)宕机了，因此在T2时刻将读和写的VIP都漂移到另外一台备份Master(Master-B)上，这种情况下，Master-A和Master-B之间的双写复制中断，但是实际上Master-A上的写操作还在进行，即在T2之后的一段时间内，Master-A和Master-B上都存在写操作，并且不存在双写复制，当Master-A机器恢复，读VIP漂移到Master-A上，开始执行双写复制，发现存在冲突，因此双写导致数据存在冲突(比如自增ID)。
-</code></pre>
-
-<h1>7.PXC</h1>
-
-<h3>7.1 优点</h3>
-
-<h3>7.2 缺点瓶颈</h3>
-
-<p><a href="http://www.infoq.com/cn/news/2013/03/MySQL-Reference-Architectures">http://www.infoq.com/cn/news/2013/03/MySQL-Reference-Architectures</a>
-<a href="http://www.admin10000.com/document/4539.html">http://www.admin10000.com/document/4539.html</a>
-<a href="http://www.open-open.com/lib/view/open1341302877043.html">http://www.open-open.com/lib/view/open1341302877043.html</a>
-<a href="http://mysql-mmm.org/mysql-mmm.html">http://mysql-mmm.org/mysql-mmm.html</a>
-<a href="http://www.cnblogs.com/gomysql/p/3671896.html">http://www.cnblogs.com/gomysql/p/3671896.html</a>
-<a href="http://www.luocs.com/archives/849.http">http://www.luocs.com/archives/849.http</a>
-html://wiki.corp.qunar.com/download/attachments/63242976/%E5%91%A8%E5%BD%A6%E4%BC%9F%E3%80%8AMySQL%E9%AB%98%E5%8F%AF%E7%94%A8%E6%9E%B6%E6%9E%84%E6%BC%94%E5%8F%98%E4%B9%8B%E8%B7%AF_%E4%BB%8EMMM%E5%88%B0PXC%E3%80%8B.pdf?version=1&amp;modificationDate=1418272276416</p>
-
-<p><a href="http://www.cnblogs.com/bamboos/p/3543309.html">http://www.cnblogs.com/bamboos/p/3543309.html</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/11">&larr; Older</a>
@@ -1666,6 +1955,10 @@ html://wiki.corp.qunar.com/download/attachments/63242976/%E5%91%A8%E5%BD%A6%E4%B
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/shallowetagheaderfilter/">ShallowEtagHeaderFilter</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
@@ -1703,10 +1996,6 @@ html://wiki.corp.qunar.com/download/attachments/63242976/%E5%91%A8%E5%BD%A6%E4%B
         <a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务2-AOP</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1731,7 +2020,7 @@ html://wiki.corp.qunar.com/download/attachments/63242976/%E5%91%A8%E5%BD%A6%E4%B
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

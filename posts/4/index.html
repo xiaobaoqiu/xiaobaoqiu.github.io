@@ -9,32 +9,11 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="今天发布线上碰到一个小问题，Memcached存储的数据类型包括枚举的时候，当修改枚举的包路径之后，会出现问题。
-异常信息如下，比较直观，就是数据的反序列化失败： 1
-2
-3
-4
-5
-6
-7
-8
-9
-10
-11
-12
-13
-14
-15
-16
-17
-18
-19
-20
-21
-22
-23
-24
-25 &hellip;">
+  <meta name="description" content="1.Protocol Buffers简介
+2.Protocol Buffers安装
+3.Protocol Buffers Demo in Java
+4.自描述消息
+5.序列化性能 1.Protocol Buffers简介 最近项目中接触到久闻大名的Protocol Buffers。 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -100,6 +79,235 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/12/22/protocol-buffers/">Protocol Buffers</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-12-22T10:43:49+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>22</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>10:43 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.Protocol%20Buffers%E7%AE%80%E4%BB%8B">1.Protocol Buffers简介</a></li>
+<li><a href="#2.Protocol%20Buffers%E5%AE%89%E8%A3%85">2.Protocol Buffers安装</a></li>
+<li><a href="#3.Protocol%20Buffers%20Demo%20in%20Java">3.Protocol Buffers Demo in Java</a></li>
+<li><a href="#4.%E8%87%AA%E6%8F%8F%E8%BF%B0%E6%B6%88%E6%81%AF">4.自描述消息</a></li>
+<li><a href="#5.%E5%BA%8F%E5%88%97%E5%8C%96%E6%80%A7%E8%83%BD">5.序列化性能</a></li>
+</ul>
+
+
+<h2>1.Protocol Buffers简介</h2>
+
+<p>最近项目中接触到久闻大名的Protocol Buffers。简单学习Protocol Buffers是什么，能做什么，为什么需要它，怎么使用它。</p>
+
+<p>Protocol Buffers官网：<a href="https://developers.google.com/protocol-buffers/">https://developers.google.com/protocol-buffers/</a></p>
+
+<p>Protocol Buffers官网(中文)：<a href="https://developers.google.com/protocol-buffers/?hl=zh-CN">https://developers.google.com/protocol-buffers/?hl=zh-CN</a></p>
+
+<p>Git地址：<a href="https://github.com/google/protobuf">https://github.com/google/protobuf</a></p>
+
+<p>Java API：<a href="https://developers.google.com/protocol-buffers/docs/reference/java/?hl=zh-CN">https://developers.google.com/protocol-buffers/docs/reference/java/?hl=zh-CN</a></p>
+
+<p>proro文件的编写指南：<a href="https://developers.google.com/protocol-buffers/docs/style?hl=zh-CN">https://developers.google.com/protocol-buffers/docs/style?hl=zh-CN</a></p>
+
+<p>Java使用指南：<a href="https://developers.google.com/protocol-buffers/docs/javatutorial?hl=zh-CN">https://developers.google.com/protocol-buffers/docs/javatutorial?hl=zh-CN</a></p>
+
+<p>protocol buffers是google提供的一种将结构化数据进行序列化和反序列化的方法，其优点是语言中立，平台中立，可扩展性好，目前在google内部大量用于数据存储，通讯协议等方面。语言中立说明和语言无关，可以作为跨语言的通信协议。平台中立说明Protocol Buffers可以作为不同平台之间的通信协议；可扩展性好可以理解为protocol buffers支持嵌套。</p>
+
+<p>PB在功能上类似XML，但是序列化后的数据更小，解析更快，使用上更简单。用户只要按照proto语法在.proto文件中定义好数据的结构，就可以使用PB提供的工具(protoc)自动生成处理数据的代码，使用这些代码就能在程序中方便的通过各种数据流读写数据。</p>
+
+<p>PB目前支持Java, C++和Python3种语言(截止目前已经额外支持C#，Ruby和Object-C)。另外，PB还提供了很好的向后兼容，即旧版本的程序可以正常处理新版本的数据，新版本的程序也能正常处理旧版本的数据。</p>
+
+<h2>2.Protocol Buffers安装</h2>
+
+<p>1.下载源码
+从<a href="https://github.com/google/protobuf%E4%B8%8B%E8%BD%BD%E6%BA%90%E7%A0%81">https://github.com/google/protobuf%E4%B8%8B%E8%BD%BD%E6%BA%90%E7%A0%81</a></p>
+
+<p>2.根据README安装
+(1).使用./autogen.sh生成configure脚本；
+(2).配置./configure，默认在/usr/local下，可以指定路径
+(3).make
+(4).make check
+(5).make install</p>
+
+<p>这里安装的是最新的Protoc 3。安装之后，就会有一个根据Message文件产生对应代码文件的工具protoc：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Work/JavaCode/ProtobufDemo/com/qunar/scm/protobuf$ protoc --version
+</span><span class='line'>libprotoc 3.0.0</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在帮助文当中就可以看到如何生成各种类型的文件的方式：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  --cpp_out=OUT_DIR           Generate C++ header and source.
+</span><span class='line'>  --csharp_out=OUT_DIR        Generate C# source file.
+</span><span class='line'>  --java_out=OUT_DIR          Generate Java source file.
+</span><span class='line'>  --javanano_out=OUT_DIR      Generate Java Nano source file.
+</span><span class='line'>  --objc_out=OUT_DIR          Generate Objective C header and source.
+</span><span class='line'>  --python_out=OUT_DIR        Generate Python source file.
+</span><span class='line'>  --ruby_out=OUT_DIR          Generate Ruby source file.</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>3.Protocol Buffers Demo in Java</h2>
+
+<p>参考官网的一个例子，message是定义protobuf的关键词，Person表示一个人的信息，包括id，name，email和phone四个信息，其中name和id是必须的，email是可选的，phone是数组形式并且phone本身也是一种消息(message)，PhoneNumber内部包含了枚举类型PhoneType，主要枚举的定义和Java有点不同，这里是分号分割的。1234这种序号表示字段在数据中的顺序，新增字段依次增加这个序号就行。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>package tutorial;
+</span><span class='line'>
+</span><span class='line'>option java_package = "com.example.tutorial";
+</span><span class='line'>option java_outer_classname = "AddressBookProtos";
+</span><span class='line'>
+</span><span class='line'>message Person {
+</span><span class='line'>  required string name = 1;
+</span><span class='line'>  required int32 id = 2;
+</span><span class='line'>  optional string email = 3;
+</span><span class='line'>
+</span><span class='line'>  enum PhoneType {
+</span><span class='line'>    MOBILE = 0;
+</span><span class='line'>    HOME = 1;
+</span><span class='line'>    WORK = 2;
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  message PhoneNumber {
+</span><span class='line'>    required string number = 1;
+</span><span class='line'>    optional PhoneType type = 2 [default = HOME];
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  repeated PhoneNumber phone = 4;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>message AddressBook {
+</span><span class='line'>  repeated Person person = 1;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>string和int32是protobuf支持的基本类型，所有支持的类型及其含义如下：</p>
+
+<p><img src="/images/protocol/protobuf_field_type.png"></p>
+
+<p>如下生成message对应的Java文件如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>protoc -I=. --java_out=. ./addressbook.proto</span></code></pre></td></tr></table></div></figure>
+
+
+<p>生产数据方直接使用对应的Builder生成对象，然后往流里面写数据：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>    final String FILE_NAME = "protobuf.stream";
+</span><span class='line'>
+</span><span class='line'>    //build
+</span><span class='line'>    AddressBookProtos.Person me =
+</span><span class='line'>            AddressBookProtos.Person.newBuilder()
+</span><span class='line'>                    .setId(1234)
+</span><span class='line'>                    .setName("baoiu.xiao")
+</span><span class='line'>                    .setEmail("baoiu.xiao@example.com")
+</span><span class='line'>                    .addPhone(AddressBookProtos.Person.PhoneNumber.newBuilder()
+</span><span class='line'>                            .setNumber("15910645718")
+</span><span class='line'>                            .setType(AddressBookProtos.Person.PhoneType.HOME))
+</span><span class='line'>                    .build();
+</span><span class='line'>
+</span><span class='line'>    FileOutputStream FileOutputStream = new FileOutputStream(FILE_NAME);
+</span><span class='line'>    //往流里面写数据
+</span><span class='line'>    me.writeTo(FileOutputStream);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>消费数据方可以直接从流中读取并解析对象：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>    final String FILE_NAME = "protobuf.stream";
+</span><span class='line'>
+</span><span class='line'>    FileInputStream fis = new FileInputStream(FILE_NAME);
+</span><span class='line'>
+</span><span class='line'>    //从流里面解析出AddressBookProtos.Person对象
+</span><span class='line'>    AddressBookProtos.Person me = AddressBookProtos.Person.parseFrom(fis);
+</span><span class='line'>
+</span><span class='line'>    System.out.println(me.toString());</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>4.自描述消息</h2>
+
+<h2>5.序列化性能</h2>
+
+<p>参考git上的各种序列化的测试结果：
+<a href="https://github.com/eishay/jvm-serializers/wiki">https://github.com/eishay/jvm-serializers/wiki</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -833,435 +1041,6 @@
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/09/09/lunecezheng-ti-jia-gou/">Lucene整体架构</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-09-09T22:19:51+08:00'><span class='date'><span class='date-month'>Sep</span> <span class='date-day'>9</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>10:19 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><ul>
-<li><a href="#1.%E6%BA%90%E7%A0%81%E7%BB%93%E6%9E%84">1.源码结构</a></li>
-<li><a href="#2.Lucene%E4%BD%BF%E7%94%A8Demo">2.Lucene使用Demo</a>
-
-<ul>
-<li><a href="#2.1%20%E4%B8%BB%E8%A6%81%E7%B1%BB">2.1 主要类</a></li>
-</ul>
-</li>
-<li><a href="#3.%E5%BB%BA%E7%AB%8B%E7%B4%A2%E5%BC%95%E6%B5%81%E7%A8%8B">3.建立索引流程</a></li>
-<li><a href="#4.%E6%90%9C%E7%B4%A2%E6%B5%81%E7%A8%8B">4.搜索流程</a></li>
-</ul>
-
-
-<p>根据上篇文章,我们大致知道Lucene创建索引和搜索的一个过程:</p>
-
-<p><img src="/images/lucene/Lucene_index_and_search.jpg"></p>
-
-<p>这里主要分析一下Lucene的代码结构,包括理由Lucene API实现一个简单建立索引和搜索的小例子.</p>
-
-<p>由于我们的服务器上crate是基于Lucene 4.10.3版本.所以我这里采用的Lucene版本也是4.10版本,小版本是4.10.4,是Lucene 4的最后一个版本,大约2014年9月推出,还比较新鲜.目前已经到了5.3版本.</p>
-
-<h2 id="1.源码结构">1.源码结构</h2>
-
-
-<p>首先看一下Lucene的源码结构,Lucene-core主要代码包结构如下:</p>
-
-<p><img src="/images/lucene/Lucene_source_struct.png"></p>
-
-<p>每个包下面都有package.html文件介绍包的作用.各个包的作用如下:</p>
-
-<pre><code>1.analysis
-分词模块,包含将文本转化为可索引化/可搜索化的词元(convert text into indexable/searchable tokens)的API和实现.包括org.apache.lucene.analysis.Analyzer和其相关类.
-2.codecs
-包含自定义底层索引的编码和索引结构的模块,还包括索引的压缩,索引版本管理等.
-3.document
-定义了被索引和搜索内容的用户层面的逻辑定义,就是我们熟悉的Document,各种类型的Filed及其属性定义等.同事也提供了一下org.apache.lucene.document.Document和org.apache.lucene.index.IndexableField相关的工具类.
-4.index
-包含了索引维护(创建,更新,删除)和访问(读)的逻辑.包括我们熟悉的IndexReader,IndexWriter等.
-5.search
-索引的搜索.包括相似度的定义(similarities包),权重计算,文档评分计算,布尔模型,搜索结果搜集等逻辑.
-6.store
-索引底层二进制数据的读写,包括索引文件的Buffered的流的实现等,还包括一些限流策略的实现(RateLimiter)等.
-7.util
-工具类,如排序器,数学工具类,优先级队列等工具的实现等.
-</code></pre>
-
-<p>包基本上和本文开头的图对应起来,其中的QueryParser再Lucene4中是一个单独的jar包:</p>
-
-<p><img src="/images/lucene/Lucene_code_package_usage.jpg"></p>
-
-<h2 id="2.Lucene使用Demo">2.Lucene使用Demo</h2>
-
-
-<p>首先上一个Lucene的简单的Demo,基本上是参考官网提供的Demo,自己手动修改了点,作用就是索引一个目录下的文本文件,在此基础上提供搜索服务.其中Indexer用于创建索引,Searcher作为搜索入口,接受用户输入的Query词并执行搜索.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-<span class='line-number'>108</span>
-<span class='line-number'>109</span>
-<span class='line-number'>110</span>
-<span class='line-number'>111</span>
-<span class='line-number'>112</span>
-<span class='line-number'>113</span>
-<span class='line-number'>114</span>
-<span class='line-number'>115</span>
-<span class='line-number'>116</span>
-<span class='line-number'>117</span>
-<span class='line-number'>118</span>
-<span class='line-number'>119</span>
-<span class='line-number'>120</span>
-<span class='line-number'>121</span>
-<span class='line-number'>122</span>
-<span class='line-number'>123</span>
-<span class='line-number'>124</span>
-<span class='line-number'>125</span>
-<span class='line-number'>126</span>
-<span class='line-number'>127</span>
-<span class='line-number'>128</span>
-<span class='line-number'>129</span>
-<span class='line-number'>130</span>
-<span class='line-number'>131</span>
-<span class='line-number'>132</span>
-<span class='line-number'>133</span>
-<span class='line-number'>134</span>
-<span class='line-number'>135</span>
-<span class='line-number'>136</span>
-<span class='line-number'>137</span>
-<span class='line-number'>138</span>
-<span class='line-number'>139</span>
-<span class='line-number'>140</span>
-<span class='line-number'>141</span>
-<span class='line-number'>142</span>
-<span class='line-number'>143</span>
-<span class='line-number'>144</span>
-<span class='line-number'>145</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * 创建索引
-</span><span class='line'> *
-</span><span class='line'> * @author: xiaobaoqiu  Date: 15-9-8 Time: 下午4:04
-</span><span class='line'> */
-</span><span class='line'>public final class Indexer {
-</span><span class='line'>
-</span><span class='line'>    public static void main(String[] args) {
-</span><span class='line'>        indexDocs(CommonConfig.SOURCE_FILE_DIR, CommonConfig.INDEX_FILE_DIR, true);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 构建磁盘索引
-</span><span class='line'>     *
-</span><span class='line'>     * @param dirPath 原始文件
-</span><span class='line'>     * @param indexPath 索引文件存放路径
-</span><span class='line'>     * @param create    创建or更新
-</span><span class='line'>     */
-</span><span class='line'>    public static void indexDocs(String dirPath, String indexPath, boolean create) {
-</span><span class='line'>        try {
-</span><span class='line'>            Directory dir = FSDirectory.open(new File(indexPath));
-</span><span class='line'>            Analyzer analyzer = new StandardAnalyzer(Version.LUCENE_4_10_0);
-</span><span class='line'>            IndexWriterConfig iwc = new IndexWriterConfig(Version.LUCENE_4_10_0, analyzer);
-</span><span class='line'>
-</span><span class='line'>            if (create) {
-</span><span class='line'>                iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
-</span><span class='line'>            } else {
-</span><span class='line'>                iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
-</span><span class='line'>            }
-</span><span class='line'>
-</span><span class='line'>            IndexWriter writer = new IndexWriter(dir, iwc);
-</span><span class='line'>            doIndexDocs(writer, new File(dirPath));
-</span><span class='line'>
-</span><span class='line'>            System.out.println("Build index finished...");
-</span><span class='line'>            writer.close();
-</span><span class='line'>        }catch (IOException ioe) {
-</span><span class='line'>            //do something...
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    static void doIndexDocs(IndexWriter writer, File file) throws IOException {
-</span><span class='line'>        if (!file.canRead()) {
-</span><span class='line'>            System.out.println("文件不可读:" + file.getAbsolutePath());
-</span><span class='line'>            return;
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        //文件夹则索引文件夹下的索引文件
-</span><span class='line'>        if (file.isDirectory()) {
-</span><span class='line'>            String[] files = file.list();
-</span><span class='line'>            if (files != null) {
-</span><span class='line'>                for (int i = 0; i &lt; files.length; i++) {
-</span><span class='line'>                    doIndexDocs(writer, new File(file, files[i]));
-</span><span class='line'>                }
-</span><span class='line'>            }
-</span><span class='line'>        } else {
-</span><span class='line'>            doIndexFile(writer, file);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 索引一个文件
-</span><span class='line'>     *
-</span><span class='line'>     * @param writer
-</span><span class='line'>     * @param file
-</span><span class='line'>     */
-</span><span class='line'>    private static void doIndexFile(IndexWriter writer, File file) throws IOException{
-</span><span class='line'>        //单个文件
-</span><span class='line'>        FileInputStream fis;
-</span><span class='line'>        try {
-</span><span class='line'>            fis = new FileInputStream(file);
-</span><span class='line'>        } catch (FileNotFoundException fnfe) {
-</span><span class='line'>            //do nothing
-</span><span class='line'>            return;
-</span><span class='line'>        }
-</span><span class='line'>
-</span><span class='line'>        try {
-</span><span class='line'>            // 创建一个新的空的Document
-</span><span class='line'>            Document doc = new Document();
-</span><span class='line'>
-</span><span class='line'>            //文件路径字段
-</span><span class='line'>            doc.add(new StringField(CommonConfig.PATH_FIELD_NAME, file.getPath(), Field.Store.YES));
-</span><span class='line'>            //文件最后修改时间字段
-</span><span class='line'>            doc.add(new LongField(CommonConfig.MODIFIED_FIELD_NAME, file.lastModified(), Field.Store.NO));
-</span><span class='line'>            //文件内容,不存储原始串
-</span><span class='line'>            doc.add(new TextField(CommonConfig.CONTENTS_FIELD_NAME, new BufferedReader(new InputStreamReader(fis, StandardCharsets.UTF_8))));
-</span><span class='line'>
-</span><span class='line'>            //新建索引 or 更新索引
-</span><span class='line'>            if (writer.getConfig().getOpenMode() == IndexWriterConfig.OpenMode.CREATE) {
-</span><span class='line'>                writer.addDocument(doc);
-</span><span class='line'>            } else {
-</span><span class='line'>                writer.updateDocument(new Term("path", file.getPath()), doc);
-</span><span class='line'>            }
-</span><span class='line'>        } finally {
-</span><span class='line'>            fis.close();
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>/**
-</span><span class='line'> * 查询索引
-</span><span class='line'> * 接受用户输入作为Query词
-</span><span class='line'> *
-</span><span class='line'> * @author: xiaobaoqiu  Date: 15-9-8 Time: 下午4:09
-</span><span class='line'> */
-</span><span class='line'>public final class Searcher {
-</span><span class='line'>
-</span><span class='line'>    public static void main(String[] args) throws Exception {
-</span><span class='line'>        search(CommonConfig.INDEX_FILE_DIR, CommonConfig.CONTENTS_FIELD_NAME);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void search(String indexPath, String field) throws Exception {
-</span><span class='line'>        IndexReader reader = DirectoryReader.open(FSDirectory.open(new File(indexPath)));
-</span><span class='line'>        IndexSearcher searcher = new IndexSearcher(reader);
-</span><span class='line'>        Analyzer analyzer = new StandardAnalyzer(Version.LUCENE_4_10_0);
-</span><span class='line'>        QueryParser parser = new QueryParser(Version.LUCENE_4_10_0, field, analyzer);
-</span><span class='line'>
-</span><span class='line'>        //接受用户输入
-</span><span class='line'>        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
-</span><span class='line'>        String queryString = null;
-</span><span class='line'>        while (StringUtils.isNotEmpty(queryString = in.readLine())) {
-</span><span class='line'>            Query query = parser.parse(queryString.trim());
-</span><span class='line'>
-</span><span class='line'>            doSearch(searcher, query);
-</span><span class='line'>        }
-</span><span class='line'>        reader.close();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void doSearch(IndexSearcher searcher, Query query) throws IOException {
-</span><span class='line'>        // 搜索 CommonConfig.SEARCH_MAX_ITEM_COUNT 个数据
-</span><span class='line'>        TopDocs results = searcher.search(query, CommonConfig.SEARCH_MAX_ITEM_COUNT);
-</span><span class='line'>        ScoreDoc[] hits = results.scoreDocs;
-</span><span class='line'>        int numTotalHits = results.totalHits;
-</span><span class='line'>        System.out.println(numTotalHits + " total matching documents");
-</span><span class='line'>
-</span><span class='line'>        if (ArrayUtils.isEmpty(hits)) return;
-</span><span class='line'>
-</span><span class='line'>        for (ScoreDoc hit : hits) {
-</span><span class='line'>            System.out.println();
-</span><span class='line'>            Document hitDoc = searcher.doc(hit.doc);
-</span><span class='line'>            System.out.println(CommonConfig.PATH_FIELD_NAME + " = " + hitDoc.get(CommonConfig.PATH_FIELD_NAME) +
-</span><span class='line'>                    "\n" + CommonConfig.MODIFIED_FIELD_NAME + " = " + hitDoc.get(CommonConfig.MODIFIED_FIELD_NAME) +
-</span><span class='line'>                    "\n" + CommonConfig.CONTENTS_FIELD_NAME + " = " + hitDoc.get(CommonConfig.CONTENTS_FIELD_NAME));
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>输入的文件及生成的索引:</p>
-
-<p><img src="/images/lucene/Lucene_demo_input_output.png"></p>
-
-<p>建立索引的基本过程如下:</p>
-
-<pre><code>1.FSDirectory定义索引文件存放目录
-2.选择分词使用的Analyzer.
-3.选择索引文件版本信息Version,将其和Analyzer组成IndexWriterConfig.
-4.利用IndexWriterConfig生成一个IndexWriter,用于索引文件的变更;
-5.根据原始文件生成一些列的Document,每个文档中包含多个Field,设置每个Field是否分词,释放存储等属性;
-6.使用IndexWriter将文档写入索引文件.
-</code></pre>
-
-<p>搜索的基本过程如下:</p>
-
-<pre><code>1.根据索引文件的目录生成一个IndexReader,将索引文件读到内存中.
-2.生成一个IndexSearcher用于搜索;
-3.选择一个分词器;
-4.定义用户输入Query的解析器QueryParser;
-5.接受用户输入,执行搜索过程,得到搜索结果用TopDocs表示,其中包含了命中文档的数目以及命中文档的id集合;
-6.根据文档id获取对应的文档,从文档中获取各个Field信息;
-</code></pre>
-
-<h4 id="2.1 主要类">2.1 主要类</h4>
-
-
-<p>首先介绍一下其中涉及到的主要的类:</p>
-
-<ul>
-<li><p>FSDirectory
-Lucene文件操作都是通过Directory实现，其中有一个比较特殊的方法sync，用来保证任何对文件的写都能够得到永久保存。Lucene使用这个来保证正确提交索引数据变更，也能够防止机器或者操作系统级别的错误影响(corrupting)索引数据.</p></li>
-<li><p>Analyzer,StandardAnalyzer</p></li>
-<li>Version</li>
-<li>IndexWriterConfig</li>
-<li>IndexWriter</li>
-<li>Document</li>
-<li>StringField,LongField,TextField</li>
-<li>IndexReader,DirectoryReader</li>
-<li>IndexSearcher</li>
-<li>QueryParser</li>
-<li>Query</li>
-<li>TopDocs</li>
-<li>ScoreDoc</li>
-</ul>
-
-
-<h2 id="3.建立索引流程">3.建立索引流程</h2>
-
-
-
-
-<h2 id="4.搜索流程">4.搜索流程</h2>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/5">&larr; Older</a>
@@ -1279,6 +1058,10 @@ Lucene文件操作都是通过Directory实现，其中有一个比较特殊的�
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/shallowetagheaderfilter/">ShallowEtagHeaderFilter</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
@@ -1316,10 +1099,6 @@ Lucene文件操作都是通过Directory实现，其中有一个比较特殊的�
         <a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务2-AOP</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1344,7 +1123,7 @@ Lucene文件操作都是通过Directory实现，其中有一个比较特殊的�
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

@@ -9,10 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="最近会重新看一下Tomcat的源代码，整理一些东西，包括但不限于： 1.Tomcat架构
-2.Tomcat启动过程
-3.请求在Tomcat中的流转
-4.Tomcat目录结构与配置 这里会首先简单介绍一些Tomcat的知识。后面会逐渐详细介绍。 &hellip;">
+  <meta name="description" content="最近项目组遇到的慢查询比较多，大家的慢查询意识逐渐有了，同事做的工作中使用到的优化慢查询的方法分享，这里简单总结一些，便于以后使用。 通常这些优化方式是组合使用的。 1.合理使用索引 1.1 一个表只会使用一个索引 假设customer表有两个索引： 1
+2 KEY ` &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -78,6 +76,135 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/03/14/mysqlyou-hua/">Mysql优化</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-03-14T05:02:34+08:00'><span class='date'><span class='date-month'>Mar</span> <span class='date-day'>14</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>5:02 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近项目组遇到的慢查询比较多，大家的慢查询意识逐渐有了，同事做的工作中使用到的优化慢查询的方法分享，这里简单总结一些，便于以后使用。</p>
+
+<p>通常这些优化方式是组合使用的。</p>
+
+<h1>1.合理使用索引</h1>
+
+<h3>1.1 一个表只会使用一个索引</h3>
+
+<p>假设customer表有两个索引：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  KEY `idx_create_time` (`create_time`) USING BTREE,
+</span><span class='line'>  KEY `idx_city` (`city`)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>sql语句的where条件包含create_time和city</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where city = 'beijing' and create_time &gt; '2015-01-01';</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个sql语句只会走一个索引。</p>
+
+<h3>1.2 索引区分度越大越好</h3>
+
+<p>索引的区分读越大越好，可以使用show index from table看表的索引情况。</p>
+
+<h3>1.3 行数越少越好</h3>
+
+<p>执行计划中sql搜索的行数(rows)越小越好。</p>
+
+<h3>1.4 查询条件字段不要套函数，无法使用索引</h3>
+
+<p>比如下面这个sql是不走索引的</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where left(city, 2) = 'be';</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.不要复合条件查询</h1>
+
+<p>将复合条件根据规则转换为单个条件，避免多个字段去or。</p>
+
+<p>比如我们在city上面建立了索引，但是我们没有在name上建立索引，下面这个sql会走全表而不走索引</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>explain select * from customer where city = 'beijing' or name = 'beijing';</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.减少join</h1>
+
+<p>利用Mybatis的动态SQL，保证同一时刻JOIN的表最少。即满足某一个条件的时候才join。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>select * from customer
+</span><span class='line'>&lt;if test="conditions.name != null and conditions.name != ''"&gt;
+</span><span class='line'>    join user on user.id = customer.user_id
+</span><span class='line'>&lt;/if&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.分步查询</h1>
+
+<p>比如一个sql需要大量的join，并且每个join表的数据量都很大，这时候，尝试将单独的sql拆分成多个sql。</p>
+
+<p>我们可以从搜索条件入手，不包含搜索条件的表一定可以拆分成单独的sql。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>select *
+</span><span class='line'>from A
+</span><span class='line'>join B on ...
+</span><span class='line'>join C on ...
+</span><span class='line'>join D on ...
+</span><span class='line'>join E on ...
+</span><span class='line'>where
+</span><span class='line'>A.name = ...
+</span><span class='line'>and B.city = ...</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这是可以考虑对C，D，E表的查询单独拆分出来。</p>
+
+<h1>5.合理使用Cache</h1>
+
+<p>通常根据条件Count比较耗时，可以将Count数Cache，比如list接口的count通常成千上万，count数只是用来展示页数，这时候可以考虑缓存下来，但是需要考虑好缓存策略。</p>
+
+<h1>6.业务逻辑上优化</h1>
+
+<p>当我们使用上述步骤无法优化时，可以考虑从逻辑上优化。</p>
+
+<p>比如join很多个表查询的时候，我们需要确认应用方所有的字段都需要，通常减少字段能让我们少join表。</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -751,188 +878,6 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/02/09/ncming-ling/">Nc命令</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-02-09T19:36:17+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>9</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:36 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>nc(netcat)是网络工具中的瑞士军刀。</p>
-
-<h1>1.参数</h1>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ nc -h
-</span><span class='line'>OpenBSD netcat (Debian patchlevel 1.105-7ubuntu1)
-</span><span class='line'>This is nc from the netcat-openbsd package. An alternative nc is available
-</span><span class='line'>in the netcat-traditional package.
-</span><span class='line'>usage: nc [-46bCDdhjklnrStUuvZz] [-I length] [-i interval] [-O length]
-</span><span class='line'>      [-P proxy_username] [-p source_port] [-q seconds] [-s source]
-</span><span class='line'>      [-T toskeyword] [-V rtable] [-w timeout] [-X proxy_protocol]
-</span><span class='line'>      [-x proxy_address[:port]] [destination] [port]
-</span><span class='line'>    Command Summary:
-</span><span class='line'>        -4          使用IPv4
-</span><span class='line'>        -6          使用IPv6
-</span><span class='line'>        -b          允许广播(broadcast)
-</span><span class='line'>        -C          每行结尾加上CRLF(回车换行符)，即自动换行
-</span><span class='line'>        -D          启动debug sock选项
-</span><span class='line'>        -d          从stdin解绑(Detach from stdin)
-</span><span class='line'>        -h          帮助文档
-</span><span class='line'>        -I length   设置TCP接受的buffer长度
-</span><span class='line'>        -i secs     设置消息发送及端口扫描时间间隔，单位秒
-</span><span class='line'>        -j          Use jumbo frame
-</span><span class='line'>        -k          当一个连接结束时，强制nc监听另一个连接。必须和-l一起使用
-</span><span class='line'>        -l          监听模式，监听进入进入的连接(inbound connects)
-</span><span class='line'>        -n          直接使用IP地址，而不通过域名服务器
-</span><span class='line'>        -O length   设置TCP发送的buffer长度
-</span><span class='line'>        -P proxyuser    代理权限使用的用户名
-</span><span class='line'>        -p port     设置本地主机使用的通信端口
-</span><span class='line'>        -q secs     quit after EOF on stdin and delay of secs
-</span><span class='line'>        -r          随机指定本地主机使用的通信端口
-</span><span class='line'>        -S          Enable the TCP MD5 signature option
-</span><span class='line'>        -s addr     设置本地主机送出数据包的IP地址
-</span><span class='line'>        -T toskeyword   指定链接的IP服务类型
-</span><span class='line'>        -t          Answer TELNET negotiation
-</span><span class='line'>        -U          Use UNIX domain socket
-</span><span class='line'>        -u          使用UDP传输协议
-</span><span class='line'>        -V rtable   指定可选的路由表
-</span><span class='line'>        -v          显示指令执行过程
-</span><span class='line'>        -w secs     设置连接的超时时间，单位秒
-</span><span class='line'>        -X proto    指定代理协议: "4", "5" (SOCKS) or "connect"
-</span><span class='line'>        -x addr[:port]  指定代理地址和端口号
-</span><span class='line'>        -Z          DCCP mode
-</span><span class='line'>        -z          0输入输出模式(只在端口扫描的时候使用)
-</span><span class='line'>
-</span><span class='line'>    注意：参数中端口号可以为单个端口，也可以是端口区间:low-high(闭区间)</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>2.典型使用case</h1>
-
-<p>下面列举了几个典型的使用，更多使用case参见：
-<a href="http://xmodulo.com/useful-netcat-examples-linux.html">http://xmodulo.com/useful-netcat-examples-linux.html</a></p>
-
-<h3>2.1.文件传输</h3>
-
-<p>在线上机器和本地机器之间传输文件，使用scp的话通常需要多次scp，并且通常需要密码，这是nc命令就显示其强大之处：</p>
-
-<p>文件源端：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>sudo cat abc.gz | nc -l 192.168.111.222 45678</span></code></pre></td></tr></table></div></figure>
-
-
-<p>文件目的端：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>nc 192.168.111.222 45678 &gt; abc.gz</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.2.端口扫描</h3>
-
-<p>测试远端机器的某一个端口是否打开，succeeded表示打开：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ nc -v -w 2 192.168.111.222 -z 21-24
-</span><span class='line'>Connection to 192.168.111.222 21 port [tcp/ftp] succeeded!
-</span><span class='line'>Connection to 192.168.111.222 22 port [tcp/ssh] succeeded!
-</span><span class='line'>nc: connect to 192.168.111.222 port 23 (tcp) failed: Connection refused
-</span><span class='line'>nc: connect to 192.168.111.222 port 24 (tcp) failed: Connection refused</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>2.3.简单聊天工具</h3>
-
-<p>一端打开：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ nc -l 1234
-</span><span class='line'>hello
-</span><span class='line'>yes</span></code></pre></td></tr></table></div></figure>
-
-
-<p>另外一端连接，就可以聊天了：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~$ nc 192.168.111.222 1234
-</span><span class='line'>hello
-</span><span class='line'>yes</span></code></pre></td></tr></table></div></figure>
-
-
-<h1>3.参考</h1>
-
-<p><a href="http://xmodulo.com/useful-netcat-examples-linux.html">http://xmodulo.com/useful-netcat-examples-linux.html</a></p>
-
-<p><a href="http://mylinuxbook.com/linux-netcat-command/">http://mylinuxbook.com/linux-netcat-command/</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/13">&larr; Older</a>
@@ -950,6 +895,10 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/shallowetagheaderfilter/">ShallowEtagHeaderFilter</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
@@ -987,10 +936,6 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
         <a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务2-AOP</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1015,7 +960,7 @@ xiaobaoqiu@xiaobaoqiu:~/Download$ tar -xzvf squid-3.4.11.tar.gz
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

@@ -9,7 +9,15 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="Java中有很多读写文件或者网络流的方法，特别是Java7中加入了AIO之后，可选择的方法更多，本文的目的是想比较一下各种方式的优劣。 本文基本是参考这篇英文：http://nadeausoftware.com/articles/2008/02/ &hellip;">
+  <meta name="description" content="最近项目的图片服务器从公司的服务器下载图片做裁剪等操作的时候，老是存在超时的问题 1
+2
+3
+4
+5
+6
+7
+8
+java.net.SocketTimeoutException: Read timed out at java.net.SocketInputStream.socketRead0( &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -75,6 +83,203 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/01/16/linuxwang-qia-su-du/">Linux网卡速度</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-01-16T18:58:54+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:58 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>最近项目的图片服务器从公司的服务器下载图片做裁剪等操作的时候，老是存在超时的问题</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>java.net.SocketTimeoutException: Read timed out
+</span><span class='line'>    at java.net.SocketInputStream.socketRead0(Native Method) ~[na:1.7.0_51]
+</span><span class='line'>    at java.net.SocketInputStream.read(SocketInputStream.java:152) ~[na:1.7.0_51]
+</span><span class='line'>    at java.net.SocketInputStream.read(SocketInputStream.java:122) ~[na:1.7.0_51]
+</span><span class='line'>    at java.io.BufferedInputStream.read1(BufferedInputStream.java:273) ~[na:1.7.0_51]
+</span><span class='line'>    at java.io.BufferedInputStream.read(BufferedInputStream.java:334) ~[na:1.7.0_51]
+</span><span class='line'>    at sun.net.www.MeteredStream.read(MeteredStream.java:134) ~[na:1.7.0_51]
+</span><span class='line'>    at java.io.FilterInputStream.read(FilterInputStream.java:133) ~[na:1.7.0_51]</span></code></pre></td></tr></table></div></figure>
+
+
+<p>手动wget图片一切正常，但是速度还不如本地机器，于是想看一下服务器的网卡信息。下面用本机作为示例：</p>
+
+<h1>1.使用ifconfig找到网卡：</h1>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>eth0      Link encap:以太网  硬件地址 f0:1f:af:27:58:8d  
+</span><span class='line'>          inet 地址:192.168.138.99  广播:192.168.139.255  掩码:255.255.254.0
+</span><span class='line'>          inet6 地址: fe80::f21f:afff:fe27:588d/64 Scope:Link
+</span><span class='line'>          UP BROADCAST RUNNING MULTICAST  MTU:1500  跃点数:1
+</span><span class='line'>          接收数据包:696848 错误:0 丢弃:0 过载:0 帧数:0
+</span><span class='line'>          发送数据包:334077 错误:0 丢弃:0 过载:0 载波:0
+</span><span class='line'>          碰撞:0 发送队列长度:1000 
+</span><span class='line'>          接收字节:486532283 (486.5 MB)  发送字节:49164276 (49.1 MB)
+</span><span class='line'>          中断:18 
+</span><span class='line'>
+</span><span class='line'>lo        Link encap:本地环回  
+</span><span class='line'>          inet 地址:127.0.0.1  掩码:255.0.0.0
+</span><span class='line'>          inet6 地址: ::1/128 Scope:Host
+</span><span class='line'>          UP LOOPBACK RUNNING  MTU:65536  跃点数:1
+</span><span class='line'>          接收数据包:14772 错误:0 丢弃:0 过载:0 帧数:0
+</span><span class='line'>          发送数据包:14772 错误:0 丢弃:0 过载:0 载波:0
+</span><span class='line'>          碰撞:0 发送队列长度:0 
+</span><span class='line'>          接收字节:1329005 (1.3 MB)  发送字节:1329005 (1.3 MB)</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>2.查看网卡是否被识别及型号</h1>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ lspci | grep Ethernet
+</span><span class='line'>0c:00.0 Ethernet controller: Broadcom Corporation NetXtreme BCM5761 Gigabit Ethernet PCIe (rev 10)</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>3.使用ethtool工具查看网卡的详细信息：</h1>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo ethtool eth0
+</span><span class='line'>[sudo] password for xiaobaoqiu: 
+</span><span class='line'>Settings for eth0:
+</span><span class='line'>    Supported ports: [ TP ]
+</span><span class='line'>    Supported link modes:   10baseT/Half 10baseT/Full 
+</span><span class='line'>                            100baseT/Half 100baseT/Full 
+</span><span class='line'>                            1000baseT/Half 1000baseT/Full 
+</span><span class='line'>    Supported pause frame use: No
+</span><span class='line'>    Supports auto-negotiation: Yes
+</span><span class='line'>    Advertised link modes:  10baseT/Half 10baseT/Full 
+</span><span class='line'>                            100baseT/Half 100baseT/Full 
+</span><span class='line'>                            1000baseT/Half 1000baseT/Full 
+</span><span class='line'>    Advertised pause frame use: Symmetric
+</span><span class='line'>    Advertised auto-negotiation: Yes
+</span><span class='line'>    Link partner advertised link modes:  10baseT/Half 10baseT/Full 
+</span><span class='line'>                                         100baseT/Half 100baseT/Full 
+</span><span class='line'>    Link partner advertised pause frame use: No
+</span><span class='line'>    Link partner advertised auto-negotiation: Yes
+</span><span class='line'>    Speed: 100Mb/s      #网卡速度
+</span><span class='line'>    Duplex: Full        #全双工
+</span><span class='line'>    Port: Twisted Pair  #网络类型-双绞线
+</span><span class='line'>    PHYAD: 1
+</span><span class='line'>    Transceiver: internal
+</span><span class='line'>    Auto-negotiation: on
+</span><span class='line'>    MDI-X: on
+</span><span class='line'>    Supports Wake-on: g
+</span><span class='line'>    Wake-on: g          #唤醒起用（远程关机开机需设置）
+</span><span class='line'>    Current message level: 0x000000ff (255)
+</span><span class='line'>                   drv probe link timer ifdown ifup rx_err tx_err
+</span><span class='line'>    Link detected: yes  #链路检测</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.查看网卡的连接状态</h1>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo mii-tool eth0
+</span><span class='line'>eth0: negotiated 100baseTx-FD, link ok</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>5.网卡数据包收发统计</h1>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/octopress$ sudo ethtool -S eth0
+</span><span class='line'>NIC statistics:
+</span><span class='line'>     rx_octets: 494545915
+</span><span class='line'>     rx_fragments: 0
+</span><span class='line'>     rx_ucast_packets: 437748
+</span><span class='line'>     rx_mcast_packets: 147474
+</span><span class='line'>     rx_bcast_packets: 128799
+</span><span class='line'>     rx_fcs_errors: 0
+</span><span class='line'>     rx_align_errors: 0
+</span><span class='line'>     rx_xon_pause_rcvd: 0
+</span><span class='line'>     rx_xoff_pause_rcvd: 0
+</span><span class='line'>     ...</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1306,89 +1511,6 @@ vsftpd入门专题：<a href="http://os.51cto.com/art/201008/222036.htm">http://
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/12/31/githubbo-ke-jia-ping-lun/">Github博客加评论</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2014-12-31T01:43:36+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>31</span><span class='date-suffix'>st</span>, <span class='date-year'>2014</span></span> <span class='time'>1:43 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>想给自己的博客加评论很久了，一致没时间。今天抽了点时间，上午把google和百度检索的搞定了，下午抽时间把评论系统加上。</p>
-
-<p>本文的评论是基于disqus实现的。</p>
-
-<h1>1.Disqus介绍</h1>
-
-<p>Disqus号称世界级的评论系统，对现在各种系统的支持都比较全面。</p>
-
-<p>官方网站：<a href="https://disqus.com/">https://disqus.com/</a></p>
-
-<h1>2.引用Disqus</h1>
-
-<h3>2.1 注册</h3>
-
-<p>在Disqus官网 <a href="https://disqus.com/">https://disqus.com/</a> 注册帐号</p>
-
-<h3>2.2 Universal Code</h3>
-
-<p><strong>(1).Add Disqus to your site，填写自己的网址，Disqus URL和Category等</strong></p>
-
-<p><img src="/images/tools/disqus_add.png"></p>
-
-<p><strong>(2).Choose your platform，生成Disqus Code</strong></p>
-
-<p><img src="/images/tools/disqus_platform.png"></p>
-
-<p>这里选择Universal Code，然后会生成一段代码：</p>
-
-<p><img src="/images/tools/disqus_code.png"></p>
-
-<p><strong>(3).引用Disqus Code</strong></p>
-
-<p>将生成的代码嵌入到我们的博客系统中，以我的博客为例，找到source/_includes/post目录下的disqus_thread.html文件，将生成的代码放到这个文件中</p>
-
-<p>在source/_layouts中模板页post.html中，引入disqus_thread.html文件：</p>
-
-<p><img src="/images/tools/disqus_code_use.png"></p>
-
-<p>其中的page.comments，在写每篇文章的时候进行设置，如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>layout: post
-</span><span class='line'>title: "github博客加评论"
-</span><span class='line'>date: 2014-12-30 17:43:36 +0000
-</span><span class='line'>comments: true
-</span><span class='line'>categories: Tools</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>3 效果</h3>
-
-<p><img src="/images/tools/disqus_result.png"></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/15">&larr; Older</a>
@@ -1406,6 +1528,10 @@ vsftpd入门专题：<a href="http://os.51cto.com/art/201008/222036.htm">http://
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/shallowetagheaderfilter/">ShallowEtagHeaderFilter</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
@@ -1443,10 +1569,6 @@ vsftpd入门专题：<a href="http://os.51cto.com/art/201008/222036.htm">http://
         <a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务2-AOP</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1471,7 +1593,7 @@ vsftpd入门专题：<a href="http://os.51cto.com/art/201008/222036.htm">http://
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>

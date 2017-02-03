@@ -9,11 +9,9 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.自动流转任务
-2.实现 2.1 ServiceTask
-2.2 主动触发UserTask
-2.3 异步触发UserTask
-2.4 对比选择 1.自动流转任务 用户任务是审核流程中最重要的节点, 在流程设计中通常会遇到需要自动流转的需求, 比如请假半天的自动通过. 2.实现 &hellip;">
+  <meta name="description" content="1.背景
+2.Mysql流式读取
+3.ShallowEtagHeaderFilter 1.背景 之前组内遇到的一个 ShallowEtagHeaderFilter 导致流式导出失效的问题, 具体的问题分析不是我做的, 这里记录下问题及原理. 现象就是一个数据导出接口, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -79,6 +77,306 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2017/02/03/shallowetagheaderfilter/">ShallowEtagHeaderFilter</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2017-02-03T11:56:21+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>3</span><span class='date-suffix'>rd</span>, <span class='date-year'>2017</span></span> <span class='time'>11:56 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.%E8%83%8C%E6%99%AF">1.背景</a></li>
+<li><a href="#2.Mysql%E6%B5%81%E5%BC%8F%E8%AF%BB%E5%8F%96">2.Mysql流式读取</a></li>
+<li><a href="#3.ShallowEtagHeaderFilter">3.ShallowEtagHeaderFilter</a></li>
+</ul>
+
+
+<h2 id="1.背景">1.背景</h2>
+
+
+<p>之前组内遇到的一个 ShallowEtagHeaderFilter 导致流式导出失效的问题, 具体的问题分析不是我做的, 这里记录下问题及原理.</p>
+
+<p>现象就是一个数据导出接口, 用户的频繁调用导致线上内存吃满, 进而频繁 GC 导致 CPU 过高最终影响用户请求.</p>
+
+<h2 id="2.Mysql流式读取">2.Mysql流式读取</h2>
+
+
+<p>先交代一下导出接口的实现方式, 考虑到导出数据可能比较大导致撑爆内存, 数据导出是流式导出的.</p>
+
+<p>默认情况下, 我们的select从服务器一次取出所有数据放在客户端内存中, 当一条SQL返回数据量较大时可能会出现OOM.</p>
+
+<p>这里首先涉及到Mysql如何配置流式读取数据, 涉及到两个配置(第一个配置很重要很容易被忘记)</p>
+
+<pre><code>1.Mysql连接串中配置上参数useCursorFetch=true;
+2.Sql中配置上FetchSize等参数
+</code></pre>
+
+<p>下面以MyBatis为例子, 通过设置Mapper文件中select的属性来启用这一特性</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;select id="xxx" fetchSize="100" resultSetType="FORWARD_ONLY"&gt;
+</span><span class='line'>  ...
+</span><span class='line'>&lt;/select&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>然后, 配合 ResultHandler 就可以实现逐行流式处理数据库中的记录.</p>
+
+<p>我们就是采用这种方式, 流式获取数据写到 Response 的输出流中.</p>
+
+<h2 id="3.ShallowEtagHeaderFilter">3.ShallowEtagHeaderFilter</h2>
+
+
+
+
+<h4 id="3.1 Content-Length 和 Transfer-Encoding">3.1 Content-Length 和 Transfer-Encoding</h4>
+
+
+<p>在描述问题之前, 我们先普及一下 Http 请求中 Content-Length 和 Transfer-Encoding 的知识.</p>
+
+<p>Content-Length 用于描述HTTP消息实体的传输长度(the transfer-length of the message-body), 需要注意消息实体长度和消息实体传输长度是有区别, 比如说gzip压缩下, 消息实体长度是压缩前的长度, 消息实体的传输长度是gzip压缩后的长度.</p>
+
+<p>通过读取 Content-Length 这个信息, 服务器/客户端可以预先知道数据量的大小, 以便预先分配空间.</p>
+
+<p>Transfer-Encoding 所描述的是消息请求(request)和响应(response)所附带的实体对象(entity)的传输形式. 可选值有: chunked 和 identity, 其中chunked指把要发送传输的数据切割成一系列的块数据传输, identity指传输时不做任何处理, 自身的本质数据形式传输. 举个例子, 如果我们要传输一本小说到服务器, chunked方式就会先把这本小说分成一章一章的, 然后逐个章节上传, 而identity方式则是从小说的第一个字按顺序传输到最后一个字结束.</p>
+
+<p>HTTP/1.1 规定, 所有服务器必须支持 Chunked 类型的 Transfer-Encoding, 通过这个头部, 服务器不必在返回回应报文的时候预先知道返回 Body 的大小, 而是将数据分割到一个一个的 Chunk 中(每个 Chunk 通过特定的头部和尾部区分, 最后一个 Chunk 大小为 0, 以表示报文结束), 然后持续不断地写入 TCP 流, 通过这个机制, 可以实现服务器数据到客户端的流式输出.</p>
+
+<p>注意关于 Content-Length 和 Transfer-Encoding 一个准则: 有了Transfer-Encoding, 则不能有Content-Length</p>
+
+<p>参考:
+<a href="https://tools.ietf.org/html/rfc2616#section-4.4.">https://tools.ietf.org/html/rfc2616#section-4.4.</a>
+<a href="http://www.cnblogs.com/jcli/archive/2012/10/19/2730440.html">http://www.cnblogs.com/jcli/archive/2012/10/19/2730440.html</a>
+<a href="http://blog.csdn.net/pud_zha/article/details/8809878">http://blog.csdn.net/pud_zha/article/details/8809878</a></p>
+
+<h4 id="3.2 问题分析">3.2 问题分析</h4>
+
+
+<p>按照我们上面的分析, 我们的 Response 的 Transfer-Encoding 肯定是 chunked, 并且没有设置 Content-Length.但是我们发现请求的 Response 中存在 Content-Length 字段.</p>
+
+<p>我们将请求的 Response 分为三个阶段:
+    (1).从数据库读取数据;
+    (2).服务器端整理数据发往浏览器端;
+    (3).浏览器端接受数据;</p>
+
+<p>现在已知从 Mysql 中读取数据是流式的, 而浏览器接收到的数据不是流式的, 因此问题审核出在服务器端.</p>
+
+<p>最终定位到的罪魁祸首是一个 ShallowEtagHeaderFilter 的 Filter.</p>
+
+<h4 id="3.3 ShallowEtagHeaderFilter原理">3.3 ShallowEtagHeaderFilter原理</h4>
+
+
+<p>ShallowEtagHeaderFilter 继承了 OncePerRequestFilter, 我们可以分析一下 ShallowEtagHeaderFilter 的主要代码逻辑:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>@Override
+</span><span class='line'>protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+</span><span class='line'>      throws ServletException, IOException {
+</span><span class='line'>
+</span><span class='line'>  response = new ShallowEtagResponseWrapper(response);    //1.将所有的请求包装成 ShallowEtagResponseWrapper
+</span><span class='line'>
+</span><span class='line'>  filterChain.doFilter(request, response);        //2. 其他 filter
+</span><span class='line'>
+</span><span class='line'>  updateResponse(request, response);      //3.返回给客户端之前处理一次 response
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>看一下包装 ShallowEtagResponseWrapper 做了什么:
+(其实看注释就已经知道, 将所有写到 output stream 和 writer 的内容缓冲起来放到, 并提供 oByteArray() 方法用于读取缓冲的数据):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * {@link HttpServletRequest} wrapper that buffers all content written to the
+</span><span class='line'> * {@linkplain #getOutputStream() output stream} and {@linkplain #getWriter() writer},
+</span><span class='line'> * and allows this content to be retrieved via a {@link #toByteArray() byte array}.
+</span><span class='line'> */
+</span><span class='line'>private static class ShallowEtagResponseWrapper extends HttpServletResponseWrapper {
+</span><span class='line'>
+</span><span class='line'>  private final ByteArrayOutputStream content = new ByteArrayOutputStream();
+</span><span class='line'>
+</span><span class='line'>  private final ServletOutputStream outputStream = new ResponseServletOutputStream();
+</span><span class='line'>
+</span><span class='line'>  private PrintWriter writer;
+</span><span class='line'>  ...
+</span><span class='line'>  public PrintWriter getWriter() throws IOException { //获取 writer, 采用自定义的 ResponsePrintWriter, 后续的写会将内容写到 content 中
+</span><span class='line'>      if (this.writer == null) {
+</span><span class='line'>          String characterEncoding = getCharacterEncoding();
+</span><span class='line'>          this.writer = (characterEncoding != null ? new ResponsePrintWriter(characterEncoding) :
+</span><span class='line'>                  new ResponsePrintWriter(WebUtils.DEFAULT_CHARACTER_ENCODING));
+</span><span class='line'>      }
+</span><span class='line'>      return this.writer;
+</span><span class='line'>  }
+</span><span class='line'>  private byte[] toByteArray() {  // 读取 content 内容
+</span><span class='line'>      return this.content.toByteArray();
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  // 自定义 ServletOutputStream, write操作将内容写入到 content 中
+</span><span class='line'>  private class ResponseServletOutputStream extends ServletOutputStream {
+</span><span class='line'>      @Override
+</span><span class='line'>      public void write(int b) throws IOException {
+</span><span class='line'>          content.write(b);   //写到 content 中
+</span><span class='line'>      }
+</span><span class='line'>      ...
+</span><span class='line'>  }
+</span><span class='line'>
+</span><span class='line'>  // 自定义 PrintWriter, 写入到 content 中
+</span><span class='line'>  private class ResponsePrintWriter extends PrintWriter {
+</span><span class='line'>      private ResponsePrintWriter(String characterEncoding) throws UnsupportedEncodingException {
+</span><span class='line'>          super(new OutputStreamWriter(content, characterEncoding));
+</span><span class='line'>      }
+</span><span class='line'>      ...
+</span><span class='line'>  }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>最后我们看看 updateResponse 做了什么事:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>private void updateResponse(HttpServletRequest request, HttpServletResponse response) throws IOException {
+</span><span class='line'>  ...
+</span><span class='line'>  byte[] body = responseWrapper.toByteArray();        //缓冲起来的数据
+</span><span class='line'>  int statusCode = responseWrapper.getStatusCode();
+</span><span class='line'>
+</span><span class='line'>  if (isEligibleForEtag(request, responseWrapper, statusCode, body)) {
+</span><span class='line'>      String responseETag = generateETagHeaderValue(body);    //基于内容生成 ETag
+</span><span class='line'>      response.setHeader(HEADER_ETAG, responseETag);      //设置 ETag Header
+</span><span class='line'>
+</span><span class='line'>      String requestETag = request.getHeader(HEADER_IF_NONE_MATCH);   //If-None-Match 
+</span><span class='line'>      if (responseETag.equals(requestETag)) {                 //请求的If-None-Match和ETag相同, 则304
+</span><span class='line'>          response.setStatus(HttpServletResponse.SC_NOT_MODIFIED);    //304
+</span><span class='line'>      } else {
+</span><span class='line'>          copyBodyToResponse(body, response);     //将缓冲的内容写入到 response 中
+</span><span class='line'>      }
+</span><span class='line'>  } else {
+</span><span class='line'>      ...
+</span><span class='line'>      copyBodyToResponse(body, response);
+</span><span class='line'>  }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>private void copyBodyToResponse(byte[] body, HttpServletResponse response) throws IOException {
+</span><span class='line'>  if (body.length &gt; 0) {
+</span><span class='line'>      response.setContentLength(body.length);         //设置 Content-Length
+</span><span class='line'>      FileCopyUtils.copy(body, response.getOutputStream());       //ShallowEtagResponseWrapper数据拷贝到response中
+</span><span class='line'>  }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>总结 ShallowEtagHeaderFilter 作用:
+    1.ShallowEtagHeaderFilter 缓冲了写到 response 的所有数据;
+    2.如果请求的 If-None-Match 头部信息和当前根据内容生成的 ETag 相同,则请求为 304;
+    3.最后 ShallowEtagHeaderFilter 将缓冲的所有内容一次性写到 response 中;</p>
+
+<p>需要注意的是, 使用这个 ShallowEtagHeaderFilter, 服务端的性能并没有得到提高, 因为请求逻辑还是执行了, 只是没往客户端发送, 因此节省了一定的网络带宽.</p>
+
+<p>另外, 这个 ShallowEtagHeaderFilter 会让 Transfer-Encoding=Chunked 失效(我们这里就是这种情况).</p>
+
+<h4 id="3.4 解决方案">3.4 解决方案</h4>
+
+
+<p>根据上面的分析, 我们这里的问题就很好解释了, ShallowEtagHeaderFilter 将我们的流式写缓冲起来, 最后一次性写给客户端并且设置上了 Content-Length 字段.</p>
+
+<p>关于这个问题, 其实很多人都遇到坑了, 有人给 Spring 提 Bug 了, 但是官网认为只是误用(我赞同这种观点).
+参考: <a href="https://jira.spring.io/browse/SPR-10855">https://jira.spring.io/browse/SPR-10855</a></p>
+
+<p>解决很简单, 去掉 ShallowEtagHeaderFilter 这个过滤器, 或者给 ShallowEtagHeaderFilter 配置 url pattern 的时候排除掉流式的接口.</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1005,208 +1303,6 @@ Activiti版本为：5.22.0</p>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2016/12/16/activitibiao/">Activiti表</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2016-12-16T16:31:34+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>16</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>4:31 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>整理 Activiti 中的表含义，以及一些重要表的字段。本文的 Activiti 版本为 5.22.0</p>
-
-<ul>
-<li><a href="#1.%E8%A1%A8%E5%90%AB%E4%B9%89">1.表含义</a></li>
-</ul>
-
-
-<h2 id="1.表含义">1.表含义</h2>
-
-
-<p>Activiti 中表定义 activiti-engine 这个 module 下，具体位置 /resources/org.activiti/db/create 下，包括各种类型数据库的建表语句，这里我们以Mysql为DB。</p>
-
-<p>首先简单介绍表的前缀的含义，参考官网：<a href="http://www.activiti.org/userguide/index.html#database.tables.explained">http://www.activiti.org/userguide/index.html#database.tables.explained</a></p>
-
-<p>表名称包含三个部分，第一个为所有的表共有的ACT_表示Activiti，第二部分表示表的使用场景</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>
-</span><span class='line'>ACT_RE_*: RE表示repository，这个前缀的表包含了流程定义和流程静态资源
-</span><span class='line'>ACT_RU_*: RU表示runtime，这些运行时的表，包含流程实例，任务，变量，异步任务等运行中的数据。Activiti只在流程实例执行过程中保存这些数据， 在流程结束时就会删除这些记录。
-</span><span class='line'>ACT_ID_*: ID表示identity，这些表包含身份信息，比如用户，组等。
-</span><span class='line'>ACT_HI_*: HI表示history，这些表包含历史数据，比如历史流程实例， 变量，任务等。
-</span><span class='line'>ACT_GE_*: 通用数据， 用于不同场景下。
-</span><span class='line'>ACT_EVT_*: EVT表示EVENT，目前只有一张表ACT_EVT_LOG，存储事件处理日志，方便管理员跟踪处理。</span></code></pre></td></tr></table></div></figure>
-
-
-<p>下面是各个表的大致意义：</p>
-
-<table>
-<thead>
-<tr>
-<th style="text-align:center;">表 </th>
-<th style="text-align:left;"> 意义 </th>
-<th style="text-align:left;"> 备注 </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align:center;">ACT_EVT_LOG         </td>
-<td style="text-align:left;"> 事件处理日志 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_GE_BYTEARRAY    </td>
-<td style="text-align:left;"> 二进制数据表 </td>
-<td style="text-align:left;"> 保存流程定义图片和xml </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_GE_PROPERTY     </td>
-<td style="text-align:left;"> 属性数据表存储整个流程引擎级别的数据 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_HI_ACTINST      </td>
-<td style="text-align:left;"> 历史节点表 </td>
-<td style="text-align:left;"> 只记录usertask内容 </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_HI_ATTACHMENT   </td>
-<td style="text-align:left;"> 历史附件表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_HI_COMMENT      </td>
-<td style="text-align:left;"> 历史意见表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_HI_DETAIL       </td>
-<td style="text-align:left;"> 历史详情表，提供历史变量的查询 </td>
-<td style="text-align:left;"> 流程中产生的变量详细，包括控制流程流转的变量等</td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_HI_IDENTITYLINK </td>
-<td style="text-align:left;"> 历史流程人员表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_HI_PROCINST     </td>
-<td style="text-align:left;"> 历史流程实例表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_HI_TASKINST     </td>
-<td style="text-align:left;"> 历史任务实例表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_HI_VARINST      </td>
-<td style="text-align:left;"> 历史变量表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_ID_GROUP        </td>
-<td style="text-align:left;"> 用户组信息表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_ID_INFO         </td>
-<td style="text-align:left;"> 用户扩展信息表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_ID_MEMBERSHIP   </td>
-<td style="text-align:left;"> 用户与用户组对应信息表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_ID_USER         </td>
-<td style="text-align:left;"> 用户信息表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_PROCDEF_INFO    </td>
-<td style="text-align:left;">  </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_RE_DEPLOYMENT   </td>
-<td style="text-align:left;"> 部署信息表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_RE_MODEL        </td>
-<td style="text-align:left;"> 流程设计模型部署表 </td>
-<td style="text-align:left;"> 流程设计器设计流程后，保存数据到该表 </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_RE_PROCDEF      </td>
-<td style="text-align:left;"> 流程定义数据表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_RU_EVENT_SUBSCR </td>
-<td style="text-align:left;"> throwEvent，catchEvent时间监听信息表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_RU_EXECUTION    </td>
-<td style="text-align:left;"> 运行时流程执行实例表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_RU_IDENTITYLINK </td>
-<td style="text-align:left;"> 运行时流程人员表，主要存储任务节点与参与者的相关信息 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_RU_JOB          </td>
-<td style="text-align:left;"> 运行时定时任务数据表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_RU_TASK         </td>
-<td style="text-align:left;"> 运行时任务节点表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-<tr>
-<td style="text-align:center;">ACT_RU_VARIABLE     </td>
-<td style="text-align:left;"> 运行时流程变量数据表 </td>
-<td style="text-align:left;"> </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>参考：<a href="http://craft6.cn/detail/activiti_research_database.do">http://craft6.cn/detail/activiti_research_database.do</a>
-<a href="http://blog.csdn.net/flygoa/article/details/51895228">http://blog.csdn.net/flygoa/article/details/51895228</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/2">&larr; Older</a>
@@ -1222,6 +1318,10 @@ Activiti版本为：5.22.0</p>
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/03/shallowetagheaderfilter/">ShallowEtagHeaderFilter</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2017/02/03/activitizi-dong-liu-zhuan-ren-wu/">Activiti自动流转任务</a>
@@ -1259,10 +1359,6 @@ Activiti版本为：5.22.0</p>
         <a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务2-AOP</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/07/07/springshi-wu/">从代理到Spring事务3-Spring事务</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1287,7 +1383,7 @@ Activiti版本为：5.22.0</p>
 <li><a class='list-group-item' href='/blog/categories/qa/'>qa (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/reading/'>reading (7)</a></li>
 <li><a class='list-group-item' href='/blog/categories/search/'>search (9)</a></li>
-<li><a class='list-group-item' href='/blog/categories/spring/'>spring (7)</a></li>
+<li><a class='list-group-item' href='/blog/categories/spring/'>spring (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
