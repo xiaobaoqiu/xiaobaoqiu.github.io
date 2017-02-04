@@ -4,7 +4,7 @@
   <title><![CDATA[xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2017-02-04T17:21:43+08:00</updated>
+  <updated>2017-02-04T17:22:17+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,306 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Build Openjdk]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2017/02/04/build-openjdk/"/>
+    <updated>2017-02-04T14:00:38+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2017/02/04/build-openjdk</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.%E5%87%86%E5%A4%87%E5%B7%A5%E4%BD%9C">1.准备工作</a></li>
+<li><a href="#2.Build">2.Build</a></li>
+<li><a href="#3.%E9%97%AE%E9%A2%98">3.问题</a></li>
+<li><a href="#4.%E5%90%8E%E7%BB%AD">4.后续</a></li>
+</ul>
+
+
+<p>前几天看了微博上build openJDK 的一篇文章, 决定也尝试一下自己 build 出来一个 JDK.下面是 build 的过程以及遇到的一些问题及解决办法.
+本文基于 Ubutu 14.04 LTS 版本.</p>
+
+<p>build 过程涉及 openJDK 部分源码的修改, 修改完的代码我上传到github了, 地址: <a href="https://github.com/xiaobaoqiu/ubuntu_build_openjdk7.git">https://github.com/xiaobaoqiu/ubuntu_build_openjdk7.git</a></p>
+
+<h2 id="1.准备工作">1.准备工作</h2>
+
+
+<p>OpenJDK 官网: <a href="http://openjdk.java.net/">http://openjdk.java.net/</a></p>
+
+<p>注意OpenJDK的版本控制使用 Mercurial 做的.</p>
+
+<p>下面是 build 之前的一些准备工作, 主要包含几个:</p>
+
+<p><em>1.安装 Mercurial</em>
+Mercurial 官网: <a href="https://www.mercurial-scm.org/">https://www.mercurial-scm.org/</a></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install mercurial</span></code></pre></td></tr></table></div></figure>
+
+
+<p><em>2.下载 openJDK 源码</em></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>hg clone http://hg.openjdk.java.net/jdk7/jdk7</span></code></pre></td></tr></table></div></figure>
+
+
+<p>之后, 进入源码目录, 有个 get_source.sh 的脚本, 执行就可以了.</p>
+
+<p><em>3.安装 build 需要的工具</em>
+就是 g++ 之类的 make 需要的工具.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install gawk g++ libcups2-dev libasound2-dev libfreetype6-dev libx11-dev libxt-dev libxext-dev libxrender-dev libxtst-dev libfontconfig1-dev</span></code></pre></td></tr></table></div></figure>
+
+
+<p><em>4.准备一个BOOT JDK</em>
+需要注意, 如果 build openJDK7, 需要准备 JDK6(如果用JDK7, 会碰到一个错误, 后面会讲到).</p>
+
+<h2 id="2.Build">2.Build</h2>
+
+
+<p>写了简单的小shell, 配置一些环境变量(如 BOOT JDK 位置).</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>cd ./jdk7
+</span><span class='line'>
+</span><span class='line'>unset JAVA_HOME
+</span><span class='line'>
+</span><span class='line'>export LANG=C
+</span><span class='line'>export ALT_BOOTDIR="/home/q/java/jdk1.6.0_45"
+</span><span class='line'>
+</span><span class='line'># 并行编译线程数，与CPU核数一致
+</span><span class='line'>export HOTSPOT_JOBS=8
+</span><span class='line'>export ALT_PARALLEL_COMPILE_JOBS=8
+</span><span class='line'>
+</span><span class='line'>export ALLOW_DOWNLOADS=true
+</span><span class='line'>
+</span><span class='line'>export SKIP_COMPARE_IMGAGES=true
+</span><span class='line'>export USE_PRECOMPILED_HEADER=true
+</span><span class='line'>
+</span><span class='line'># Compiling contents
+</span><span class='line'>export BUILD_LANGTOOLS=true
+</span><span class='line'>export BUILD_HOTSOPT=true
+</span><span class='line'>export BUILD_JDK=true
+</span><span class='line'>
+</span><span class='line'># Avoid javaws & applet build
+</span><span class='line'>BUILD_DEPLOY=false
+</span><span class='line'># Avoid installation build
+</span><span class='line'>BUILD_INSTALL=false
+</span><span class='line'>export EXTRA_LIBS=/usr/lib/x86_64-linux-gnu/libasound.so
+</span><span class='line'>make sanity && time make</span></code></pre></td></tr></table></div></figure>
+
+
+<p>和源码在同级目录(自己调整):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Work/SourceCode/jdk/openjdk7$ ll
+</span><span class='line'>-rwxrwxr-x  1 xiaobaoqiu xiaobaoqiu  735  2月  4 11:48 build7.sh*
+</span><span class='line'>drwxrwxr-x  4 xiaobaoqiu xiaobaoqiu 4096  2月  3 17:30 hgforest-crew/
+</span><span class='line'>drwxrwxr-x 14 xiaobaoqiu xiaobaoqiu 4096  2月  4 14:01 jdk7/</span></code></pre></td></tr></table></div></figure>
+
+
+<p>之后, 执行 build7.sh 脚本就行了(需要chmod +x build7.sh).
+幸运的话就没问题了(基本不可能没问题), 下面是我碰到的一些问题和解决办法.</p>
+
+<h2 id="3.问题">3.问题</h2>
+
+
+<p>下面是 build 过程的一些问题总结.</p>
+
+<p><em>1.This OS is not supported</em></p>
+
+<p>错误信息大致如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>"*** This OS is not supported:" `uname -a`; exit 1;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这是由于内核版本太高了, 需要简单修改 Makefile, 首先看一下当前的 Linux 系统版本:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Work/SourceCode/jdk/openjdk7$ uname -r
+</span><span class='line'>3.13.0-63-generic</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在 jdk7/hotspot/make/linux/Makefile 文件中修改 SUPPORTED_OS_VERSION, 增加自己的内核版本支持</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>SUPPORTED_OS_VERSION = 2.4% 2.5% 2.6% 2.7% 3.13%</span></code></pre></td></tr></table></div></figure>
+
+
+<p><em>2.error: &ldquo;__LEAF&rdquo; redefined</em>
+这是 openJDK 源码和 gcc 源码冲突, 一个bug, 参见: <a href="http://bugs.java.com/view_bug.do?bug_id=7103224">http://bugs.java.com/view_bug.do?bug_id=7103224</a></p>
+
+<p>需要按照 <a href="http://hg.openjdk.java.net/lambda/lambda/hotspot/rev/a6eef545f1a2">http://hg.openjdk.java.net/lambda/lambda/hotspot/rev/a6eef545f1a2</a> 修改代码, 涉及的代码包括以下 6 个文件, 具体的完整代码可以从文章开头提供的 github 地址下载.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>jdk7/hotspot/src/share/vm/opto/addnode.cpp
+</span><span class='line'>jdk7/hotspot/src/share/vm/prims/jniCheck.cpp
+</span><span class='line'>jdk7/hotspot/src/share/vm/prims/jvmtiEnter.xsl
+</span><span class='line'>jdk7/hotspot/src/share/vm/prims/jvmtiEnv.cpp
+</span><span class='line'>jdk7/hotspot/src/share/vm/prims/jvmtiExport.cpp
+</span><span class='line'>jdk7/hotspot/src/share/vm/runtime/interfaceSupport.hpp</span></code></pre></td></tr></table></div></figure>
+
+
+<p><em>3.error: converting &lsquo;false&rsquo; to pointer type &lsquo;methodOop&rsquo;</em>
+错误信息:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/home/xiaobaoqiu/Work/SourceCode/jdk/openjdk7/jdk7/hotspot/src/share/vm/oops/constantPoolOop.cpp:272:39: error: converting 'false' to pointer type 'methodOop' [-Werror=conversion-null]
+</span><span class='line'>   if (cpool-&gt;cache() == NULL)  return false;  // nothing to load yet
+</span><span class='line'>                                       ^
+</span><span class='line'>cc1plus: all warnings being treated as errors</span></code></pre></td></tr></table></div></figure>
+
+
+<p>修改(具体的完整代码可以从文章开头提供的 github 地址下载.):
+/openjdk/hotspot/src/share/vm/oops/constantPoolOop.cpp 第272行 return false改为return (methodOop)false;</p>
+
+<p><em>4.error: converting &lsquo;false&rsquo; to pointer type &lsquo;Node</em>&rsquo;*
+错误信息</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/home/xiaobaoqiu/Work/SourceCode/jdk/openjdk7/jdk7/hotspot/src/share/vm/opto/loopnode.cpp:896:49: error: converting 'false' to pointer type 'Node*' [-Werror=conversion-null]
+</span><span class='line'>   if (expr == NULL || expr-&gt;req() != 3)  return false;
+</span><span class='line'>                                                 ^
+</span><span class='line'>cc1plus: all warnings being treated as errors</span></code></pre></td></tr></table></div></figure>
+
+
+<p>修改(具体的完整代码可以从文章开头提供的 github 地址下载.):
+openjdk/hotspot/src/share/vm/opto/loopnode.cpp: 第896行  return false改为return (Node*)false;</p>
+
+<p><em>5.Unable to load native library: /home/q/java/jdk1.7.0_80/jre/lib/amd64/libjava.so</em></p>
+
+<p>错误信息:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Unable to load native library: /home/q/java/jdk1.7.0_80/jre/lib/amd64/libjava.so: symbol JVM_SetNativeThreadName, version SUNWprivate_1.1 not defined in file libjvm.so with link time reference</span></code></pre></td></tr></table></div></figure>
+
+
+<p>解决: 使用 JDK6 作为BOOT JDK</p>
+
+<p><em>6.gcc: error: unrecognized command line option &lsquo;-mimpure-text&rsquo;</em>
+这个-mimpure-text是gcc给Solaris的编译选项，所以注释掉即可</p>
+
+<p>修改/jdk/make/common/shared/Compiler-gcc.gmk, 去掉 -mimpure-text (具体的完整代码可以从文章开头提供的 github 地址下载.)</p>
+
+<p><em>7. Error: time is more than 10 years from present: 1136059200000</em></p>
+
+<p>错误信息</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Error: time is more than 10 years from present: 1136059200000
+</span><span class='line'>java.lang.RuntimeException: time is more than 10 years from present: 1136059200000
+</span><span class='line'>  at build.tools.generatecurrencydata.GenerateCurrencyData.makeSpecialCaseEntry(GenerateCurrencyData.java:285)
+</span><span class='line'>  at build.tools.generatecurrencydata.GenerateCurrencyData.buildMainAndSpecialCaseTables(GenerateCurrencyData.java:225)
+</span><span class='line'>  at build.tools.generatecurrencydata.GenerateCurrencyData.main(GenerateCurrencyData.java:154)
+</span><span class='line'>make[4]: *** [/home/xiaobaoqiu/Work/SourceCode/jdk/openjdk7/jdk7/build/linux-amd64/lib/currency.data] Error 1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>修正 jdk7/jdk/src/share/classes/java/util/CurrencyData.properties 文件, 保证时间在 10 年之内.(具体的完整代码可以从文章开头提供的 github 地址下载.):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>AZ=AZM;2005-12-31-20-00-00;AZN
+</span><span class='line'>MZ=MZM;2006-06-30-22-00-00;MZN
+</span><span class='line'>RO=ROL;2005-06-30-21-00-00;RON
+</span><span class='line'>TR=TRL;2004-12-31-22-00-00;TRY
+</span><span class='line'>VE=VEB;2008-01-01-04-00-00;VEF</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h2 id="4.后续">4.后续</h2>
+
+
+<p>经过一番折腾之后, build 成功:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-- Build times ----------
+</span><span class='line'>Target all_product_build
+</span><span class='line'>Start 2017-02-04 12:02:33
+</span><span class='line'>End   2017-02-04 12:14:00
+</span><span class='line'>00:00:07 corba
+</span><span class='line'>00:00:05 hotspot
+</span><span class='line'>00:00:07 jaxp
+</span><span class='line'>00:00:05 jaxws
+</span><span class='line'>00:10:59 jdk
+</span><span class='line'>00:00:04 langtools
+</span><span class='line'>00:11:27 TOTAL
+</span><span class='line'>-------------------------</span></code></pre></td></tr></table></div></figure>
+
+
+<p>默认 build 的结果在 jdk7/build/linux-amd64 下.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Work/SourceCode/jdk/openjdk7/jdk7/build/linux-amd64/bin$ ./java -version
+</span><span class='line'>openjdk version "1.7.0-internal"
+</span><span class='line'>OpenJDK Runtime Environment (build 1.7.0-internal-root_2017_02_04_11_48-b00)
+</span><span class='line'>OpenJDK 64-Bit Server VM (build 21.0-b17, mixed mode)</span></code></pre></td></tr></table></div></figure>
+
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Api Blocking]]></title>
@@ -6348,102 +6648,6 @@ DefaultAopProxyFactory</p>
 <a href="https://en.wikipedia.org/wiki/Locality-sensitive_hashing">https://en.wikipedia.org/wiki/Locality-sensitive_hashing</a>
 <a href="http://www.cnblogs.com/maybe2030/p/4953039.html">http://www.cnblogs.com/maybe2030/p/4953039.html</a>
 <a href="http://blog.csdn.net/weiyuweizhi/article/details/8921973">http://blog.csdn.net/weiyuweizhi/article/details/8921973</a></p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Memcached安全性]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/11/19/memcachedxian-zhi-fang-wen-ip/"/>
-    <updated>2015-11-19T18:39:25+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/11/19/memcachedxian-zhi-fang-wen-ip</id>
-    <content type="html"><![CDATA[<ul>
-<li><a href="#1.Memcached%20-l%E5%8F%82%E6%95%B0">1.Memcached -l参数</a></li>
-<li><a href="#2.%E4%BD%BF%E7%94%A8iptable">2.使用iptable</a></li>
-<li><a href="#2.%E4%B8%8D%E9%9C%80%E8%A6%81Root%E6%9D%83%E9%99%90">3.不需要Root权限</a></li>
-</ul>
-
-
-<h2 id="1.Memcached -l参数">1.Memcached -l参数</h2>
-
-
-<p>最近整理了组内使用的Memcached。发现很多问题，其中一个问题就是开发机器测试机器可以直连线上的Memcached。这也是memcached公认的问题：memcached 是一种很简单、有效的协议，但也有其缺点，就是 memcached 自身没有 ACL 控制（或者相当弱）。</p>
-
-<p>Memcache服务器端都是直接通过客户端连接后直接操作，没有任何的验证过程，这样如果服务器是直接暴露在互联网上的话是比较危险，轻则数据泄露被其他无关人员查看，重则服务器被入侵。</p>
-
-<p>乌云也爆料过很多网站的memcached的安全性问题：
-<a href="http://www.wooyun.org/bugs/wooyun-2010-0790">http://www.wooyun.org/bugs/wooyun-2010-0790</a>
-<a href="http://www.wooyun.org/bugs/wooyun-2013-023891">http://www.wooyun.org/bugs/wooyun-2013-023891</a>
-<a href="http://www.wooyun.org/bugs/wooyun-2013-037301">http://www.wooyun.org/bugs/wooyun-2013-037301</a></p>
-
-<p>通过-l参数可以再已定成都上做到安全的限制：</p>
-
-<ol>
-<li>如果限定只要自己能够使用本机的Memcached，可以直接将-l参数绑定到回路地址127.0.0.1.</li>
-<li>如果是后台系统且有自己的私有IP，最好将-l参数绑定到私有IP上(比如192.168.0.200).</li>
-</ol>
-
-
-<p>如果Memcached非要挂在公网IP上，就需要做防火量限制，如下面说道的iptables。</p>
-
-<h2 id="2.使用iptable">2.使用iptable</h2>
-
-
-<p>ACL 最简单的设置方法就是在网络层，直接拒绝掉你的访问，通过iptable可以实现这个功能。</p>
-
-<p>假如我们的一台 memcached 的机器，想拒绝除了自身之外的访问，假如机器自己IP是：XX.XX.XX.184，那么我们可以以root身份用下面几条命令来达到我们的目的：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp -s 127.0.0.1 --dport 6666 -j ACCEPT
-</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp -s XX.XX.XX.184 --dport 6666 -j ACCEPT
-</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp --dport 6666 -j REJECT
-</span><span class='line'>
-</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -L -n --line-number
-</span><span class='line'>Chain INPUT (policy ACCEPT)
-</span><span class='line'>num  target     prot opt source               destination         
-</span><span class='line'>1    ACCEPT     tcp  --  127.0.0.1            0.0.0.0/0           tcp dpt:6666 
-</span><span class='line'>2    ACCEPT     tcp  --  XX.XX.XX.184         0.0.0.0/0           tcp dpt:6666 
-</span><span class='line'>3    REJECT     tcp  --  0.0.0.0/0            0.0.0.0/0           tcp dpt:6666 reject-with icmp-port-unreachable 
-</span><span class='line'>
-</span><span class='line'>Chain FORWARD (policy ACCEPT)
-</span><span class='line'>num  target     prot opt source               destination         
-</span><span class='line'>
-</span><span class='line'>Chain OUTPUT (policy ACCEPT)
-</span><span class='line'>num  target     prot opt source               destination</span></code></pre></td></tr></table></div></figure>
-
-
-<p>这里使用的是iptables的filter功能，其filter是一种链式结构且有从前往后依次执行。满足某一条filter规则就不往下走了。因此基于这个原则，我们需要将最严格的规则放在最前面。</p>
-
-<p>删除某一条规则，其中的1就是iptables -L -n &ndash;line-number中的num号。如下会删除Chain INPUT中的编号为1的规则：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@... ~]sudo iptables -D INPUT 1</span></code></pre></td></tr></table></div></figure>
-
-
-<p>可以使用iptables -F 清空所有规则.</p>
-
-<h2 id="3.不需要Root权限">3.不需要Root权限</h2>
-
-
-<p>启动Memcached不需要Root权限，这样能避免Memcached被入侵而造成更大的危害。</p>
-
-<p>参考：
-<a href="http://blog.couchbase.com/memcached-security">http://blog.couchbase.com/memcached-security</a>
-<a href="http://serverfault.com/questions/424324/how-to-secure-memcached">http://serverfault.com/questions/424324/how-to-secure-memcached</a></p>
 ]]></content>
   </entry>
   

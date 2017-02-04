@@ -9,9 +9,8 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="MYSQL 5.5 之前， UTF8 编码只支持1-3个字节，只支持BMP这部分的unicode编码区， BMP是从哪到哪，到
-http://en.wikipedia.org/wiki/Mapping_of_Unicode_characters
-这里看，基本就是0000～FFFF这一区。 &hellip;">
+  <meta name="description" content="今天项目发布的出现一个异常： 1
+Unsupported major.minor version 51.0 (unable to load class XXX) 一看到这个51.0,直觉想起了JDK 1.7。追查问题发现是新定义了maven-compiler-plugin，并且指定了版本为1.7, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -77,6 +76,85 @@ http://en.wikipedia.org/wiki/Mapping_of_Unicode_characters
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/04/09/maven-compiler-plugin/">Maven-compiler-plugin</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-04-09T07:04:59+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>9</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:04 am</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>今天项目发布的出现一个异常：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Unsupported major.minor version 51.0 (unable to load class XXX)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>一看到这个51.0,直觉想起了JDK 1.7。追查问题发现是新定义了maven-compiler-plugin，并且指定了版本为1.7,但是线上应用机器上的JDK版本是1.6,导致编译产生的1.7版本的class文件在1.6(version为50)上无法执行。</p>
+
+<p>maven-compiler-plugin用来指定编译时候的JDK版本</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;plugin&gt;
+</span><span class='line'>    &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+</span><span class='line'>    &lt;artifactId&gt;maven-compiler-plugin&lt;/artifactId&gt;
+</span><span class='line'>    &lt;version&gt;3.1&lt;/version&gt;
+</span><span class='line'>    &lt;configuration&gt;
+</span><span class='line'>        &lt;source&gt;1.7&lt;/source&gt; &lt;!-- 源代码使用的开发版本 --&gt;
+</span><span class='line'>        &lt;target&gt;1.7&lt;/target&gt; &lt;!-- 需要生成的目标class文件的编译版本 --&gt;
+</span><span class='line'>        &lt;!-- 一般而言，target与source是保持一致的，但是，有时候为了让程序能在其他版本的jdk中运行(对于低版本目标jdk，源代码中需要没有使用低版本jdk中不支持的语法)，会存在target不同于source的情况 --&gt;
+</span><span class='line'>     
+</span><span class='line'>        &lt;!-- 这下面的是可选项 --&gt;
+</span><span class='line'>        &lt;meminitial&gt;128m&lt;/meminitial&gt;
+</span><span class='line'>        &lt;maxmem&gt;512m&lt;/maxmem&gt;
+</span><span class='line'>        &lt;fork&gt;true&lt;/fork&gt; &lt;!-- fork is enable,用于明确表示编译版本配置的可用 --&gt; 
+</span><span class='line'>        &lt;compilerVersion&gt;1.3&lt;/compilerVersion&gt;
+</span><span class='line'>         
+</span><span class='line'>        &lt;!-- 这个选项用来传递编译器自身不包含但是却支持的参数选项 --&gt;
+</span><span class='line'>        &lt;compilerArgument&gt;-verbose -bootclasspath ${java.home}\lib\rt.jar&lt;/compilerArgument&gt;
+</span><span class='line'>         
+</span><span class='line'>    &lt;/configuration&gt;
+</span><span class='line'>&lt;/plugin&gt;</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -450,159 +528,6 @@ Thread pool exhausted通常是min和max不一样大时，表示当前已创建�
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/04/01/enumfan-xu-lie-hua-wen-ti/">Enum反序列化问题</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-04-01T23:01:25+08:00'><span class='date'><span class='date-month'>Apr</span> <span class='date-day'>1</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>11:01 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h1>1.Enum原理</h1>
-
-<p>定义一个Enum，通过编译之后的字节码，我们可以发现其实现原理：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public enum FruitEnum {  
-</span><span class='line'>    APPLE, ORAGE  
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>编译器是在为我们创建一个类，这个类继承自 java.lang.Enum，有两个公共的、静态的、被声明成final的属性，它们的类型就是我们定义的FruitEnum。</p>
-
-<p>编译器还生成了一个静态初始话器，就是字节码中static{};这一行下面的代码，其中的字节码创建了两个FruitEnum对象，同时分别赋值给APPLE和ORANGE这两个属性，调用的构造函数是定义在java.lang.Enum中的protected Enum(String name, int ordinal)方法。</p>
-
-<p>在创建完成两个FruitEnum对象并且分别赋值给APPLE和ORIGIN之后，还创建了一个名叫ENUM$VALUES的数组，然后把APPLE和ORIGIN按照定义的顺序放如这个数组中。</p>
-
-<p>除了这个静态初始化器之外，编译器还为我们生成了两个静态方法，values()和 valueOf(java.lang.String)方法。其中values()方法将ENUM$VALUES数组拷贝一份然后返回，而valueOf(java.lang.String)方法则会调用java.lang.Enum类中的valueOf方法，其作用是根据参数名找到对应的具体的枚举对象，如果找不到的话会抛出一个IllegalArgumentException异常。</p>
-
-<h1>2.Enum序列化反序列化原理及问题</h1>
-
-<h3>2.1原理</h3>
-
-<p>序列化的时候Java仅仅是将枚举对象的name属性输出到结果中，反序列化的时候则是通过java.lang.Enum的valueOf方法来根据名字查找枚举对象。</p>
-
-<p>同时，编译器是不允许任何对这种序列化机制的定制的，因此禁用了writeObject、readObject、readObjectNoData、writeReplace和readResolve等方法。</p>
-
-<h3>2.2问题</h3>
-
-<p>在系统或者类库升级时，对其中定义的枚举类型多加注意，为了保持代码上的兼容性，如果我们定义的枚举类型有可能会被序列化保存(放到文件中、保存到数据库中，进入分布式内存缓存中)，那么我们是不能够删除原来枚举类型中定义的任何枚举对象的，否则程序在运行过程中，JVM就会抱怨找不到与某个名字对应的枚举对象了。</p>
-
-<p>另外，在远程方法调用过程中，如果我们发布的客户端接口返回值中使用了枚举类型，那么服务端在升级过程中就需要特别注意。如果在接口的返回结果的枚举类型中添加了新的枚举值，那就会导致仍然在使用老的客户端的那些应用出现调用失败的情况。</p>
-
-<h1>3.Enum序列化反序列化问题解决</h1>
-
-<p>使用class代替Enum,原来的枚举使用static对象替换，valueOf()方法使用一个Map实现，示例代码如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public final class FruitEnum implements Serializable {
-</span><span class='line'>
-</span><span class='line'>    private static final long serialVersionUID = -7230925342774763449L;
-</span><span class='line'>
-</span><span class='line'>    private static final Map&lt;Integer, FruitEnum&gt; MAP = new HashMap&lt;Integer, FruitEnum&gt;();
-</span><span class='line'>
-</span><span class='line'>    public static final FruitEnum APPLE = new FruitEnum("Apple", 0);
-</span><span class='line'>    public static final FruitEnum ORAGE = new FruitEnum("Orige", 1);
-</span><span class='line'>
-</span><span class='line'>    private String text;
-</span><span class='line'>    private int code;
-</span><span class='line'>
-</span><span class='line'>    private FruitEnum(String text, int code) {
-</span><span class='line'>        this.text = text;
-</span><span class='line'>        this.code = code;
-</span><span class='line'>
-</span><span class='line'>        MAP.put(code, this);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public String getText() {
-</span><span class='line'>        return text;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public void setText(String text) {
-</span><span class='line'>        this.text = text;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    @Override
-</span><span class='line'>    public int getCode() {
-</span><span class='line'>        return code;
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 根据code获取FruitEnum
-</span><span class='line'>     *
-</span><span class='line'>     * @param code
-</span><span class='line'>     * @return
-</span><span class='line'>     */
-</span><span class='line'>    public static FruitEnum valueOf(int code) {
-</span><span class='line'>        return MAP.get(code);
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参考：<a href="http://mysun.iteye.com/blog/1581119">http://mysun.iteye.com/blog/1581119</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/12">&larr; Older</a>
@@ -620,6 +545,10 @@ Thread pool exhausted通常是min和max不一样大时，表示当前已创建�
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/04/build-openjdk/">Build Openjdk</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2017/02/04/api-blocking/">Api Blocking</a>
@@ -657,10 +586,6 @@ Thread pool exhausted通常是min和max不一样大时，表示当前已创建�
         <a href="/blog/2016/08/20/cratewen-dang-fan-yi/">Crate文档翻译</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/07/22/%5B%3F%5D-ge-si-suo-wen-ti/">一个死锁问题</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -672,7 +597,7 @@ Thread pool exhausted通常是min和max不一样大时，表示当前已创建�
 <li><a class='list-group-item' href='/blog/categories/druid/'>druid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
-<li><a class='list-group-item' href='/blog/categories/java/'>java (25)</a></li>
+<li><a class='list-group-item' href='/blog/categories/java/'>java (26)</a></li>
 <li><a class='list-group-item' href='/blog/categories/library/'>library (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (13)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>

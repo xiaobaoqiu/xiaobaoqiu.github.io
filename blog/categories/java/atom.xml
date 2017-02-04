@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Java | xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/blog/categories/java/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2017-02-04T17:21:43+08:00</updated>
+  <updated>2017-02-04T17:22:17+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,224 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Build Openjdk]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2017/02/04/build-openjdk/"/>
+    <updated>2017-02-04T14:00:38+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2017/02/04/build-openjdk</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.%E5%87%86%E5%A4%87%E5%B7%A5%E4%BD%9C">1.准备工作</a></li>
+<li><a href="#2.Build">2.Build</a></li>
+<li><a href="#3.%E9%97%AE%E9%A2%98">3.问题</a></li>
+<li><a href="#4.%E5%90%8E%E7%BB%AD">4.后续</a></li>
+</ul>
+
+
+<p>前几天看了微博上build openJDK 的一篇文章, 决定也尝试一下自己 build 出来一个 JDK.下面是 build 的过程以及遇到的一些问题及解决办法.
+本文基于 Ubutu 14.04 LTS 版本.</p>
+
+<p>build 过程涉及 openJDK 部分源码的修改, 修改完的代码我上传到github了, 地址: <a href="https://github.com/xiaobaoqiu/ubuntu_build_openjdk7.git">https://github.com/xiaobaoqiu/ubuntu_build_openjdk7.git</a></p>
+
+<h2 id="1.准备工作">1.准备工作</h2>
+
+
+<p>OpenJDK 官网: <a href="http://openjdk.java.net/">http://openjdk.java.net/</a></p>
+
+<p>注意OpenJDK的版本控制使用 Mercurial 做的.</p>
+
+<p>下面是 build 之前的一些准备工作, 主要包含几个:</p>
+
+<p><em>1.安装 Mercurial</em>
+Mercurial 官网: <a href="https://www.mercurial-scm.org/">https://www.mercurial-scm.org/</a></p>
+
+<pre><code>sudo apt-get install mercurial
+</code></pre>
+
+<p><em>2.下载 openJDK 源码</em></p>
+
+<pre><code>hg clone http://hg.openjdk.java.net/jdk7/jdk7
+</code></pre>
+
+<p>之后, 进入源码目录, 有个 get_source.sh 的脚本, 执行就可以了.</p>
+
+<p><em>3.安装 build 需要的工具</em>
+就是 g++ 之类的 make 需要的工具.
+<code>
+sudo apt-get install gawk g++ libcups2-dev libasound2-dev libfreetype6-dev libx11-dev libxt-dev libxext-dev libxrender-dev libxtst-dev libfontconfig1-dev
+</code></p>
+
+<p><em>4.准备一个BOOT JDK</em>
+需要注意, 如果 build openJDK7, 需要准备 JDK6(如果用JDK7, 会碰到一个错误, 后面会讲到).</p>
+
+<h2 id="2.Build">2.Build</h2>
+
+
+<p>写了简单的小shell, 配置一些环境变量(如 BOOT JDK 位置).</p>
+
+<pre><code>cd ./jdk7
+
+unset JAVA_HOME
+
+export LANG=C
+export ALT_BOOTDIR="/home/q/java/jdk1.6.0_45"
+
+# 并行编译线程数，与CPU核数一致
+export HOTSPOT_JOBS=8
+export ALT_PARALLEL_COMPILE_JOBS=8
+
+export ALLOW_DOWNLOADS=true
+
+export SKIP_COMPARE_IMGAGES=true
+export USE_PRECOMPILED_HEADER=true
+
+# Compiling contents
+export BUILD_LANGTOOLS=true
+export BUILD_HOTSOPT=true
+export BUILD_JDK=true
+
+# Avoid javaws &amp; applet build
+BUILD_DEPLOY=false
+# Avoid installation build
+BUILD_INSTALL=false
+export EXTRA_LIBS=/usr/lib/x86_64-linux-gnu/libasound.so
+make sanity &amp;&amp; time make
+</code></pre>
+
+<p>和源码在同级目录(自己调整):</p>
+
+<pre><code>xiaobaoqiu@xiaobaoqiu:~/Work/SourceCode/jdk/openjdk7$ ll
+-rwxrwxr-x  1 xiaobaoqiu xiaobaoqiu  735  2月  4 11:48 build7.sh*
+drwxrwxr-x  4 xiaobaoqiu xiaobaoqiu 4096  2月  3 17:30 hgforest-crew/
+drwxrwxr-x 14 xiaobaoqiu xiaobaoqiu 4096  2月  4 14:01 jdk7/
+</code></pre>
+
+<p>之后, 执行 build7.sh 脚本就行了(需要chmod +x build7.sh).
+幸运的话就没问题了(基本不可能没问题), 下面是我碰到的一些问题和解决办法.</p>
+
+<h2 id="3.问题">3.问题</h2>
+
+
+<p>下面是 build 过程的一些问题总结.</p>
+
+<p><em>1.This OS is not supported</em></p>
+
+<p>错误信息大致如下:
+<code>
+"*** This OS is not supported:" `uname -a`; exit 1;
+</code></p>
+
+<p>这是由于内核版本太高了, 需要简单修改 Makefile, 首先看一下当前的 Linux 系统版本:</p>
+
+<pre><code>xiaobaoqiu@xiaobaoqiu:~/Work/SourceCode/jdk/openjdk7$ uname -r
+3.13.0-63-generic
+</code></pre>
+
+<p>在 jdk7/hotspot/make/linux/Makefile 文件中修改 SUPPORTED_OS_VERSION, 增加自己的内核版本支持</p>
+
+<pre><code>SUPPORTED_OS_VERSION = 2.4% 2.5% 2.6% 2.7% 3.13%
+</code></pre>
+
+<p><em>2.error: &ldquo;__LEAF&rdquo; redefined</em>
+这是 openJDK 源码和 gcc 源码冲突, 一个bug, 参见: <a href="http://bugs.java.com/view_bug.do?bug_id=7103224">http://bugs.java.com/view_bug.do?bug_id=7103224</a></p>
+
+<p>需要按照 <a href="http://hg.openjdk.java.net/lambda/lambda/hotspot/rev/a6eef545f1a2">http://hg.openjdk.java.net/lambda/lambda/hotspot/rev/a6eef545f1a2</a> 修改代码, 涉及的代码包括以下 6 个文件, 具体的完整代码可以从文章开头提供的 github 地址下载.</p>
+
+<pre><code>jdk7/hotspot/src/share/vm/opto/addnode.cpp
+jdk7/hotspot/src/share/vm/prims/jniCheck.cpp
+jdk7/hotspot/src/share/vm/prims/jvmtiEnter.xsl
+jdk7/hotspot/src/share/vm/prims/jvmtiEnv.cpp
+jdk7/hotspot/src/share/vm/prims/jvmtiExport.cpp
+jdk7/hotspot/src/share/vm/runtime/interfaceSupport.hpp
+</code></pre>
+
+<p><em>3.error: converting &lsquo;false&rsquo; to pointer type &lsquo;methodOop&rsquo;</em>
+错误信息:</p>
+
+<pre><code>/home/xiaobaoqiu/Work/SourceCode/jdk/openjdk7/jdk7/hotspot/src/share/vm/oops/constantPoolOop.cpp:272:39: error: converting 'false' to pointer type 'methodOop' [-Werror=conversion-null]
+   if (cpool-&gt;cache() == NULL)  return false;  // nothing to load yet
+                                       ^
+cc1plus: all warnings being treated as errors
+</code></pre>
+
+<p>修改(具体的完整代码可以从文章开头提供的 github 地址下载.):
+/openjdk/hotspot/src/share/vm/oops/constantPoolOop.cpp 第272行 return false改为return (methodOop)false;</p>
+
+<p><em>4.error: converting &lsquo;false&rsquo; to pointer type &lsquo;Node</em>&rsquo;*
+错误信息</p>
+
+<pre><code>/home/xiaobaoqiu/Work/SourceCode/jdk/openjdk7/jdk7/hotspot/src/share/vm/opto/loopnode.cpp:896:49: error: converting 'false' to pointer type 'Node*' [-Werror=conversion-null]
+   if (expr == NULL || expr-&gt;req() != 3)  return false;
+                                                 ^
+cc1plus: all warnings being treated as errors
+</code></pre>
+
+<p>修改(具体的完整代码可以从文章开头提供的 github 地址下载.):
+openjdk/hotspot/src/share/vm/opto/loopnode.cpp: 第896行  return false改为return (Node*)false;</p>
+
+<p><em>5.Unable to load native library: /home/q/java/jdk1.7.0_80/jre/lib/amd64/libjava.so</em></p>
+
+<p>错误信息:</p>
+
+<pre><code>Unable to load native library: /home/q/java/jdk1.7.0_80/jre/lib/amd64/libjava.so: symbol JVM_SetNativeThreadName, version SUNWprivate_1.1 not defined in file libjvm.so with link time reference
+</code></pre>
+
+<p>解决: 使用 JDK6 作为BOOT JDK</p>
+
+<p><em>6.gcc: error: unrecognized command line option &lsquo;-mimpure-text&rsquo;</em>
+这个-mimpure-text是gcc给Solaris的编译选项，所以注释掉即可</p>
+
+<p>修改/jdk/make/common/shared/Compiler-gcc.gmk, 去掉 -mimpure-text (具体的完整代码可以从文章开头提供的 github 地址下载.)</p>
+
+<p><em>7. Error: time is more than 10 years from present: 1136059200000</em></p>
+
+<p>错误信息</p>
+
+<pre><code>Error: time is more than 10 years from present: 1136059200000
+java.lang.RuntimeException: time is more than 10 years from present: 1136059200000
+    at build.tools.generatecurrencydata.GenerateCurrencyData.makeSpecialCaseEntry(GenerateCurrencyData.java:285)
+    at build.tools.generatecurrencydata.GenerateCurrencyData.buildMainAndSpecialCaseTables(GenerateCurrencyData.java:225)
+    at build.tools.generatecurrencydata.GenerateCurrencyData.main(GenerateCurrencyData.java:154)
+make[4]: *** [/home/xiaobaoqiu/Work/SourceCode/jdk/openjdk7/jdk7/build/linux-amd64/lib/currency.data] Error 1
+</code></pre>
+
+<p>修正 jdk7/jdk/src/share/classes/java/util/CurrencyData.properties 文件, 保证时间在 10 年之内.(具体的完整代码可以从文章开头提供的 github 地址下载.):
+<code>
+AZ=AZM;2005-12-31-20-00-00;AZN
+MZ=MZM;2006-06-30-22-00-00;MZN
+RO=ROL;2005-06-30-21-00-00;RON
+TR=TRL;2004-12-31-22-00-00;TRY
+VE=VEB;2008-01-01-04-00-00;VEF
+</code></p>
+
+<h2 id="4.后续">4.后续</h2>
+
+
+<p>经过一番折腾之后, build 成功:</p>
+
+<pre><code>-- Build times ----------
+Target all_product_build
+Start 2017-02-04 12:02:33
+End   2017-02-04 12:14:00
+00:00:07 corba
+00:00:05 hotspot
+00:00:07 jaxp
+00:00:05 jaxws
+00:10:59 jdk
+00:00:04 langtools
+00:11:27 TOTAL
+-------------------------
+</code></pre>
+
+<p>默认 build 的结果在 jdk7/build/linux-amd64 下.</p>
+
+<pre><code>xiaobaoqiu@xiaobaoqiu:~/Work/SourceCode/jdk/openjdk7/jdk7/build/linux-amd64/bin$ ./java -version
+openjdk version "1.7.0-internal"
+OpenJDK Runtime Environment (build 1.7.0-internal-root_2017_02_04_11_48-b00)
+OpenJDK 64-Bit Server VM (build 21.0-b17, mixed mode)
+</code></pre>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[你真的了解String吗]]></title>
@@ -1676,137 +1894,6 @@ GetSetCopy-10(微秒) : 1.693
 <h3>3.1 原理</h3>
 
 <p>待补充，会涉及到JVM一些JIT的优化等问题，自己也很期待到底什么原因&hellip;</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Enum反序列化问题]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/04/01/enumfan-xu-lie-hua-wen-ti/"/>
-    <updated>2015-04-01T23:01:25+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/04/01/enumfan-xu-lie-hua-wen-ti</id>
-    <content type="html"><![CDATA[<h1>1.Enum原理</h1>
-
-<p>定义一个Enum，通过编译之后的字节码，我们可以发现其实现原理：
-<code>
-public enum FruitEnum {  
-    APPLE, ORAGE  
-}
-</code>
-编译器是在为我们创建一个类，这个类继承自 java.lang.Enum，有两个公共的、静态的、被声明成final的属性，它们的类型就是我们定义的FruitEnum。</p>
-
-<p>编译器还生成了一个静态初始话器，就是字节码中static{};这一行下面的代码，其中的字节码创建了两个FruitEnum对象，同时分别赋值给APPLE和ORANGE这两个属性，调用的构造函数是定义在java.lang.Enum中的protected Enum(String name, int ordinal)方法。</p>
-
-<p>在创建完成两个FruitEnum对象并且分别赋值给APPLE和ORIGIN之后，还创建了一个名叫ENUM$VALUES的数组，然后把APPLE和ORIGIN按照定义的顺序放如这个数组中。</p>
-
-<p>除了这个静态初始化器之外，编译器还为我们生成了两个静态方法，values()和 valueOf(java.lang.String)方法。其中values()方法将ENUM$VALUES数组拷贝一份然后返回，而valueOf(java.lang.String)方法则会调用java.lang.Enum类中的valueOf方法，其作用是根据参数名找到对应的具体的枚举对象，如果找不到的话会抛出一个IllegalArgumentException异常。</p>
-
-<h1>2.Enum序列化反序列化原理及问题</h1>
-
-<h3>2.1原理</h3>
-
-<p>序列化的时候Java仅仅是将枚举对象的name属性输出到结果中，反序列化的时候则是通过java.lang.Enum的valueOf方法来根据名字查找枚举对象。</p>
-
-<p>同时，编译器是不允许任何对这种序列化机制的定制的，因此禁用了writeObject、readObject、readObjectNoData、writeReplace和readResolve等方法。</p>
-
-<h3>2.2问题</h3>
-
-<p>在系统或者类库升级时，对其中定义的枚举类型多加注意，为了保持代码上的兼容性，如果我们定义的枚举类型有可能会被序列化保存(放到文件中、保存到数据库中，进入分布式内存缓存中)，那么我们是不能够删除原来枚举类型中定义的任何枚举对象的，否则程序在运行过程中，JVM就会抱怨找不到与某个名字对应的枚举对象了。</p>
-
-<p>另外，在远程方法调用过程中，如果我们发布的客户端接口返回值中使用了枚举类型，那么服务端在升级过程中就需要特别注意。如果在接口的返回结果的枚举类型中添加了新的枚举值，那就会导致仍然在使用老的客户端的那些应用出现调用失败的情况。</p>
-
-<h1>3.Enum序列化反序列化问题解决</h1>
-
-<p>使用class代替Enum,原来的枚举使用static对象替换，valueOf()方法使用一个Map实现，示例代码如下：
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public final class FruitEnum implements Serializable {&lt;/p&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;pre&gt;&lt;code&gt;private static final long serialVersionUID = -7230925342774763449L;
-</span><span class='line'>
-</span><span class='line'>private static final Map&lt;Integer, FruitEnum&gt; MAP = new HashMap&lt;Integer, FruitEnum&gt;();
-</span><span class='line'>
-</span><span class='line'>public static final FruitEnum APPLE = new FruitEnum("Apple", 0);
-</span><span class='line'>public static final FruitEnum ORAGE = new FruitEnum("Orige", 1);
-</span><span class='line'>
-</span><span class='line'>private String text;
-</span><span class='line'>private int code;
-</span><span class='line'>
-</span><span class='line'>private FruitEnum(String text, int code) {
-</span><span class='line'>    this.text = text;
-</span><span class='line'>    this.code = code;
-</span><span class='line'>
-</span><span class='line'>    MAP.put(code, this);
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public String getText() {
-</span><span class='line'>    return text;
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>public void setText(String text) {
-</span><span class='line'>    this.text = text;
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>@Override
-</span><span class='line'>public int getCode() {
-</span><span class='line'>    return code;
-</span><span class='line'>}
-</span><span class='line'>
-</span><span class='line'>/**
-</span><span class='line'> * 根据code获取FruitEnum
-</span><span class='line'> *
-</span><span class='line'> * @param code
-</span><span class='line'> * @return
-</span><span class='line'> */
-</span><span class='line'>public static FruitEnum valueOf(int code) {
-</span><span class='line'>    return MAP.get(code);
-</span><span class='line'>}
-</span><span class='line'>&lt;/code&gt;&lt;/pre&gt;
-</span><span class='line'>
-</span><span class='line'>&lt;p&gt;}</span></code></pre></td></tr></table></div></figure></p>
-
-<p>参考：<a href="http://mysun.iteye.com/blog/1581119">http://mysun.iteye.com/blog/1581119</a></p>
 ]]></content>
   </entry>
   

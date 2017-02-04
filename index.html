@@ -9,10 +9,11 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.背景
-2.Redis实现限流
-3.滑动窗口实现限流
-4.RateLimiter实现限流 1.背景 接口限流是保证系统稳定性的三大法宝之一(缓存, 限流, 降级). 本文使用三种方式实现Api限流, 并提供了一个用Spring实现的Api限流的简单Demo, Demo的git地址: https &hellip;">
+  <meta name="description" content="1.准备工作
+2.Build
+3.问题
+4.后续 前几天看了微博上build openJDK 的一篇文章, 决定也尝试一下自己 build 出来一个 JDK.下面是 build 的过程以及遇到的一些问题及解决办法.
+本文基于 Ubutu 14.04 LTS 版本. build 过程涉及 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -78,6 +79,326 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2017/02/04/build-openjdk/">Build Openjdk</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2017-02-04T14:00:38+08:00'><span class='date'><span class='date-month'>Feb</span> <span class='date-day'>4</span><span class='date-suffix'>th</span>, <span class='date-year'>2017</span></span> <span class='time'>2:00 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.%E5%87%86%E5%A4%87%E5%B7%A5%E4%BD%9C">1.准备工作</a></li>
+<li><a href="#2.Build">2.Build</a></li>
+<li><a href="#3.%E9%97%AE%E9%A2%98">3.问题</a></li>
+<li><a href="#4.%E5%90%8E%E7%BB%AD">4.后续</a></li>
+</ul>
+
+
+<p>前几天看了微博上build openJDK 的一篇文章, 决定也尝试一下自己 build 出来一个 JDK.下面是 build 的过程以及遇到的一些问题及解决办法.
+本文基于 Ubutu 14.04 LTS 版本.</p>
+
+<p>build 过程涉及 openJDK 部分源码的修改, 修改完的代码我上传到github了, 地址: <a href="https://github.com/xiaobaoqiu/ubuntu_build_openjdk7.git">https://github.com/xiaobaoqiu/ubuntu_build_openjdk7.git</a></p>
+
+<h2 id="1.准备工作">1.准备工作</h2>
+
+
+<p>OpenJDK 官网: <a href="http://openjdk.java.net/">http://openjdk.java.net/</a></p>
+
+<p>注意OpenJDK的版本控制使用 Mercurial 做的.</p>
+
+<p>下面是 build 之前的一些准备工作, 主要包含几个:</p>
+
+<p><em>1.安装 Mercurial</em>
+Mercurial 官网: <a href="https://www.mercurial-scm.org/">https://www.mercurial-scm.org/</a></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install mercurial</span></code></pre></td></tr></table></div></figure>
+
+
+<p><em>2.下载 openJDK 源码</em></p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>hg clone http://hg.openjdk.java.net/jdk7/jdk7</span></code></pre></td></tr></table></div></figure>
+
+
+<p>之后, 进入源码目录, 有个 get_source.sh 的脚本, 执行就可以了.</p>
+
+<p><em>3.安装 build 需要的工具</em>
+就是 g++ 之类的 make 需要的工具.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>sudo apt-get install gawk g++ libcups2-dev libasound2-dev libfreetype6-dev libx11-dev libxt-dev libxext-dev libxrender-dev libxtst-dev libfontconfig1-dev</span></code></pre></td></tr></table></div></figure>
+
+
+<p><em>4.准备一个BOOT JDK</em>
+需要注意, 如果 build openJDK7, 需要准备 JDK6(如果用JDK7, 会碰到一个错误, 后面会讲到).</p>
+
+<h2 id="2.Build">2.Build</h2>
+
+
+<p>写了简单的小shell, 配置一些环境变量(如 BOOT JDK 位置).</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>cd ./jdk7
+</span><span class='line'>
+</span><span class='line'>unset JAVA_HOME
+</span><span class='line'>
+</span><span class='line'>export LANG=C
+</span><span class='line'>export ALT_BOOTDIR="/home/q/java/jdk1.6.0_45"
+</span><span class='line'>
+</span><span class='line'># 并行编译线程数，与CPU核数一致
+</span><span class='line'>export HOTSPOT_JOBS=8
+</span><span class='line'>export ALT_PARALLEL_COMPILE_JOBS=8
+</span><span class='line'>
+</span><span class='line'>export ALLOW_DOWNLOADS=true
+</span><span class='line'>
+</span><span class='line'>export SKIP_COMPARE_IMGAGES=true
+</span><span class='line'>export USE_PRECOMPILED_HEADER=true
+</span><span class='line'>
+</span><span class='line'># Compiling contents
+</span><span class='line'>export BUILD_LANGTOOLS=true
+</span><span class='line'>export BUILD_HOTSOPT=true
+</span><span class='line'>export BUILD_JDK=true
+</span><span class='line'>
+</span><span class='line'># Avoid javaws & applet build
+</span><span class='line'>BUILD_DEPLOY=false
+</span><span class='line'># Avoid installation build
+</span><span class='line'>BUILD_INSTALL=false
+</span><span class='line'>export EXTRA_LIBS=/usr/lib/x86_64-linux-gnu/libasound.so
+</span><span class='line'>make sanity && time make</span></code></pre></td></tr></table></div></figure>
+
+
+<p>和源码在同级目录(自己调整):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Work/SourceCode/jdk/openjdk7$ ll
+</span><span class='line'>-rwxrwxr-x  1 xiaobaoqiu xiaobaoqiu  735  2月  4 11:48 build7.sh*
+</span><span class='line'>drwxrwxr-x  4 xiaobaoqiu xiaobaoqiu 4096  2月  3 17:30 hgforest-crew/
+</span><span class='line'>drwxrwxr-x 14 xiaobaoqiu xiaobaoqiu 4096  2月  4 14:01 jdk7/</span></code></pre></td></tr></table></div></figure>
+
+
+<p>之后, 执行 build7.sh 脚本就行了(需要chmod +x build7.sh).
+幸运的话就没问题了(基本不可能没问题), 下面是我碰到的一些问题和解决办法.</p>
+
+<h2 id="3.问题">3.问题</h2>
+
+
+<p>下面是 build 过程的一些问题总结.</p>
+
+<p><em>1.This OS is not supported</em></p>
+
+<p>错误信息大致如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>"*** This OS is not supported:" `uname -a`; exit 1;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这是由于内核版本太高了, 需要简单修改 Makefile, 首先看一下当前的 Linux 系统版本:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Work/SourceCode/jdk/openjdk7$ uname -r
+</span><span class='line'>3.13.0-63-generic</span></code></pre></td></tr></table></div></figure>
+
+
+<p>在 jdk7/hotspot/make/linux/Makefile 文件中修改 SUPPORTED_OS_VERSION, 增加自己的内核版本支持</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>SUPPORTED_OS_VERSION = 2.4% 2.5% 2.6% 2.7% 3.13%</span></code></pre></td></tr></table></div></figure>
+
+
+<p><em>2.error: &ldquo;__LEAF&rdquo; redefined</em>
+这是 openJDK 源码和 gcc 源码冲突, 一个bug, 参见: <a href="http://bugs.java.com/view_bug.do?bug_id=7103224">http://bugs.java.com/view_bug.do?bug_id=7103224</a></p>
+
+<p>需要按照 <a href="http://hg.openjdk.java.net/lambda/lambda/hotspot/rev/a6eef545f1a2">http://hg.openjdk.java.net/lambda/lambda/hotspot/rev/a6eef545f1a2</a> 修改代码, 涉及的代码包括以下 6 个文件, 具体的完整代码可以从文章开头提供的 github 地址下载.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>jdk7/hotspot/src/share/vm/opto/addnode.cpp
+</span><span class='line'>jdk7/hotspot/src/share/vm/prims/jniCheck.cpp
+</span><span class='line'>jdk7/hotspot/src/share/vm/prims/jvmtiEnter.xsl
+</span><span class='line'>jdk7/hotspot/src/share/vm/prims/jvmtiEnv.cpp
+</span><span class='line'>jdk7/hotspot/src/share/vm/prims/jvmtiExport.cpp
+</span><span class='line'>jdk7/hotspot/src/share/vm/runtime/interfaceSupport.hpp</span></code></pre></td></tr></table></div></figure>
+
+
+<p><em>3.error: converting &lsquo;false&rsquo; to pointer type &lsquo;methodOop&rsquo;</em>
+错误信息:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/home/xiaobaoqiu/Work/SourceCode/jdk/openjdk7/jdk7/hotspot/src/share/vm/oops/constantPoolOop.cpp:272:39: error: converting 'false' to pointer type 'methodOop' [-Werror=conversion-null]
+</span><span class='line'>   if (cpool-&gt;cache() == NULL)  return false;  // nothing to load yet
+</span><span class='line'>                                       ^
+</span><span class='line'>cc1plus: all warnings being treated as errors</span></code></pre></td></tr></table></div></figure>
+
+
+<p>修改(具体的完整代码可以从文章开头提供的 github 地址下载.):
+/openjdk/hotspot/src/share/vm/oops/constantPoolOop.cpp 第272行 return false改为return (methodOop)false;</p>
+
+<p><em>4.error: converting &lsquo;false&rsquo; to pointer type &lsquo;Node</em>&rsquo;*
+错误信息</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/home/xiaobaoqiu/Work/SourceCode/jdk/openjdk7/jdk7/hotspot/src/share/vm/opto/loopnode.cpp:896:49: error: converting 'false' to pointer type 'Node*' [-Werror=conversion-null]
+</span><span class='line'>   if (expr == NULL || expr-&gt;req() != 3)  return false;
+</span><span class='line'>                                                 ^
+</span><span class='line'>cc1plus: all warnings being treated as errors</span></code></pre></td></tr></table></div></figure>
+
+
+<p>修改(具体的完整代码可以从文章开头提供的 github 地址下载.):
+openjdk/hotspot/src/share/vm/opto/loopnode.cpp: 第896行  return false改为return (Node*)false;</p>
+
+<p><em>5.Unable to load native library: /home/q/java/jdk1.7.0_80/jre/lib/amd64/libjava.so</em></p>
+
+<p>错误信息:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Unable to load native library: /home/q/java/jdk1.7.0_80/jre/lib/amd64/libjava.so: symbol JVM_SetNativeThreadName, version SUNWprivate_1.1 not defined in file libjvm.so with link time reference</span></code></pre></td></tr></table></div></figure>
+
+
+<p>解决: 使用 JDK6 作为BOOT JDK</p>
+
+<p><em>6.gcc: error: unrecognized command line option &lsquo;-mimpure-text&rsquo;</em>
+这个-mimpure-text是gcc给Solaris的编译选项，所以注释掉即可</p>
+
+<p>修改/jdk/make/common/shared/Compiler-gcc.gmk, 去掉 -mimpure-text (具体的完整代码可以从文章开头提供的 github 地址下载.)</p>
+
+<p><em>7. Error: time is more than 10 years from present: 1136059200000</em></p>
+
+<p>错误信息</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Error: time is more than 10 years from present: 1136059200000
+</span><span class='line'>java.lang.RuntimeException: time is more than 10 years from present: 1136059200000
+</span><span class='line'>  at build.tools.generatecurrencydata.GenerateCurrencyData.makeSpecialCaseEntry(GenerateCurrencyData.java:285)
+</span><span class='line'>  at build.tools.generatecurrencydata.GenerateCurrencyData.buildMainAndSpecialCaseTables(GenerateCurrencyData.java:225)
+</span><span class='line'>  at build.tools.generatecurrencydata.GenerateCurrencyData.main(GenerateCurrencyData.java:154)
+</span><span class='line'>make[4]: *** [/home/xiaobaoqiu/Work/SourceCode/jdk/openjdk7/jdk7/build/linux-amd64/lib/currency.data] Error 1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>修正 jdk7/jdk/src/share/classes/java/util/CurrencyData.properties 文件, 保证时间在 10 年之内.(具体的完整代码可以从文章开头提供的 github 地址下载.):</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>AZ=AZM;2005-12-31-20-00-00;AZN
+</span><span class='line'>MZ=MZM;2006-06-30-22-00-00;MZN
+</span><span class='line'>RO=ROL;2005-06-30-21-00-00;RON
+</span><span class='line'>TR=TRL;2004-12-31-22-00-00;TRY
+</span><span class='line'>VE=VEB;2008-01-01-04-00-00;VEF</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h2 id="4.后续">4.后续</h2>
+
+
+<p>经过一番折腾之后, build 成功:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>-- Build times ----------
+</span><span class='line'>Target all_product_build
+</span><span class='line'>Start 2017-02-04 12:02:33
+</span><span class='line'>End   2017-02-04 12:14:00
+</span><span class='line'>00:00:07 corba
+</span><span class='line'>00:00:05 hotspot
+</span><span class='line'>00:00:07 jaxp
+</span><span class='line'>00:00:05 jaxws
+</span><span class='line'>00:10:59 jdk
+</span><span class='line'>00:00:04 langtools
+</span><span class='line'>00:11:27 TOTAL
+</span><span class='line'>-------------------------</span></code></pre></td></tr></table></div></figure>
+
+
+<p>默认 build 的结果在 jdk7/build/linux-amd64 下.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Work/SourceCode/jdk/openjdk7/jdk7/build/linux-amd64/bin$ ./java -version
+</span><span class='line'>openjdk version "1.7.0-internal"
+</span><span class='line'>OpenJDK Runtime Environment (build 1.7.0-internal-root_2017_02_04_11_48-b00)
+</span><span class='line'>OpenJDK 64-Bit Server VM (build 21.0-b17, mixed mode)</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -899,387 +1220,6 @@ FileItemIteratorImpl(RequestContext ctx) throws FileUploadException, IOException
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2016/12/29/activitishi-jian-chu-li/">Activiti事件处理</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2016-12-29T18:39:59+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>29</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>6:39 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><ul>
-<li><a href="#1.%E4%BA%8B%E4%BB%B6%E5%A4%84%E7%90%86">1.事件处理</a></li>
-<li><a href="#2.Listener%E5%BC%82%E5%B8%B8%E5%A4%84%E7%90%86">2.Listener异常处理</a></li>
-<li><a href="#3.Listener%E6%B3%A8%E5%86%8C">3.Listener注册</a></li>
-</ul>
-
-
-<h2 id="1.事件处理">1.事件处理</h2>
-
-
-<p>Activiti 内部充斥着各种各样的事件，详见：org.activiti.engine.delegate.event.ActivitiEventType的定义。</p>
-
-<p>在 Activiti 5.15 以前，处理事件需要在流程设计的时候显示的加入各种Listener，比如：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>    &lt;userTask id="leaderVerifyTask" activiti:taskType="2"&gt;
-</span><span class='line'>        &lt;extensionElements&gt;
-</span><span class='line'>            &lt;activiti:taskListener event="create" delegateExpression="${taskCreateListener}"/&gt;
-</span><span class='line'>            &lt;activiti:taskListener event="assignment" delegateExpression="${taskAssignmentListener}"/&gt;
-</span><span class='line'>            &lt;activiti:taskListener event="complete" delegateExpression="${taskCompleteListener}"/&gt;
-</span><span class='line'>        &lt;/extensionElements&gt;
-</span><span class='line'>    &lt;/userTask&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Spring会注入 taskCreateListener 这个bean来作为 leaderVerifyTask 这个任务的创建事件响应逻辑。
-这种方式的问题在于，流程设计的时候需要知道 代码中具体的类或者bean的名称，因此无法做到将流程的设计交与开发人员之外的人来做。</p>
-
-<p> 在 Activiti 5.15 中加入了全局的事件监听器 ActivitiEventListener，我们只需要实现一个自己的全局的事件处理器，然后自定义各种事件的处理器。</p>
-
-<pre><code class="`"> /**
- * 流程服务的全局 Listener
- *
- * @author xiaobaoqiu  Date: 16-12-19 Time: 下午7:16
- */
-public class GlobalProcessEventListener implements ActivitiEventListener {
-
-    /**
-     * 各类 Event 的处理器
-     * 其中事件类型参见 ActivitiEventType 定义
-     *
-     * @see org.activiti.engine.delegate.event.ActivitiEventType
-     */
-    private Map&lt;ActivitiEventType, ProcessEventHandler&gt; handlers = new HashMap&lt;&gt;();
-
-    @Override
-    public void onEvent(ActivitiEvent event) {
-        ProcessEventHandler handler = handlers.get(event.getType());
-        if (handler != null) {
-            handler.handle(event);
-        }
-    }
-
-    @Override
-    public boolean isFailOnException() {
-        return false;
-    }
-
-    public Map&lt;ActivitiEventType, ProcessEventHandler&gt; getHandlers() {
-        return handlers;
-    }
-
-    public void setHandlers(Map&lt;ActivitiEventType, ProcessEventHandler&gt; handlers) {
-        this.handlers = handlers;
-    }
-}
-
-/**
- * 流程事件处理
- *
- * @author xiaobaoqiu  Date: 16-12-21 Time: 下午1:33
- */
-public interface ProcessEventHandler {
-
-    void handle(ActivitiEvent event);
-}
-</code></pre>
-
-<p>ActivitiEventListener能做到和流程设计无关，只需要在配置 Activiti 的时候将其注入，并且可以在其中配置能处理哪些类型的事件：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;bean id="processEngineConfiguration" class="org.activiti.spring.SpringProcessEngineConfiguration"&gt;
-</span><span class='line'>    &lt;property 其他配置 /&gt;
-</span><span class='line'>    &lt;property name="eventListeners"&gt;
-</span><span class='line'>        &lt;list&gt;
-</span><span class='line'>            &lt;ref bean="globalProcessEventListener"/&gt;
-</span><span class='line'>        &lt;/list&gt;
-</span><span class='line'>    &lt;/property&gt;
-</span><span class='line'>&lt;/bean&gt;
-</span><span class='line'>
-</span><span class='line'>
-</span><span class='line'>&lt;!--流程全局事件处理器--&gt;
-</span><span class='line'>&lt;bean id="globalProcessEventListener" class="com.qunar.scm.ct.biz.process.event.GlobalProcessEventListener"&gt;
-</span><span class='line'>    &lt;property name="handlers"&gt;
-</span><span class='line'>        &lt;map&gt;
-</span><span class='line'>            &lt;entry key="TASK_CREATED"&gt;
-</span><span class='line'>                &lt;bean class="com.qunar.xxx.ProcessProcessTaskCreateListener"/&gt;
-</span><span class='line'>            &lt;/entry&gt;
-</span><span class='line'>            &lt;entry key="TASK_COMPLETED"&gt;
-</span><span class='line'>                &lt;bean class="com.qunar.xxx.ProcessProcessTaskCompleteListener"/&gt;
-</span><span class='line'>            &lt;/entry&gt;
-</span><span class='line'>            &lt;entry key="TASK_ASSIGNED"&gt;
-</span><span class='line'>                &lt;bean class="com.qunar.xxx.ProcessProcessTaskAssignmentListener"/&gt;
-</span><span class='line'>            &lt;/entry&gt;
-</span><span class='line'>        &lt;/map&gt;
-</span><span class='line'>    &lt;/property&gt;
-</span><span class='line'>&lt;/bean&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参考：
-<a href="https://www.activiti.org/userguide/index.html#eventDispatcherConfiguration">https://www.activiti.org/userguide/index.html#eventDispatcherConfiguration</a></p>
-
-<h2 id="2.Listener异常处理">2.Listener异常处理</h2>
-
-
-<p>需要注意的一点是 GlobalProcessEventListener 中的异常处理,我们在实现 GlobalProcessEventListener 的时候,ActivitiEventListener有一个接口需要实现:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * @return whether or not the current operation should fail when this listeners execution
-</span><span class='line'> * throws an exception. 
-</span><span class='line'> */
-</span><span class='line'>boolean isFailOnException();</span></code></pre></td></tr></table></div></figure>
-
-
-<p>即当 listener 抛出一个异常的时候,当前操作时序应该失败(其实就是是否需要吞掉 listener 的异常).</p>
-
-<p>我们可以看看 Activiti 相关的源代码,在 ActivitiEventSupport 中的 dispatchEvent 函数,我们可以清晰的看到,listener.isFailOnException()为false则会讲异常吞掉,只是打一行日志.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>protected void dispatchEvent(ActivitiEvent event, ActivitiEventListener listener) {
-</span><span class='line'>    try {
-</span><span class='line'>        listener.onEvent(event);
-</span><span class='line'>    } catch (Throwable t) {
-</span><span class='line'>        if (listener.isFailOnException()) {
-</span><span class='line'>            throw new ActivitiException("Exception while executing event-listener", t);
-</span><span class='line'>        } else {
-</span><span class='line'>            // Ignore the exception and continue notifying remaining listeners. The
-</span><span class='line'>            // listener
-</span><span class='line'>            // explicitly states that the exception should not bubble up
-</span><span class='line'>            LOG.warn("Exception while executing event-listener, which was ignored", t);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>我的建议(也是我现在的做法)是:isFailOnException()设置为true,然后在对应的 ProcessEventHandler 自己处理需要吞掉异常的场景.</p>
-
-<h2 id="3.Listener注册">3.Listener注册</h2>
-
-
-<p>通常而言,我们的 ProcessEventHandler 需要使用到 Activiti 的Service,比如我的一个简单场景,我需要在 UserTask 获取一些业务信息,新词我需要使用 RuntimeService 来查询一些信息</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * 任务创建事件
-</span><span class='line'> *
-</span><span class='line'> * @author xiaobaoqiu  Date: 16-12-23 Time: 下午7:09
-</span><span class='line'> */
-</span><span class='line'>public class ProcessTaskCreateListener extends AbstractProcessTaskListener {
-</span><span class='line'>
-</span><span class='line'>    @Resource
-</span><span class='line'>    private RuntimeService runtimeService;
-</span><span class='line'>    ...
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>按照第一节的写法,就会出现Bean循环依赖的问题:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>1. ProcessEngineConfiguration 实例创建会触发 GlobalProcessEventListener 创建;
-</span><span class='line'>2.GlobalProcessEventListener 实例创建会触发 ProcessProcessTaskCreateListener 创建;
-</span><span class='line'>3.ProcessProcessTaskCreateListener 实例创建会触发 RuntimeService 创建;
-</span><span class='line'>4.RuntimeService 实例创建依赖 ProcessEngineFactoryBean 创建;
-</span><span class='line'>5.ProcessEngineFactoryBean 创建依赖 ProcessEngineConfiguration实例;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>并且 ProcessEngineFactoryBean 是 Activiti 自己实现的 FactoryBean,用来获得 ProcessEngine 实例 :</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class ProcessEngineFactoryBean implements FactoryBean&lt;ProcessEngine&gt;, DisposableBean, ApplicationContextAware {
-</span><span class='line'>    ...
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>这个问题一个比较好的解法是, 将 GlobalProcessEventListener 的注册延后到 GlobalProcessEventListener 初始化完成之后,因此涉及到两个问题:</p>
-
-<pre><code>1.GlobalProcessEventListener 什么时机去做自己注册;
-2.GlobalProcessEventListener 如何将自己注册到 SpringProcessEngineConfiguration 中;
-</code></pre>
-
-<p>其中第一个问题很好回答, GlobalProcessEventListener 自己初始化完成之后去自注册,这个时候依赖的各种Bean已经创建初始化完成了.因此只需要实现 ApplicationContextAware 接口,然后在 setApplicationContext 中做注册的工作.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class GlobalProcessEventListener implements ActivitiEventListener, ApplicationContextAware {
-</span><span class='line'>    /**
-</span><span class='line'>     * 将当前 EventListener 注册到 Activiti 中
-</span><span class='line'>     */
-</span><span class='line'>    @Override
-</span><span class='line'>    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
-</span><span class='line'>        ...
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>第二个问题,如何自己注册上去,这个看看源代码就会找到方法, 我们在配置文件中给 SpringProcessEngineConfiguration 配置 EventListener 调用的其实是 setEventListeners 方法</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  public void setEventListeners(List&lt;ActivitiEventListener&gt; eventListeners) {
-</span><span class='line'>      this.eventListeners = eventListeners;
-</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
-
-
-<p>我们看远吗发现其中使用 eventListeners 的只有一个地方,就是将其赋值给 ActivitiEventDispatcher</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>if(eventListeners != null) {
-</span><span class='line'>    for(ActivitiEventListener listenerToAdd : eventListeners) {
-</span><span class='line'>        this.eventDispatcher.addEventListener(listenerToAdd);
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>而 ActivitiEventDispatcher 才是使用  EventListener 的地方.我们再看源码发现 ActivitiEventDispatcher 提供了 addEventListener 的入口</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public interface ActivitiEventDispatcher {
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * Adds an event-listener which will be notified of ALL events by the dispatcher.
-</span><span class='line'>     * @param listenerToAdd the listener to add
-</span><span class='line'>     */
-</span><span class='line'>    void addEventListener(ActivitiEventListener listenerToAdd);
-</span><span class='line'>    
-</span><span class='line'>    /**
-</span><span class='line'>     * Adds an event-listener which will only be notified when an event of the given types occurs.
-</span><span class='line'>     * @param listenerToAdd the listener to add
-</span><span class='line'>     * @param types types of events the listener should be notified for
-</span><span class='line'>     */
-</span><span class='line'>    void addEventListener(ActivitiEventListener listenerToAdd, ActivitiEventType... types);</span></code></pre></td></tr></table></div></figure>
-
-
-<p>并且 SpringProcessEngineConfiguration 有 getEventDispatcher 来获得 ActivitiEventDispatcher 实例,因此我们可以通过 getEventDispatcher 来拿到 ActivitiEventDispatcher 实例,然后将当前的 EventListener 通过 addEventListener 的方法增加到 ActivitiEventDispatcher 的 EventListener 列表中.</p>
-
-<p>因此,最终的实现代码很简单:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>/**
-</span><span class='line'> * 将当前 EventListener 注册到 Activiti 中
-</span><span class='line'> */
-</span><span class='line'>@Override
-</span><span class='line'>public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
-</span><span class='line'>    SpringProcessEngineConfiguration configuration = applicationContext.getBean(SpringProcessEngineConfiguration.class);
-</span><span class='line'>    configuration.getEventDispatcher().addEventListener(this);
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/2">&larr; Older</a>
@@ -1295,6 +1235,10 @@ public interface ProcessEventHandler {
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/04/build-openjdk/">Build Openjdk</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2017/02/04/api-blocking/">Api Blocking</a>
@@ -1332,10 +1276,6 @@ public interface ProcessEventHandler {
         <a href="/blog/2016/08/20/cratewen-dang-fan-yi/">Crate文档翻译</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/07/22/%5B%3F%5D-ge-si-suo-wen-ti/">一个死锁问题</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1347,7 +1287,7 @@ public interface ProcessEventHandler {
 <li><a class='list-group-item' href='/blog/categories/druid/'>druid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
-<li><a class='list-group-item' href='/blog/categories/java/'>java (25)</a></li>
+<li><a class='list-group-item' href='/blog/categories/java/'>java (26)</a></li>
 <li><a class='list-group-item' href='/blog/categories/library/'>library (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (13)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>

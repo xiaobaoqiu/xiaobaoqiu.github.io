@@ -9,9 +9,9 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.简介
-2.使用Demo
-3.注意点 1.简介 最近项目中做短信发送相关的工作.涉及到国内手机和国际手机.因此第一步需要解析电话获取国家码. 使用的库是Google提供的著名开源库libphonenumber.有的App的手机号码归属地等功能就是使用这个实现的。支持Java， C++ 和 &hellip;">
+  <meta name="description" content="1.Memcached -l参数
+2.使用iptable
+3.不需要Root权限 1.Memcached -l参数 最近整理了组内使用的Memcached。发现很多问题，其中一个问题就是开发机器测试机器可以直连线上的Memcached。这也是memcached公认的问题：memcached &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -77,6 +77,122 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/11/19/memcachedxian-zhi-fang-wen-ip/">Memcached安全性</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-11-19T18:39:25+08:00'><span class='date'><span class='date-month'>Nov</span> <span class='date-day'>19</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>6:39 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.Memcached%20-l%E5%8F%82%E6%95%B0">1.Memcached -l参数</a></li>
+<li><a href="#2.%E4%BD%BF%E7%94%A8iptable">2.使用iptable</a></li>
+<li><a href="#2.%E4%B8%8D%E9%9C%80%E8%A6%81Root%E6%9D%83%E9%99%90">3.不需要Root权限</a></li>
+</ul>
+
+
+<h2 id="1.Memcached -l参数">1.Memcached -l参数</h2>
+
+
+<p>最近整理了组内使用的Memcached。发现很多问题，其中一个问题就是开发机器测试机器可以直连线上的Memcached。这也是memcached公认的问题：memcached 是一种很简单、有效的协议，但也有其缺点，就是 memcached 自身没有 ACL 控制（或者相当弱）。</p>
+
+<p>Memcache服务器端都是直接通过客户端连接后直接操作，没有任何的验证过程，这样如果服务器是直接暴露在互联网上的话是比较危险，轻则数据泄露被其他无关人员查看，重则服务器被入侵。</p>
+
+<p>乌云也爆料过很多网站的memcached的安全性问题：
+<a href="http://www.wooyun.org/bugs/wooyun-2010-0790">http://www.wooyun.org/bugs/wooyun-2010-0790</a>
+<a href="http://www.wooyun.org/bugs/wooyun-2013-023891">http://www.wooyun.org/bugs/wooyun-2013-023891</a>
+<a href="http://www.wooyun.org/bugs/wooyun-2013-037301">http://www.wooyun.org/bugs/wooyun-2013-037301</a></p>
+
+<p>通过-l参数可以再已定成都上做到安全的限制：</p>
+
+<ol>
+<li>如果限定只要自己能够使用本机的Memcached，可以直接将-l参数绑定到回路地址127.0.0.1.</li>
+<li>如果是后台系统且有自己的私有IP，最好将-l参数绑定到私有IP上(比如192.168.0.200).</li>
+</ol>
+
+
+<p>如果Memcached非要挂在公网IP上，就需要做防火量限制，如下面说道的iptables。</p>
+
+<h2 id="2.使用iptable">2.使用iptable</h2>
+
+
+<p>ACL 最简单的设置方法就是在网络层，直接拒绝掉你的访问，通过iptable可以实现这个功能。</p>
+
+<p>假如我们的一台 memcached 的机器，想拒绝除了自身之外的访问，假如机器自己IP是：XX.XX.XX.184，那么我们可以以root身份用下面几条命令来达到我们的目的：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp -s 127.0.0.1 --dport 6666 -j ACCEPT
+</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp -s XX.XX.XX.184 --dport 6666 -j ACCEPT
+</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -A INPUT -p tcp --dport 6666 -j REJECT
+</span><span class='line'>
+</span><span class='line'>[baoqiu.xiao@... ~]sudo iptables -L -n --line-number
+</span><span class='line'>Chain INPUT (policy ACCEPT)
+</span><span class='line'>num  target     prot opt source               destination         
+</span><span class='line'>1    ACCEPT     tcp  --  127.0.0.1            0.0.0.0/0           tcp dpt:6666 
+</span><span class='line'>2    ACCEPT     tcp  --  XX.XX.XX.184         0.0.0.0/0           tcp dpt:6666 
+</span><span class='line'>3    REJECT     tcp  --  0.0.0.0/0            0.0.0.0/0           tcp dpt:6666 reject-with icmp-port-unreachable 
+</span><span class='line'>
+</span><span class='line'>Chain FORWARD (policy ACCEPT)
+</span><span class='line'>num  target     prot opt source               destination         
+</span><span class='line'>
+</span><span class='line'>Chain OUTPUT (policy ACCEPT)
+</span><span class='line'>num  target     prot opt source               destination</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这里使用的是iptables的filter功能，其filter是一种链式结构且有从前往后依次执行。满足某一条filter规则就不往下走了。因此基于这个原则，我们需要将最严格的规则放在最前面。</p>
+
+<p>删除某一条规则，其中的1就是iptables -L -n &ndash;line-number中的num号。如下会删除Chain INPUT中的编号为1的规则：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@... ~]sudo iptables -D INPUT 1</span></code></pre></td></tr></table></div></figure>
+
+
+<p>可以使用iptables -F 清空所有规则.</p>
+
+<h2 id="3.不需要Root权限">3.不需要Root权限</h2>
+
+
+<p>启动Memcached不需要Root权限，这样能避免Memcached被入侵而造成更大的危害。</p>
+
+<p>参考：
+<a href="http://blog.couchbase.com/memcached-security">http://blog.couchbase.com/memcached-security</a>
+<a href="http://serverfault.com/questions/424324/how-to-secure-memcached">http://serverfault.com/questions/424324/how-to-secure-memcached</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1440,194 +1556,6 @@ RIGHT JOIN: 与 LEFT JOIN 相反，取得右表完全记录，即使左表并无
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/08/27/zai-xian-zhen-duan-gong-ju/">在线诊断工具</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-08-27T19:54:38+08:00'><span class='date'><span class='date-month'>Aug</span> <span class='date-day'>27</span><span class='date-suffix'>th</span>, <span class='date-year'>2015</span></span> <span class='time'>7:54 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>Java诊断我相信再日常开发中都十分需要.相信大家都使用过以下几种诊断方式:</p>
-
-<pre><code>1.肉眼诊断
-就是出现问题时候企图通过肉眼来发现代码问题.通常很明显的问题有效;
-2.日志诊断
-通过给出问题的代码入参或者上下游加上日志,或者出问题的时候加上日志来诊断;这种方式的问题就是出现问题你需要重新拉分支,加日志,本地测试再上限这一系列流程.另外一个问题是过多的日志会影响应用性能;
-3.监控诊断
-通过完善的监控,通常包括完善且精确的异常划分.对不同的异常情况有独立的监控.加上完善的报警机制.这是最理想的情况.其优势是能快速定位问题点,问题是建立这一套完善的机制需要很长时间.并且监控只能发现问题类型,比如监控发现是数据错误,但是到底那条数据错误还是需要日志等手段来定位.
-4.在线诊断工具
-在不需要重新发布的情况下,在线诊断应用的问题所在.通常还可以用于定位接口瓶颈等问题;
-</code></pre>
-
-<p>这里简单介绍一下最近找到的几个在线诊断工具.它们都是非侵入式的,即不需要修改原始应用的代码再重新发布上线这个过程.</p>
-
-<p>常用包括几个诊断工具包括,这里做一个简单的介绍:</p>
-
-<pre><code>1.BTrace
-2.HouseMD
-3.Greys-Anatomy
-</code></pre>
-
-<p>参考: <a href="http://www.infoq.com/cn/articles/java-profiling-with-open-source/">http://www.infoq.com/cn/articles/java-profiling-with-open-source/</a></p>
-
-<h2>. 1.BTrace</h2>
-
-<p>Btrace(bytecode trace)是Kenai在2009年开发的一个开源项目(<a href="https://kenai.com/projects/btrace/">https://kenai.com/projects/btrace/</a>)，是一个动态跟踪分析JAVA源代码的工具。
-它可以用来帮我们做运行时的JAVA程序分析，追踪，监控等.</p>
-
-<p>官网: <a href="https://kenai.com/projects/btrace/">https://kenai.com/projects/btrace/</a></p>
-
-<p>用户手册: <a href="https://kenai.com/projects/btrace/pages/UserGuide">https://kenai.com/projects/btrace/pages/UserGuide</a></p>
-
-<p>samples下有很多使用例子.参考网上的一个例子:
-<a href="http://mgoann.iteye.com/blog/1409685">http://mgoann.iteye.com/blog/1409685</a></p>
-
-<p>参考: <a href="http://wiki.corp.qunar.com/pages/viewpage.action?pageId=56198121">http://wiki.corp.qunar.com/pages/viewpage.action?pageId=56198121</a></p>
-
-<h4>1.1使用场景:</h4>
-
-<p>1.数据采样
-比如我们要优化某块代码，就可以先写一个btrace脚本，丢到线上服务器上跑一段时间；
-这样可以收集到最真实的数据，而且不用发布之类的；
-然后根据收集到的数据，做有目的的优化，优化之后，还可以对比出优化的效果。
-2.排查问题
-3.性能监控</p>
-
-<h4>1.2优点</h4>
-
-<p>1.跟踪任何java代码的调用（包括第三方类库中的，甚至jdk中的），比如统计某方法的调用次数，耗时。
-2.可以监控的维度有很多，比如异常，同步块，内存申请，数组声明，甚至可以精确到行
-3.完全不侵入业务代码，不需要重启服务
-4.安全，对于应用内的数据来说是只读的。</p>
-
-<h4>1.3缺点</h4>
-
-<ol>
-<li>有较多的使用限制，如只能调用用BtraceUtils中的方法、不能写实例变量；
-（见docs/usersguide.html中的BTrace Restrictions条目）
-所以刚编写脚本的时候，可能会有各种不习惯，但其实大多会用到的方法，BtraceUtils里都有封装
-（其实个人感觉这个不算缺点，只是这个工具定位在追踪和监控，所以出于安全考虑，做了这个限制）</li>
-<li>监控基本上只能单点，集群环境没法玩</li>
-<li>被监控的服务重启，btrace也需要跟着重启
-4.有影响原始应用的风险,严重可能导致JVM Crash.</li>
-</ol>
-
-
-<h4>1.4使用方式</h4>
-
-<ul>
-<li><p>Boot方式启动
-追踪已启动的jvm进程
-命令：btrace/bin/btrace 12345 SomeScript.java
-注意，下载下来后bin下的文件都不可执行，需要chmod u+x，并且需要和目标进程是同一个用户来启动</p></li>
-<li><p>Agent方式启动
-与目标jvm同时启动
-配置jvm参数：-javaagent:btrace-agent.jar=script=SqlMapTracer.class
-注意：agent方式启动只能使用编译过的脚本
-使用btrace/bin/btracec SqlMapTracer.java 编译
-agent方式启动的btrace的标准输出位于你的SqlMapTracer.class所在目录下的SqlMapTracer.class.btrace文件</p></li>
-</ul>
-
-
-<p>boot方式灵活，但是当要求追踪结果精确时，就不太好用了。因为不知道btrace启动之前，目标进程已经执行了多少代码。agent方式是和目标进程同时启动的，可以保证结果精确。</p>
-
-<h4>1.5原理</h4>
-
-<p>主要就是使用ASM来实现对类的修改,再使用Instumentation实现类的内存替换.</p>
-
-<p>btrace原理: <a href="http://victorzhzh.iteye.com/blog/965789">http://victorzhzh.iteye.com/blog/965789</a></p>
-
-<p>btrace源码分析: <a href="http://agapple.iteye.com/blog/1005918">http://agapple.iteye.com/blog/1005918</a></p>
-
-<h2>. 2.HouseMD</h2>
-
-<p>高负载服务器端Java程序 诊断工具的特性要求有:</p>
-
-<pre><code>1.命令行接口, 能够方便在服务器环境中运行;
-2.支持常用诊断调式手段, 能够在其中快速来回切换;
-3.容易定位跟踪目标, 且不易出错;
-4.弱侵入, 目标Java程序无需任何修改, 不用重新部署或重启;
-5.有效控制给目标进程带来的资源消耗;
-6.不遗留任何"代码垃圾"等后遗症.
-</code></pre>
-
-<p>使用手册: <a href="https://github.com/CSUG/HouseMD/wiki/UserGuideCN">https://github.com/CSUG/HouseMD/wiki/UserGuideCN</a></p>
-
-<h4>. 2.1安装</h4>
-
-<p>首先安装jenv:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Tools/HouseMD$ curl -L -s get.jenv.io | bash
-</span><span class='line'>...
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Tools/HouseMD$ source /home/xiaobaoqiu/.jenv/bin/jenv-init.sh
-</span><span class='line'>...
-</span><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Tools/HouseMD$ jenv help
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<p>再安装HouseMD就很简单:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>xiaobaoqiu@xiaobaoqiu:~/Tools/HouseMD$ jenv install housemd
-</span><span class='line'>Installing: housemd 0.2.7
-</span><span class='line'>Parsing http://jenv.mvnsearch.org/candidate/housemd/download/0.2.7/Linux/x86_64
-</span><span class='line'>
-</span><span class='line'>Downloading: housemd 0.2.7
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>. 3.Greys-Anatomy</h2>
-
-<p>Greys是一个java进程执行过程中的异常诊断工具。 在不中断程序执行的情况下轻松完成问题排查工作.</p>
-
-<p>源码: <a href="https://github.com/oldmanpushcart/greys-anatomy">https://github.com/oldmanpushcart/greys-anatomy</a></p>
-
-<p>使用范例: <a href="https://github.com/oldmanpushcart/greys-anatomy/wiki/Getting-Start">https://github.com/oldmanpushcart/greys-anatomy/wiki/Getting-Start</a></p>
-
-<p>交互方式: 命令行交互</p>
-
-<p>功能:</p>
-
-<pre><code>1.查看加载类，方法信息
-2.方法执行监控（调用量，成功失败率，响应时间）
-3.方法执行数据观测（参数，返回结果，异常信息等）
-4.方法执行数据记录
-5.性能开销渲染
-6.方法执行数据自定义观测（js脚本）
-7.查看方法调用堆栈
-</code></pre>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/6">&larr; Older</a>
@@ -1645,6 +1573,10 @@ agent方式启动的btrace的标准输出位于你的SqlMapTracer.class所在目
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/04/build-openjdk/">Build Openjdk</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2017/02/04/api-blocking/">Api Blocking</a>
@@ -1682,10 +1614,6 @@ agent方式启动的btrace的标准输出位于你的SqlMapTracer.class所在目
         <a href="/blog/2016/08/20/cratewen-dang-fan-yi/">Crate文档翻译</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/07/22/%5B%3F%5D-ge-si-suo-wen-ti/">一个死锁问题</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1697,7 +1625,7 @@ agent方式启动的btrace的标准输出位于你的SqlMapTracer.class所在目
 <li><a class='list-group-item' href='/blog/categories/druid/'>druid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
-<li><a class='list-group-item' href='/blog/categories/java/'>java (25)</a></li>
+<li><a class='list-group-item' href='/blog/categories/java/'>java (26)</a></li>
 <li><a class='list-group-item' href='/blog/categories/library/'>library (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (13)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>

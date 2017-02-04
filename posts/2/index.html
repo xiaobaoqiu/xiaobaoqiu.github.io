@@ -9,8 +9,9 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.任务增加属性 最近逐步将组内的审核业务迁移到 Activiti 上，为了适配已有业务，需要原生的 Activiti 的用户任务上增加一些属性，比如用户任务(UserTask)增加类型属性等。
-Activiti版本为：5.22.0 1.任务增加属性 下面以增加任务类型为例子，记录修改点： 1 &hellip;">
+  <meta name="description" content="1.事件处理
+2.Listener异常处理
+3.Listener注册 1.事件处理 Activiti 内部充斥着各种各样的事件，详见：org.activiti.engine.delegate.event.ActivitiEventType的定义。 在 Activiti 5.15 以前， &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -76,6 +77,387 @@ Activiti版本为：5.22.0 1.任务增加属性 下面以增加任务类型为�
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2016/12/29/activitishi-jian-chu-li/">Activiti事件处理</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-12-29T18:39:59+08:00'><span class='date'><span class='date-month'>Dec</span> <span class='date-day'>29</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>6:39 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.%E4%BA%8B%E4%BB%B6%E5%A4%84%E7%90%86">1.事件处理</a></li>
+<li><a href="#2.Listener%E5%BC%82%E5%B8%B8%E5%A4%84%E7%90%86">2.Listener异常处理</a></li>
+<li><a href="#3.Listener%E6%B3%A8%E5%86%8C">3.Listener注册</a></li>
+</ul>
+
+
+<h2 id="1.事件处理">1.事件处理</h2>
+
+
+<p>Activiti 内部充斥着各种各样的事件，详见：org.activiti.engine.delegate.event.ActivitiEventType的定义。</p>
+
+<p>在 Activiti 5.15 以前，处理事件需要在流程设计的时候显示的加入各种Listener，比如：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>    &lt;userTask id="leaderVerifyTask" activiti:taskType="2"&gt;
+</span><span class='line'>        &lt;extensionElements&gt;
+</span><span class='line'>            &lt;activiti:taskListener event="create" delegateExpression="${taskCreateListener}"/&gt;
+</span><span class='line'>            &lt;activiti:taskListener event="assignment" delegateExpression="${taskAssignmentListener}"/&gt;
+</span><span class='line'>            &lt;activiti:taskListener event="complete" delegateExpression="${taskCompleteListener}"/&gt;
+</span><span class='line'>        &lt;/extensionElements&gt;
+</span><span class='line'>    &lt;/userTask&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Spring会注入 taskCreateListener 这个bean来作为 leaderVerifyTask 这个任务的创建事件响应逻辑。
+这种方式的问题在于，流程设计的时候需要知道 代码中具体的类或者bean的名称，因此无法做到将流程的设计交与开发人员之外的人来做。</p>
+
+<p> 在 Activiti 5.15 中加入了全局的事件监听器 ActivitiEventListener，我们只需要实现一个自己的全局的事件处理器，然后自定义各种事件的处理器。</p>
+
+<pre><code class="`"> /**
+ * 流程服务的全局 Listener
+ *
+ * @author xiaobaoqiu  Date: 16-12-19 Time: 下午7:16
+ */
+public class GlobalProcessEventListener implements ActivitiEventListener {
+
+    /**
+     * 各类 Event 的处理器
+     * 其中事件类型参见 ActivitiEventType 定义
+     *
+     * @see org.activiti.engine.delegate.event.ActivitiEventType
+     */
+    private Map&lt;ActivitiEventType, ProcessEventHandler&gt; handlers = new HashMap&lt;&gt;();
+
+    @Override
+    public void onEvent(ActivitiEvent event) {
+        ProcessEventHandler handler = handlers.get(event.getType());
+        if (handler != null) {
+            handler.handle(event);
+        }
+    }
+
+    @Override
+    public boolean isFailOnException() {
+        return false;
+    }
+
+    public Map&lt;ActivitiEventType, ProcessEventHandler&gt; getHandlers() {
+        return handlers;
+    }
+
+    public void setHandlers(Map&lt;ActivitiEventType, ProcessEventHandler&gt; handlers) {
+        this.handlers = handlers;
+    }
+}
+
+/**
+ * 流程事件处理
+ *
+ * @author xiaobaoqiu  Date: 16-12-21 Time: 下午1:33
+ */
+public interface ProcessEventHandler {
+
+    void handle(ActivitiEvent event);
+}
+</code></pre>
+
+<p>ActivitiEventListener能做到和流程设计无关，只需要在配置 Activiti 的时候将其注入，并且可以在其中配置能处理哪些类型的事件：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;bean id="processEngineConfiguration" class="org.activiti.spring.SpringProcessEngineConfiguration"&gt;
+</span><span class='line'>    &lt;property 其他配置 /&gt;
+</span><span class='line'>    &lt;property name="eventListeners"&gt;
+</span><span class='line'>        &lt;list&gt;
+</span><span class='line'>            &lt;ref bean="globalProcessEventListener"/&gt;
+</span><span class='line'>        &lt;/list&gt;
+</span><span class='line'>    &lt;/property&gt;
+</span><span class='line'>&lt;/bean&gt;
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>&lt;!--流程全局事件处理器--&gt;
+</span><span class='line'>&lt;bean id="globalProcessEventListener" class="com.qunar.scm.ct.biz.process.event.GlobalProcessEventListener"&gt;
+</span><span class='line'>    &lt;property name="handlers"&gt;
+</span><span class='line'>        &lt;map&gt;
+</span><span class='line'>            &lt;entry key="TASK_CREATED"&gt;
+</span><span class='line'>                &lt;bean class="com.qunar.xxx.ProcessProcessTaskCreateListener"/&gt;
+</span><span class='line'>            &lt;/entry&gt;
+</span><span class='line'>            &lt;entry key="TASK_COMPLETED"&gt;
+</span><span class='line'>                &lt;bean class="com.qunar.xxx.ProcessProcessTaskCompleteListener"/&gt;
+</span><span class='line'>            &lt;/entry&gt;
+</span><span class='line'>            &lt;entry key="TASK_ASSIGNED"&gt;
+</span><span class='line'>                &lt;bean class="com.qunar.xxx.ProcessProcessTaskAssignmentListener"/&gt;
+</span><span class='line'>            &lt;/entry&gt;
+</span><span class='line'>        &lt;/map&gt;
+</span><span class='line'>    &lt;/property&gt;
+</span><span class='line'>&lt;/bean&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>参考：
+<a href="https://www.activiti.org/userguide/index.html#eventDispatcherConfiguration">https://www.activiti.org/userguide/index.html#eventDispatcherConfiguration</a></p>
+
+<h2 id="2.Listener异常处理">2.Listener异常处理</h2>
+
+
+<p>需要注意的一点是 GlobalProcessEventListener 中的异常处理,我们在实现 GlobalProcessEventListener 的时候,ActivitiEventListener有一个接口需要实现:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * @return whether or not the current operation should fail when this listeners execution
+</span><span class='line'> * throws an exception. 
+</span><span class='line'> */
+</span><span class='line'>boolean isFailOnException();</span></code></pre></td></tr></table></div></figure>
+
+
+<p>即当 listener 抛出一个异常的时候,当前操作时序应该失败(其实就是是否需要吞掉 listener 的异常).</p>
+
+<p>我们可以看看 Activiti 相关的源代码,在 ActivitiEventSupport 中的 dispatchEvent 函数,我们可以清晰的看到,listener.isFailOnException()为false则会讲异常吞掉,只是打一行日志.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>protected void dispatchEvent(ActivitiEvent event, ActivitiEventListener listener) {
+</span><span class='line'>    try {
+</span><span class='line'>        listener.onEvent(event);
+</span><span class='line'>    } catch (Throwable t) {
+</span><span class='line'>        if (listener.isFailOnException()) {
+</span><span class='line'>            throw new ActivitiException("Exception while executing event-listener", t);
+</span><span class='line'>        } else {
+</span><span class='line'>            // Ignore the exception and continue notifying remaining listeners. The
+</span><span class='line'>            // listener
+</span><span class='line'>            // explicitly states that the exception should not bubble up
+</span><span class='line'>            LOG.warn("Exception while executing event-listener, which was ignored", t);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我的建议(也是我现在的做法)是:isFailOnException()设置为true,然后在对应的 ProcessEventHandler 自己处理需要吞掉异常的场景.</p>
+
+<h2 id="3.Listener注册">3.Listener注册</h2>
+
+
+<p>通常而言,我们的 ProcessEventHandler 需要使用到 Activiti 的Service,比如我的一个简单场景,我需要在 UserTask 获取一些业务信息,新词我需要使用 RuntimeService 来查询一些信息</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 任务创建事件
+</span><span class='line'> *
+</span><span class='line'> * @author xiaobaoqiu  Date: 16-12-23 Time: 下午7:09
+</span><span class='line'> */
+</span><span class='line'>public class ProcessTaskCreateListener extends AbstractProcessTaskListener {
+</span><span class='line'>
+</span><span class='line'>    @Resource
+</span><span class='line'>    private RuntimeService runtimeService;
+</span><span class='line'>    ...
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>按照第一节的写法,就会出现Bean循环依赖的问题:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1. ProcessEngineConfiguration 实例创建会触发 GlobalProcessEventListener 创建;
+</span><span class='line'>2.GlobalProcessEventListener 实例创建会触发 ProcessProcessTaskCreateListener 创建;
+</span><span class='line'>3.ProcessProcessTaskCreateListener 实例创建会触发 RuntimeService 创建;
+</span><span class='line'>4.RuntimeService 实例创建依赖 ProcessEngineFactoryBean 创建;
+</span><span class='line'>5.ProcessEngineFactoryBean 创建依赖 ProcessEngineConfiguration实例;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>并且 ProcessEngineFactoryBean 是 Activiti 自己实现的 FactoryBean,用来获得 ProcessEngine 实例 :</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class ProcessEngineFactoryBean implements FactoryBean&lt;ProcessEngine&gt;, DisposableBean, ApplicationContextAware {
+</span><span class='line'>    ...
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>这个问题一个比较好的解法是, 将 GlobalProcessEventListener 的注册延后到 GlobalProcessEventListener 初始化完成之后,因此涉及到两个问题:</p>
+
+<pre><code>1.GlobalProcessEventListener 什么时机去做自己注册;
+2.GlobalProcessEventListener 如何将自己注册到 SpringProcessEngineConfiguration 中;
+</code></pre>
+
+<p>其中第一个问题很好回答, GlobalProcessEventListener 自己初始化完成之后去自注册,这个时候依赖的各种Bean已经创建初始化完成了.因此只需要实现 ApplicationContextAware 接口,然后在 setApplicationContext 中做注册的工作.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class GlobalProcessEventListener implements ActivitiEventListener, ApplicationContextAware {
+</span><span class='line'>    /**
+</span><span class='line'>     * 将当前 EventListener 注册到 Activiti 中
+</span><span class='line'>     */
+</span><span class='line'>    @Override
+</span><span class='line'>    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+</span><span class='line'>        ...
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>第二个问题,如何自己注册上去,这个看看源代码就会找到方法, 我们在配置文件中给 SpringProcessEngineConfiguration 配置 EventListener 调用的其实是 setEventListeners 方法</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  public void setEventListeners(List&lt;ActivitiEventListener&gt; eventListeners) {
+</span><span class='line'>      this.eventListeners = eventListeners;
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>我们看远吗发现其中使用 eventListeners 的只有一个地方,就是将其赋值给 ActivitiEventDispatcher</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if(eventListeners != null) {
+</span><span class='line'>    for(ActivitiEventListener listenerToAdd : eventListeners) {
+</span><span class='line'>        this.eventDispatcher.addEventListener(listenerToAdd);
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>而 ActivitiEventDispatcher 才是使用  EventListener 的地方.我们再看源码发现 ActivitiEventDispatcher 提供了 addEventListener 的入口</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public interface ActivitiEventDispatcher {
+</span><span class='line'>
+</span><span class='line'>    /**
+</span><span class='line'>     * Adds an event-listener which will be notified of ALL events by the dispatcher.
+</span><span class='line'>     * @param listenerToAdd the listener to add
+</span><span class='line'>     */
+</span><span class='line'>    void addEventListener(ActivitiEventListener listenerToAdd);
+</span><span class='line'>    
+</span><span class='line'>    /**
+</span><span class='line'>     * Adds an event-listener which will only be notified when an event of the given types occurs.
+</span><span class='line'>     * @param listenerToAdd the listener to add
+</span><span class='line'>     * @param types types of events the listener should be notified for
+</span><span class='line'>     */
+</span><span class='line'>    void addEventListener(ActivitiEventListener listenerToAdd, ActivitiEventType... types);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>并且 SpringProcessEngineConfiguration 有 getEventDispatcher 来获得 ActivitiEventDispatcher 实例,因此我们可以通过 getEventDispatcher 来拿到 ActivitiEventDispatcher 实例,然后将当前的 EventListener 通过 addEventListener 的方法增加到 ActivitiEventDispatcher 的 EventListener 列表中.</p>
+
+<p>因此,最终的实现代码很简单:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 将当前 EventListener 注册到 Activiti 中
+</span><span class='line'> */
+</span><span class='line'>@Override
+</span><span class='line'>public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+</span><span class='line'>    SpringProcessEngineConfiguration configuration = applicationContext.getBean(SpringProcessEngineConfiguration.class);
+</span><span class='line'>    configuration.getEventDispatcher().addEventListener(this);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -807,573 +1189,6 @@ String能这样讲hash值cache下来的原因就是上面提到的</p>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2016/07/22/%5B%3F%5D-ge-si-suo-wen-ti/">一个死锁问题</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2016-07-22T14:33:14+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>22</span><span class='date-suffix'>nd</span>, <span class='date-year'>2016</span></span> <span class='time'>2:33 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><ul>
-<li><a href="#1.%E8%83%8C%E6%99%AF">1.背景</a></li>
-<li><a href="#2.%E9%97%AE%E9%A2%98%E9%87%8D%E7%8E%B0">2.问题重现</a></li>
-<li><a href="#3.%E6%AD%BB%E9%94%81%E5%88%86%E6%9E%90">3.死锁分析</a>
-
-<ul>
-<li><a href="#3.1%20SQL%E5%8A%A0%E9%94%81">3.1 SQL加锁</a></li>
-<li><a href="#3.2%20%E9%94%81%E5%86%B2%E7%AA%81">3.2 锁冲突</a></li>
-</ul>
-</li>
-<li><a href="#4.%E8%A7%A3%E5%86%B3">4.解决</a></li>
-<li><a href="#5.%E9%94%81%E7%AD%89%E5%BE%85">5.锁等待</a></li>
-</ul>
-
-
-<p>最近线上业务报了几次死锁问题，决定跟进。</p>
-
-<h2 id="1.背景">1.背景</h2>
-
-
-<p>有一个业务数据表business，维护了一个名为c_id的外键，一个c_id对应多个business数据。</p>
-
-<p>在业务数据新增或者修改的时候，需要同步的维护 business 的数据，这时候正确的做法是diff新旧数据，得到需要删除的一部分数据，需要新增的一部分数据以及需要更新的一部分数据，这种实现有点麻烦(其实也不麻烦，使用Guava的集合操作)，因此工程师们的通常做法是先根据c_id删除现有数据，再插入新数据。这个时候很容易出现死锁。</p>
-
-<p>这里也解释一下外键，在业务DB中，出于性能考虑，通常禁止使用外键，通常的做法是，外键这种关系的维护都体现在表中手动维护一个外键。</p>
-
-<p>在交代一下数据库相关的背景：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>DB：Mysql 5.6
-</span><span class='line'>tx_isolation：REPEATABLE-READ</span></code></pre></td></tr></table></div></figure>
-
-
-<h2 id="2.问题重现">2.问题重现</h2>
-
-
-<p>我们在本地重现死锁信息。</p>
-
-<p>建表语句已经初始化的数据如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>CREATE TABLE `business` (
-</span><span class='line'>  `id` int(11) unsigned NOT NULL AUTO_INCREMENT COMMENT '',
-</span><span class='line'>  `c_id` int(11) NOT NULL DEFAULT '0' COMMENT '',
-</span><span class='line'>  `business_id` tinyint(3) unsigned NOT NULL DEFAULT '0' COMMENT '',
-</span><span class='line'>  PRIMARY KEY (`id`),
-</span><span class='line'>  UNIQUE KEY `uniq_idx_c_id_business_id` (`c_id`,`business_id`)
-</span><span class='line'>) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='';
-</span><span class='line'>
-</span><span class='line'>mysql&gt; select * from business;
-</span><span class='line'>+----+-------------+-------------+
-</span><span class='line'>| id | c_id | business_id |
-</span><span class='line'>+----+-------------+-------------+
-</span><span class='line'>| 20 |           1 |           2 |
-</span><span class='line'>| 21 |           1 |           3 |
-</span><span class='line'>| 23 |           1 |           4 |
-</span><span class='line'>| 22 |           1 |           5 |
-</span><span class='line'>| 10 |           2 |           1 |
-</span><span class='line'>| 11 |           2 |           2 |
-</span><span class='line'>|  5 |           3 |           1 |
-</span><span class='line'>|  6 |           4 |           1 |
-</span><span class='line'>|  7 |           5 |           1 |
-</span><span class='line'>+----+-------------+-------------+</span></code></pre></td></tr></table></div></figure>
-
-
-<p>我们模拟同时两个新数据的插入过程：</p>
-
-<table>
-<thead>
-<tr>
-<th style="text-align:center;">步骤 </th>
-<th style="text-align:left;"> 事务1 </th>
-<th style="text-align:left;"> 事务2 </th>
-<th style="text-align:left;"> 备注 </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align:center;">1 </td>
-<td style="text-align:left;"> begin </td>
-<td style="text-align:left;">  </td>
-<td style="text-align:left;">  </td>
-</tr>
-<tr>
-<td style="text-align:center;">2 </td>
-<td style="text-align:left;"> </td>
-<td style="text-align:left;"> begin </td>
-<td style="text-align:left;">  </td>
-</tr>
-<tr>
-<td style="text-align:center;">3 </td>
-<td style="text-align:left;"> mysql> delete from business where c_id = 6;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
-<td style="text-align:left;">  </td>
-<td style="text-align:left;"> 事务1：Gap锁，锁住区域(5, +∞) </td>
-</tr>
-<tr>
-<td style="text-align:center;">4 </td>
-<td style="text-align:left;">  </td>
-<td style="text-align:left;"> mysql> delete from business where c_id = 7;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
-<td style="text-align:left;"> 事务2：Gap锁，锁住区域(5, +∞)  </td>
-</tr>
-<tr>
-<td style="text-align:center;">5 </td>
-<td style="text-align:left;"> mysql> insert into business (c_id, business_id) values (6, 1);<br><br>等待&hellip; </td>
-<td style="text-align:left;">  </td>
-<td style="text-align:left;"> 事务1：插入意向锁(Insert Intention Lock)，期望获取(5, 6)这个Gap锁和一个c_id=6的Recored锁。<br>但是因为 事务2 已经锁住了区域(5, +∞)因此这时候，事务1只能等待 事务2 释放锁. </td>
-</tr>
-<tr>
-<td style="text-align:center;">6 </td>
-<td style="text-align:left;">  </td>
-<td style="text-align:left;"> mysql> insert into business (c_id, business_id) values (7, 1); <br><br>ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting transaction </td>
-<td style="text-align:left;"> 和上面第5步类似， 事务2：等待获取事务1的锁<br><br>出现循环等待，死锁(roll back这个事务，事务2的锁释放) </td>
-</tr>
-<tr>
-<td style="text-align:center;">7 </td>
-<td style="text-align:left;"> Query OK, 2 rows affected (2.89 sec)<br>Records: 2  Duplicates: 0  Warnings: 0<br><br>事务2 rollback了，事务1的insert成功 </td>
-<td style="text-align:left;">  </td>
-<td style="text-align:left;"> 事务1等待的锁得到，事务1成功。</td>
-</tr>
-</tbody>
-</table>
-
-
-<p>第 5 步的锁信息如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>// 锁信息
-</span><span class='line'>// 事务1( 即这里的事务id：203797) 持有一个Gap锁，事务2( 即这里的事务id：203798) 持有一个Gap锁
-</span><span class='line'>mysql&gt; select * from INNODB_LOCKS;
-</span><span class='line'>+---------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+------------------------+
-</span><span class='line'>| lock_id       | lock_trx_id | lock_mode | lock_type | lock_table                    | lock_index                       | lock_space | lock_page | lock_rec | lock_data              |
-</span><span class='line'>+---------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+------------------------+
-</span><span class='line'>| 203797:20:4:1 | 203797      | X         | RECORD    | `test`.`business` | uniq_idx_c_id_business_id |         20 |         4 |        1 | supremum pseudo-record |
-</span><span class='line'>| 203798:20:4:1 | 203798      | X         | RECORD    | `test`.`business` | uniq_idx_c_id_business_id |         20 |         4 |        1 | supremum pseudo-record |
-</span><span class='line'>+---------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+------------------------+
-</span><span class='line'>
-</span><span class='line'>// 锁等待信息
-</span><span class='line'>// 事务1( 即这里的事务id：203797) 等待事务2(即这里的事务id：203798 )的锁
-</span><span class='line'>mysql&gt; select * from INNODB_LOCK_WAITS;
-</span><span class='line'>+-------------------+-------------------+-----------------+------------------+
-</span><span class='line'>| requesting_trx_id | requested_lock_id | blocking_trx_id | blocking_lock_id |
-</span><span class='line'>+-------------------+-------------------+-----------------+------------------+
-</span><span class='line'>| 203797            | 203797:20:4:1     | 203798          | 203798:20:4:1    |
-</span><span class='line'>+-------------------+-------------------+-----------------+------------------+</span></code></pre></td></tr></table></div></figure>
-
-
-<p>有些人可能迷惑 lock_data 的 supremum pseudo-record 是什么东西，我们先看看 lock_data 的解释，这里面解释了 supremum pseudo-record，简单说就是正无穷。</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Primary key value(s) of the locked record if LOCK_TYPE='RECORD', otherwise NULL. 
-</span><span class='line'>This column contains the value(s) of the primary key column(s) in the locked row, formatted as a valid SQL string (ready to be copied to SQL commands). 
-</span><span class='line'>If there is no primary key then the InnoDB internal unique row ID number is used. 
-</span><span class='line'>If a gap lock is taken for key values or ranges above the largest value in the index, LOCK_DATA reports “supremum pseudo-record”. 
-</span><span class='line'>When the page containing the locked record is not in the buffer pool (in the case that it was paged out to disk while the lock was held), InnoDB does not fetch the page from disk, to avoid unnecessary disk operations. Instead, LOCK_DATA is set to NULL.</span></code></pre></td></tr></table></div></figure>
-
-
-<p>死锁信息：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; show engine innodb status \G
-</span><span class='line'>...
-</span><span class='line'>------------------------
-</span><span class='line'>LATEST DETECTED DEADLOCK
-</span><span class='line'>------------------------
-</span><span class='line'>2016-07-21 19:11:05 7f6b90de8700
-</span><span class='line'>*** (1) TRANSACTION:
-</span><span class='line'>TRANSACTION 203797, ACTIVE 42 sec inserting
-</span><span class='line'>mysql tables in use 1, locked 1
-</span><span class='line'>LOCK WAIT 3 lock struct(s), heap size 360, 2 row lock(s), undo log entries 1
-</span><span class='line'>MySQL thread id 9, OS thread handle 0x7f6b90db7700, query id 144 localhost root update
-</span><span class='line'>insert into business (c_id, business_id) values (6, 1)
-</span><span class='line'>*** (1) WAITING FOR THIS LOCK TO BE GRANTED:
-</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_c_id_business_id` of table `test`.`business` trx id 203797 lock_mode X insert intention waiting
-</span><span class='line'>Record lock, heap no 1 PHYSICAL RECORD: n_fields 1; compact format; info bits 0
-</span><span class='line'> 0: len 8; hex 73757072656d756d; asc supremum;;
-</span><span class='line'>
-</span><span class='line'>*** (2) TRANSACTION:
-</span><span class='line'>TRANSACTION 203798, ACTIVE 38 sec inserting
-</span><span class='line'>mysql tables in use 1, locked 1
-</span><span class='line'>3 lock struct(s), heap size 360, 2 row lock(s), undo log entries 1
-</span><span class='line'>MySQL thread id 10, OS thread handle 0x7f6b90de8700, query id 147 localhost root update
-</span><span class='line'>insert into business (c_id, business_id) values (7, 1)
-</span><span class='line'>*** (2) HOLDS THE LOCK(S):
-</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_c_id_business_id` of table `test`.`business` trx id 203798 lock_mode X
-</span><span class='line'>Record lock, heap no 1 PHYSICAL RECORD: n_fields 1; compact format; info bits 0
-</span><span class='line'> 0: len 8; hex 73757072656d756d; asc supremum;;
-</span><span class='line'>
-</span><span class='line'>*** (2) WAITING FOR THIS LOCK TO BE GRANTED:
-</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_c_id_business_id` of table `test`.`business` trx id 203798 lock_mode X insert intention waiting
-</span><span class='line'>Record lock, heap no 1 PHYSICAL RECORD: n_fields 1; compact format; info bits 0
-</span><span class='line'> 0: len 8; hex 73757072656d756d; asc supremum;;
-</span><span class='line'>
-</span><span class='line'>*** WE ROLL BACK TRANSACTION (2)
-</span><span class='line'>------------
-</span><span class='line'>TRANSACTIONS
-</span><span class='line'>------------</span></code></pre></td></tr></table></div></figure>
-
-
-<p>从死锁信息中，我们也可以看到事务1(事务id：203797) 和 事务2(事务id：203798) 持有的锁是锁住相同的一块区域：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'> 0: len 8; hex 73757072656d756d; asc supremum;;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参考：<a href="http://blog.itpub.net/29819001/viewspace-1440895/">mysql InnoDB锁等待的查看及分析</a></p>
-
-<h2 id="3.死锁分析">3.死锁分析</h2>
-
-
-<p>有两个点需要我们知道的信息：各种SQL语句都加什么锁，为什么这里的两个delete的锁没有冲突。</p>
-
-<h4 id="3.1 SQL加锁">3.1 SQL加锁</h4>
-
-
-<p>关于各种SQL语句加什么锁，参见Mysql官方文档：<a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-locks-set.html">Locks Set by Different SQL Statements in InnoDB</a></p>
-
-<p>我们这里来说涉及的删除和插入，先说删除：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>//删除，会在满足条件的记录上加一个next-key锁，也就是锁住之前的Gap和待删除的记录。
-</span><span class='line'>DELETE FROM ... WHERE ... sets an exclusive next-key lock on every record the search encounters.
-</span><span class='line'>
-</span><span class='line'>//显然，如果删除的数据比现有最大数据max还大，就会锁(max, +∞)这个Gap
-</span><span class='line'>//同理，如果删除的数据比现有最小数据min还小，就会锁(-∞, min)这个Gap</span></code></pre></td></tr></table></div></figure>
-
-
-<p>再说插入，插入比较麻烦，因为涉及到插入意向锁(Insert Intention Lock)，还是参考Mysql官方文档：<a href="http://dev.mysql.com/doc/refman/5.6/en/innodb-locking.html">InnoDB Locking</a></p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>An insert intention lock is a type of gap lock set by INSERT operations prior to row insertion. 
-</span><span class='line'>This lock signals the intent to insert in such a way that multiple transactions inserting into the same index gap need not wait for each other if they are not inserting at the same position within the gap. 
-</span><span class='line'>Suppose that there are index records with values of 4 and 7. Separate transactions that attempt to insert values of 5 and 6, respectively, each lock the gap between 4 and 7 with insert intention locks prior to obtaining the exclusive lock on the inserted row, but do not block each other because the rows are nonconflicting.</span></code></pre></td></tr></table></div></figure>
-
-
-<p>简单的是说，插入意向锁可以归结为如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>锁的类型：Gap Lock
-</span><span class='line'>加锁时间：插入之前
-</span><span class='line'>锁的区域：待插入的区域，比如已有数据4,7，想要插入5，就会锁住(4, 7)这个区域
-</span><span class='line'>锁的冲突：只要两个插入的数据不在同一个位置(其实可以理解为同一个数据)，插入意向锁之间就不会冲突</span></code></pre></td></tr></table></div></figure>
-
-
-<p>插入的锁如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>INSERT sets an exclusive lock on the inserted row. This lock is an index-record lock, not a next-key lock (that is, there is no gap lock) and does not prevent other sessions from inserting into the gap before the inserted row.
-</span><span class='line'>
-</span><span class='line'>Prior to inserting the row, a type of gap lock called an insert intention gap lock is set. This lock signals the intent to insert in such a way that multiple transactions inserting into the same index gap need not wait for each other if they are not inserting at the same position within the gap. </span></code></pre></td></tr></table></div></figure>
-
-
-<p>就是说插入之前会加一把插入意向锁，除此之外，会在插入的记录上加一把锁。</p>
-
-<h4 id="3.2 锁冲突">3.2 锁冲突</h4>
-
-
-<p>关于锁冲突，我们熟知的肯定是S和S兼容，X和其他所有都不兼容。事实上并没有这么简单。比如我们这里前面的例子，两个delete都加了X型的Gap锁，应该排斥才对，但事实上是兼容的。这里参考了<a href="http://narcissusoyf.iteye.com/blog/1637309">从一个死锁看mysql innodb的锁机制</a>这篇文章的结论(准备读源码验证)：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>下面这个是 precise mode 的兼容矩阵：（这个兼容矩阵发生在X与X，S与X不兼容的情况下再进行比对的）
-</span><span class='line'>
-</span><span class='line'>    G    I     R    N (已经存在的锁,包括等待的锁)
-</span><span class='line'>G   +     +    +     + 
-</span><span class='line'>I    -      +    +     -
-</span><span class='line'>R   +     +     -     -
-</span><span class='line'>N   +     +     -     -
-</span><span class='line'>
-</span><span class='line'>+ 代表兼容， -代表不兼容. I代表插入意图锁,
-</span><span class='line'>G代表Gap锁，I代表插入意图锁,R代表记录锁，N代表Next-Key锁.</span></code></pre></td></tr></table></div></figure>
-
-
-<p>其实仔细读<a href="https://dev.mysql.com/doc/refman/5.6/en/innodb-locking.html">Mysql官方文档</a>，我们也能发现上面的两个delete的Gap锁是兼容的：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Gap locks in InnoDB are “purely inhibitive”, which means they only stop other transactions from inserting to the gap. 
-</span><span class='line'>They do not prevent different transactions from taking gap locks on the same gap. Thus, a gap X-lock has the same effect as a gap S-lock.</span></code></pre></td></tr></table></div></figure>
-
-
-<p>意思就是说Gap锁的作用是只防止其他事务在这个Gap内的插入，而不排斥其他事务在同一个Gap加上Gap锁。因此Gap X锁和Gap S锁效果相同。
-(真心文档每句话都需要仔细理解哈。)</p>
-
-<h2 id="4.解决">4.解决</h2>
-
-
-<p>DBA的建议：先根据 c_id 查询id，根据 id 删除;</p>
-
-<p>其实只要保证数据存在再区删除就没问题，我们假设我们执行两个以存在数据的先删除再插入。</p>
-
-<p>一个辅助的示意图如下：</p>
-
-<p><img src="/images/mysql/lock.png"></p>
-
-<h2 id="5.锁等待">5.锁等待</h2>
-
-
-<p>其实上面的例子中会出现一个因为 UNIQUE KEY 导致的锁等待问题，我们可以重现，现有数据如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from business;
-</span><span class='line'>+----+-------------+-------------+
-</span><span class='line'>| id | c_id | business_id |
-</span><span class='line'>+----+-------------+-------------+
-</span><span class='line'>| 20 |           1 |           2 |
-</span><span class='line'>| 21 |           1 |           3 |
-</span><span class='line'>| 23 |           1 |           4 |
-</span><span class='line'>| 22 |           1 |           5 |
-</span><span class='line'>| 10 |           2 |           1 |
-</span><span class='line'>| 11 |           2 |           2 |
-</span><span class='line'>|  5 |           3 |           1 |
-</span><span class='line'>| 30 |           4 |           1 |
-</span><span class='line'>|  7 |           5 |           1 |
-</span><span class='line'>+----+-------------+-------------+</span></code></pre></td></tr></table></div></figure>
-
-
-<p>过程如下：</p>
-
-<table>
-<thead>
-<tr>
-<th style="text-align:center;">步骤 </th>
-<th style="text-align:left;"> 事务1 </th>
-<th style="text-align:left;"> 事务2 </th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align:center;">1 </td>
-<td style="text-align:left;"> begin </td>
-<td style="text-align:left;">  |  </td>
-</tr>
-<tr>
-<td style="text-align:center;">2 </td>
-<td style="text-align:left;"> </td>
-<td style="text-align:left;"> begin |  </td>
-</tr>
-<tr>
-<td style="text-align:center;">3 </td>
-<td style="text-align:left;"> mysql> delete from business where c_id = 3;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
-<td style="text-align:left;">  </td>
-</tr>
-<tr>
-<td style="text-align:center;">4 </td>
-<td style="text-align:left;">  </td>
-<td style="text-align:left;"> mysql> delete from business where c_id = 4;<br><br>Query OK, 0 rows affected (0.00 sec) </td>
-</tr>
-<tr>
-<td style="text-align:center;">5 </td>
-<td style="text-align:left;"> mysql> insert into business (c_id, business_id) values (3, 1);<br><br>等待&hellip;</td>
-<td style="text-align:left;">  </td>
-</tr>
-</tbody>
-</table>
-
-
-<p>INNODB_LOCKS信息及INNODB_LOCK_WAITS信息如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>mysql&gt; select * from INNODB_LOCK_WAITS;
-</span><span class='line'>+-------------------+-------------------+-----------------+------------------+
-</span><span class='line'>| requesting_trx_id | requested_lock_id | blocking_trx_id | blocking_lock_id |
-</span><span class='line'>+-------------------+-------------------+-----------------+------------------+
-</span><span class='line'>| 204349            | 204349:20:4:12    | 204350          | 204350:20:4:12   |
-</span><span class='line'>+-------------------+-------------------+-----------------+------------------+
-</span><span class='line'>1 row in set (0.00 sec)
-</span><span class='line'>
-</span><span class='line'>mysql&gt; select * from INNODB_LOCKS;
-</span><span class='line'>+----------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+-----------+
-</span><span class='line'>| lock_id        | lock_trx_id | lock_mode | lock_type | lock_table                    | lock_index                       | lock_space | lock_page | lock_rec | lock_data |
-</span><span class='line'>+----------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+-----------+
-</span><span class='line'>| 204349:20:4:12 | 204349      | S         | RECORD    | `test`.`business` | uniq_idx_c_id_business_id |         20 |         4 |       12 | 4, 1      |
-</span><span class='line'>| 204350:20:4:12 | 204350      | X         | RECORD    | `test`.`business` | uniq_idx_c_id_business_id |         20 |         4 |       12 | 4, 1      |
-</span><span class='line'>+----------------+-------------+-----------+-----------+-------------------------------+----------------------------------+------------+-----------+----------+-----------+</span></code></pre></td></tr></table></div></figure>
-
-
-<p>show engine innodb status信息如下：</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>---TRANSACTION 204350, ACTIVE 24 sec
-</span><span class='line'>4 lock struct(s), heap size 1184, 3 row lock(s), undo log entries 1
-</span><span class='line'>MySQL thread id 22, OS thread handle 0x7fd7ee4f0700, query id 245 localhost root cleaning up
-</span><span class='line'>---TRANSACTION 204349, ACTIVE 31 sec inserting
-</span><span class='line'>mysql tables in use 1, locked 1
-</span><span class='line'>LOCK WAIT 5 lock struct(s), heap size 1184, 4 row lock(s), undo log entries 2
-</span><span class='line'>MySQL thread id 20, OS thread handle 0x7fd7ee4bf700, query id 250 localhost root update
-</span><span class='line'>insert into business (c_id, business_id) values (3, 1)
-</span><span class='line'>------- TRX HAS BEEN WAITING 6 SEC FOR THIS LOCK TO BE GRANTED:
-</span><span class='line'>RECORD LOCKS space id 20 page no 4 n bits 80 index `uniq_idx_c_id_business_id` of table `test`.`business` trx id 204349 lock mode S waiting
-</span><span class='line'>Record lock, heap no 12 PHYSICAL RECORD: n_fields 3; compact format; info bits 32
-</span><span class='line'> 0: len 4; hex 80000004; asc     ;;
-</span><span class='line'> 1: len 1; hex 01; asc  ;;
-</span><span class='line'> 2: len 4; hex 0000001e; asc     ;;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>这里没明白的一点好事务1(事务id:204349)的insert一个(3, 1)的数据为什么会在(4, 1)上加一个S锁?</p>
-
-<p>不过实验了一下，去掉UNIQUE KEY，使用普通的key，就没有这个锁等到问题，所以这个锁是因为UNIQUE KEY引发的。
-这个问题有待进一步深入查资料。</p>
-
-<p><a href="http://songuooo.com/2015/1/7/deadlock-detected-on-concurrent-insert">http://songuooo.com/2015/1/7/deadlock-detected-on-concurrent-insert</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/3">&larr; Older</a>
@@ -1391,6 +1206,10 @@ String能这样讲hash值cache下来的原因就是上面提到的</p>
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/04/build-openjdk/">Build Openjdk</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2017/02/04/api-blocking/">Api Blocking</a>
@@ -1428,10 +1247,6 @@ String能这样讲hash值cache下来的原因就是上面提到的</p>
         <a href="/blog/2016/08/20/cratewen-dang-fan-yi/">Crate文档翻译</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/07/22/%5B%3F%5D-ge-si-suo-wen-ti/">一个死锁问题</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -1443,7 +1258,7 @@ String能这样讲hash值cache下来的原因就是上面提到的</p>
 <li><a class='list-group-item' href='/blog/categories/druid/'>druid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/dubbo/'>dubbo (2)</a></li>
 <li><a class='list-group-item' href='/blog/categories/guava/'>guava (2)</a></li>
-<li><a class='list-group-item' href='/blog/categories/java/'>java (25)</a></li>
+<li><a class='list-group-item' href='/blog/categories/java/'>java (26)</a></li>
 <li><a class='list-group-item' href='/blog/categories/library/'>library (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/linux/'>linux (13)</a></li>
 <li><a class='list-group-item' href='/blog/categories/maven/'>maven (1)</a></li>
