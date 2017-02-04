@@ -9,12 +9,11 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="1.Spring事务 1.1 事务定义
-1.2 事务管理器
-1.3 How Transactional Works
-1.4 Roll Back
-1.5 Pitfalls 1.Spring事务 我们使用事务的目标： 1
-The most common reason for using &hellip;">
+  <meta name="description" content="1.Spring AOP 1.1 代理类型选择
+11.2 代理调用
+1.3 Understanding AOP Proxies
+1.4 Spring如何识别并解析配置
+1.5 Spring如何使用代理实现AOP 1.Spring AOP Spring的AOP(Aspect Oriented &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -80,6 +79,731 @@ The most common reason for using &hellip;">
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务2-AOP</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2016-07-15T14:26:22+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>15</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>2:26 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><ul>
+<li><a href="#1.Spring%20AOP">1.Spring AOP</a>
+
+<ul>
+<li><a href="#1.1%20%E4%BB%A3%E7%90%86%E7%B1%BB%E5%9E%8B%E9%80%89%E6%8B%A9">1.1 代理类型选择</a></li>
+<li><a href="#1.2%20%E4%BB%A3%E7%90%86%E8%B0%83%E7%94%A8">11.2 代理调用</a></li>
+<li><a href="#1.3%20Understanding%20AOP%20Proxies">1.3 Understanding AOP Proxies</a></li>
+<li><a href="#1.4%20Spring%E5%A6%82%E4%BD%95%E8%AF%86%E5%88%AB%E5%B9%B6%E8%A7%A3%E6%9E%90%E9%85%8D%E7%BD%AE">1.4 Spring如何识别并解析配置</a></li>
+<li><a href="#1.5%20Spring%E5%A6%82%E4%BD%95%E4%BD%BF%E7%94%A8%E4%BB%A3%E7%90%86%E5%AE%9E%E7%8E%B0AOP">1.5 Spring如何使用代理实现AOP</a></li>
+</ul>
+</li>
+</ul>
+
+
+<h2 id="1.Spring AOP">1.Spring AOP</h2>
+
+
+<p>Spring的AOP(Aspect Oriented Programming，面向切面编程)是一个强大的机制，常用场景在日志、安全、异常处理、事务等。Spring AOP的原理正是基于代理。</p>
+
+<p>我想了解的问题包括：</p>
+
+<pre><code>(1).Spring AOP使用什么机制做代理；
+(2).Spring 怎么使用代理达到AOP目的；
+</code></pre>
+
+<h4 id="#1.1 代理类型选择">#1.1 代理类型选择</h4>
+
+
+<p>先看看Spring是如何选择代理，先看看 <a href="http://docs.spring.io/spring/docs/3.0.x/reference/aop.html">Spring官方AOP文档</a> 的说明：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Spring AOP defaults to using standard J2SE dynamic proxies for AOP proxies. This enables any interface (or set of interfaces) to be proxied.
+</span><span class='line'>
+</span><span class='line'>Spring AOP can also use CGLIB proxies. This is necessary to proxy classes, rather than interfaces. CGLIB is used by default if a business object does not implement an interface. As it is good practice to program to interfaces rather than classes, business classes normally will implement one or more business interfaces. It is possible to force the use of CGLIB, in those (hopefully rare) cases where you need to advise a method that is not declared on an interface, or where you need to pass a proxied object to a method as a concrete type.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>官方文档的结论是：当业务Bean实现了一个或多个接口的时候，默认使用Java动态代理，当业务Bean没有实现任何接口的时候使用CGLib。</p>
+
+<p>我们来看看相关代码，Spring使用AopProxy表示AOP中的代理，它的作用只要一个：创建代理对象。它有两个实现类：JdkDynamicAopProxy 和 CglibAopProxy ：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public interface AopProxy {
+</span><span class='line'>    Object getProxy();
+</span><span class='line'>
+</span><span class='line'>    Object getProxy(ClassLoader classLoader);
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>// JdkDynamicAopProxy 实现了 InvocationHandler，实际产生代理类使用 Proxy
+</span><span class='line'>final class JdkDynamicAopProxy implements AopProxy, InvocationHandler, Serializable {
+</span><span class='line'>    public Object getProxy(ClassLoader classLoader) {
+</span><span class='line'>        ...
+</span><span class='line'>        return Proxy.newProxyInstance(classLoader, proxiedInterfaces, this);
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>final class CglibAopProxy implements AopProxy, Serializable {
+</span><span class='line'>    public Object getProxy(ClassLoader classLoader) {
+</span><span class='line'>        Class&lt;?&gt; rootClass = this.advised.getTargetClass();
+</span><span class='line'>
+</span><span class='line'>        // 配置 CGLIB Enhancer...
+</span><span class='line'>        Enhancer enhancer = createEnhancer();
+</span><span class='line'>        enhancer.setSuperclass(proxySuperClass);
+</span><span class='line'>        enhancer.setStrategy(new UndeclaredThrowableStrategy(UndeclaredThrowableException.class));
+</span><span class='line'>        enhancer.setInterfaces(AopProxyUtils.completeProxiedInterfaces(this.advised));
+</span><span class='line'>        enhancer.setInterceptDuringConstruction(false);
+</span><span class='line'>
+</span><span class='line'>        Callback[] callbacks = getCallbacks(rootClass);
+</span><span class='line'>        enhancer.setCallbacks(callbacks);
+</span><span class='line'>        enhancer.setCallbackFilter(new ProxyCallbackFilter(
+</span><span class='line'>                this.advised.getConfigurationOnlyCopy(), this.fixedInterceptorMap, this.fixedInterceptorOffset));
+</span><span class='line'>
+</span><span class='line'>        Class&lt;?&gt;[] types = new Class[callbacks.length]; //CGLib的回调机制
+</span><span class='line'>        for (int x = 0; x &lt; types.length; x++) {
+</span><span class='line'>            types[x] = callbacks[x].getClass();
+</span><span class='line'>        }
+</span><span class='line'>        enhancer.setCallbackTypes(types);
+</span><span class='line'>
+</span><span class='line'>        // 产生代理类并产生代理类的一个instance
+</span><span class='line'>        Object proxy;
+</span><span class='line'>        if (this.constructorArgs != null) {
+</span><span class='line'>            proxy = enhancer.create(this.constructorArgTypes, this.constructorArgs);
+</span><span class='line'>        } else {
+</span><span class='line'>            proxy = enhancer.create();
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        return proxy;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>AopProxyFactory的默认实现类DefaultAopProxyFactory：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public AopProxy createAopProxy(AdvisedSupport config) throws AopConfigException {
+</span><span class='line'>    if (config.isOptimize() || config.isProxyTargetClass() || hasNoUserSuppliedProxyInterfaces(config)) {
+</span><span class='line'>        Class targetClass = config.getTargetClass();
+</span><span class='line'>        if (targetClass == null) {
+</span><span class='line'>            throw new AopConfigException("TargetSource cannot determine target class: " +
+</span><span class='line'>                    "Either an interface or a target is required for proxy creation.");
+</span><span class='line'>        }
+</span><span class='line'>        if (targetClass.isInterface()) {    //被代理类，实现了接口，就使用Java动态代理
+</span><span class='line'>            return new JdkDynamicAopProxy(config);
+</span><span class='line'>        }
+</span><span class='line'>        return CglibProxyFactory.createCglibProxy(config);  //没有实现接口使用 CGLib代理
+</span><span class='line'>    }
+</span><span class='line'>    else {
+</span><span class='line'>        return new JdkDynamicAopProxy(config);
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>其中 AdvisedSupport 是 AOP配置管理的基类。这几个配置的说明可以参见 ProxyConfig 类。其中我注释的地方和官方文档是一致的。</p>
+
+<h4 id="#1.2 代理调用">#1.2 代理调用</h4>
+
+
+<p>得到代理对象之后的下一步就是调用代理逻辑，这部分实现直接看 JdkDynamicAopProxy.invoke() 代码：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+</span><span class='line'>    //TargetSource包括被代理者的一些属性
+</span><span class='line'>    TargetSource targetSource = this.advised.targetSource;
+</span><span class='line'>    try {
+</span><span class='line'>        Object retVal;
+</span><span class='line'>
+</span><span class='line'>        // 具体的被代理对象
+</span><span class='line'>        target = targetSource.getTarget();
+</span><span class='line'>        if (target != null) {
+</span><span class='line'>            targetClass = target.getClass();
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        // 从代理配置中获取方法上的 MethodInterceptor
+</span><span class='line'>        List&lt;Object&gt; chain = this.advised.getInterceptorsAndDynamicInterceptionAdvice(method, targetClass);
+</span><span class='line'>
+</span><span class='line'>        // 没有 MethodInterceptor，直接反射调用
+</span><span class='line'>        if (chain.isEmpty()) {
+</span><span class='line'>            retVal = AopUtils.invokeJoinpointUsingReflection(target, method, args);
+</span><span class='line'>        } else {
+</span><span class='line'>            // 创建 MethodInvocation 并调用
+</span><span class='line'>            invocation = new ReflectiveMethodInvocation(proxy, target, method, args, targetClass, chain);
+</span><span class='line'>            retVal = invocation.proceed();
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        return retVal;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>先看看如何获取方法上的 MethodInterceptor，AdvisedSupport其实只是对这个做缓存，实际调用 DefaultAdvisorChainFactory.getInterceptorsAndDynamicInterceptionAdvice：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * 从提供的配置实例config中获取advisor列表,遍历处理这些advisor
+</span><span class='line'> * 如果是PointcutAdvisor,则判断此Advisor能否应用到目标方法method上.
+</span><span class='line'> * 将满足条件的Advisor通过AdvisorAdaptor转化成Interceptor列表返回
+</span><span class='line'> */
+</span><span class='line'>public List&lt;Object&gt; getInterceptorsAndDynamicInterceptionAdvice(
+</span><span class='line'>        Advised config, Method method, Class targetClass) {
+</span><span class='line'>
+</span><span class='line'>    List&lt;Object&gt; interceptorList = new ArrayList&lt;Object&gt;(config.getAdvisors().length);
+</span><span class='line'>    boolean hasIntroductions = hasMatchingIntroductions(config, targetClass);
+</span><span class='line'>    AdvisorAdapterRegistry registry = GlobalAdvisorAdapterRegistry.getInstance();
+</span><span class='line'>    for (Advisor advisor : config.getAdvisors()) {
+</span><span class='line'>        if (advisor instanceof PointcutAdvisor) {
+</span><span class='line'>            PointcutAdvisor pointcutAdvisor = (PointcutAdvisor) advisor;
+</span><span class='line'>            if (config.isPreFiltered() || pointcutAdvisor.getPointcut().getClassFilter().matches(targetClass)) {
+</span><span class='line'>                //将Advisor转化成Interceptor
+</span><span class='line'>                MethodInterceptor[] interceptors = registry.getInterceptors(advisor);
+</span><span class='line'>                MethodMatcher mm = pointcutAdvisor.getPointcut().getMethodMatcher();
+</span><span class='line'>
+</span><span class='line'>                //检查当前advisor的pointcut是否可以匹配当前方法
+</span><span class='line'>                if (MethodMatchers.matches(mm, method, targetClass, hasIntroductions)) {
+</span><span class='line'>                    if (mm.isRuntime()) {
+</span><span class='line'>                        // Creating a new object instance in the getInterceptors() method
+</span><span class='line'>                        // isn't a problem as we normally cache created chains.
+</span><span class='line'>                        for (MethodInterceptor interceptor : interceptors) {
+</span><span class='line'>                            interceptorList.add(new InterceptorAndDynamicMethodMatcher(interceptor, mm));
+</span><span class='line'>                        }
+</span><span class='line'>                    }
+</span><span class='line'>                    else {
+</span><span class='line'>                        interceptorList.addAll(Arrays.asList(interceptors));
+</span><span class='line'>                    }
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>        ...
+</span><span class='line'>    }
+</span><span class='line'>    return interceptorList;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面看看这些 Interceptor 是如何起作用的，看 ReflectiveMethodInvocation 的 proceed() 方法逻辑：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public Object proceed() throws Throwable {
+</span><span class='line'>    // currentInterceptorIndex 表示 Interceptor 链中的当前调用的下标
+</span><span class='line'>    Object interceptorOrInterceptionAdvice = this.interceptorsAndDynamicMethodMatchers.get(++this.currentInterceptorIndex);
+</span><span class='line'>    if (interceptorOrInterceptionAdvice instanceof InterceptorAndDynamicMethodMatcher) {
+</span><span class='line'>        InterceptorAndDynamicMethodMatcher dm = (InterceptorAndDynamicMethodMatcher) interceptorOrInterceptionAdvice;
+</span><span class='line'>        // 运行时参数(arguments)是否满足匹配条件
+</span><span class='line'>        if (dm.methodMatcher.matches(this.method, this.targetClass, this.arguments)) {
+</span><span class='line'>            return dm.interceptor.invoke(this);
+</span><span class='line'>        } else {
+</span><span class='line'>            // 不匹配，直接跳过当前这个 Interceptor，执行下一个 Interceptor
+</span><span class='line'>            return proceed();
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<h4 id="#1.3 Understanding AOP Proxies">#1.3 Understanding AOP Proxies</h4>
+
+
+<p>这里其实完全参考Spring AOP官方文档的一节就行了：<a href="http://docs.spring.io/spring/docs/3.0.x/reference/aop.html#aop-understanding-aop-proxies">http://docs.spring.io/spring/docs/3.0.x/reference/aop.html#aop-understanding-aop-proxies</a></p>
+
+<p>看懂了这一节，能很明白为什么内部调用的方法上的事务注解无效，我们日常犯的错误基本不会有了。</p>
+
+<h4 id="#1.4 Spring如何识别并解析配置">#1.4 Spring如何识别并解析配置</h4>
+
+
+<p>我们都是通过XML文件的形式使用Spring，Spring使用XmlBeanDefinitionReader类来读取解析XML文件，XmlBeanDefinitionReader使用DefaultBeanDefinitionDocumentReader，再调用BeanDefinitionParserDelegate，其中会根据配置的不同找到对应的NamespaceHandler来处理对应的标签。NamespaceHandler是一个接口，一个具体接口就是解析XML中的一个Element得到一个Spring容器中的一个Bean。</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public interface NamespaceHandler {
+</span><span class='line'>    BeanDefinition parse(Element element, ParserContext parserContext);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>NamespaceHandler的具体实现类很多，其中几个我们感兴趣的AopNamespaceHandler，MvcNamespaceHandler，QScheduleNamespaceHandler，QConfigNamespaceHandler，QmqClientNamespaceHandler等，看到这里大家应该很熟悉了。我们来看两个实现吧：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public class AopNamespaceHandler extends NamespaceHandlerSupport {
+</span><span class='line'>    public void init() {
+</span><span class='line'>        registerBeanDefinitionParser("config", new ConfigBeanDefinitionParser());
+</span><span class='line'>        registerBeanDefinitionParser("aspectj-autoproxy", new AspectJAutoProxyBeanDefinitionParser());
+</span><span class='line'>        registerBeanDefinitionDecorator("scoped-proxy", new ScopedProxyBeanDefinitionDecorator());
+</span><span class='line'>        registerBeanDefinitionParser("spring-configured", new SpringConfiguredBeanDefinitionParser());
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>public class MvcNamespaceHandler extends NamespaceHandlerSupport {
+</span><span class='line'>    public void init() {
+</span><span class='line'>        registerBeanDefinitionParser("annotation-driven", new AnnotationDrivenBeanDefinitionParser());
+</span><span class='line'>        registerBeanDefinitionParser("default-servlet-handler", new DefaultServletHandlerBeanDefinitionParser());
+</span><span class='line'>        registerBeanDefinitionParser("interceptors", new InterceptorsBeanDefinitionParser());
+</span><span class='line'>        registerBeanDefinitionParser("resources", new ResourcesBeanDefinitionParser());
+</span><span class='line'>        registerBeanDefinitionParser("view-controller", new ViewControllerBeanDefinitionParser());
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>就是说Spring将配置根据作用分成不同的namespace，每个NamespaceHandler只解析自己独有的几个配置，比如AopNamespaceHandler负责解析scoped-proxy等几个配置，比如我们在配置文件配上：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;!--aop就表示namespace--&gt;
+</span><span class='line'>&lt;aop:config proxy-target-class="true"/&gt;
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>最后就会找到AopNamespaceHandler类解析这个配置。那出了这些带namespace的配置，正常的配置谁来解析？DefaultBeanDefinitionDocumentReader。</p>
+
+<p>spring在解析的过程中，会去收集spring.*.jar/META-INF下的spring.handlers,spring.schemas文件，这2个文件就是指明了解析spring中自定义标签的Namespace类。如果自己开发Spring组件，需要增加新的标签，也可以按照这个机制。<a href="www.qunar.com">我司</a>的同学可以看看qmq-client包下的META-INF下的这两个文件。</p>
+
+<p>到目前为止，大致知道了谁来解析AOP相关的标签。我们继续看看 AopNamespaceHandler 的代码，它的init()的方法就是给每个标签找一个解析器，比如 aop:config 这个配置就会找到 ConfigBeanDefinitionParser 这个解析器。,些解析器只有一个parse入口函数。</p>
+
+<p>最后放一张AOP相关的图(来源：<a href="http://blog.csdn.net/moreevan/article/details/11977115">http://blog.csdn.net/moreevan/article/details/11977115</a>)</p>
+
+<p><img src="/images/spring/aop_class.png"></p>
+
+<h4 id="#1.5 Spring如何使用代理实现AOP">#1.5 Spring如何使用代理实现AOP</h4>
+
+
+<p>最后我们整理一下Spring使用代理实现AOP整个流程的步骤。</p>
+
+<p>1.我们在代码中使用引入bean；
+2.Spring从BeanFactory总获取bean(ApplicationContext.getBean)，参见AbstractBeanFactory.getBean代码：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public Object getBean(String name) throws BeansException {
+</span><span class='line'>    return doGetBean(name, null, null, false);
+</span><span class='line'>}
+</span><span class='line'>protected &lt;T&gt; T doGetBean(final String name, final Class&lt;T&gt; requiredType, final Object[] args, boolean typeCheckOnly)
+</span><span class='line'>        throws BeansException {
+</span><span class='line'>
+</span><span class='line'>    final String beanName = transformedBeanName(name);
+</span><span class='line'>    Object bean;
+</span><span class='line'>
+</span><span class='line'>    // 创建单例的bean
+</span><span class='line'>    if (mbd.isSingleton()) {
+</span><span class='line'>        sharedInstance = getSingleton(beanName, new ObjectFactory&lt;Object&gt;() {
+</span><span class='line'>            public Object getObject() throws BeansException {
+</span><span class='line'>                try {
+</span><span class='line'>                    return createBean(beanName, mbd, args);    //创建Bean
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        });
+</span><span class='line'>        bean = getObjectForBeanInstance(sharedInstance, name, beanName, mbd);
+</span><span class='line'>    }
+</span><span class='line'>}
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>3.触发Bean的创建，参考AbstractAutowireCapableBeanFactory.createBean代码：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public Object createBean(Class beanClass, int autowireMode, boolean dependencyCheck) throws BeansException {
+</span><span class='line'>    // Use non-singleton bean definition, to avoid registering bean as dependent bean.
+</span><span class='line'>    RootBeanDefinition bd = new RootBeanDefinition(beanClass, autowireMode, dependencyCheck);
+</span><span class='line'>    bd.setScope(BeanDefinition.SCOPE_PROTOTYPE);
+</span><span class='line'>    return createBean(beanClass.getName(), bd, null);       //---1
+</span><span class='line'>}
+</span><span class='line'>protected Object createBean(final String beanName, final RootBeanDefinition mbd, final Object[] args)
+</span><span class='line'>        throws BeanCreationException {
+</span><span class='line'>    ...
+</span><span class='line'>    Object beanInstance = doCreateBean(beanName, mbd, args);        //---2
+</span><span class='line'>    return beanInstance;
+</span><span class='line'>}
+</span><span class='line'>protected Object doCreateBean(final String beanName, final RootBeanDefinition mbd, final Object[] args) {
+</span><span class='line'>    // Eagerly cache singletons to be able to resolve circular references
+</span><span class='line'>    // even when triggered by lifecycle interfaces like BeanFactoryAware.
+</span><span class='line'>    boolean earlySingletonExposure = (mbd.isSingleton() && this.allowCircularReferences &&
+</span><span class='line'>            isSingletonCurrentlyInCreation(beanName));
+</span><span class='line'>    if (earlySingletonExposure) {
+</span><span class='line'>        addSingletonFactory(beanName, new ObjectFactory() {
+</span><span class='line'>            public Object getObject() throws BeansException {
+</span><span class='line'>                return getEarlyBeanReference(beanName, mbd, bean);      //---3
+</span><span class='line'>            }
+</span><span class='line'>        });
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    // Initialize the bean instance.
+</span><span class='line'>    ...
+</span><span class='line'>    return exposedObject;
+</span><span class='line'>}
+</span><span class='line'>protected Object getEarlyBeanReference(String beanName, RootBeanDefinition mbd, Object bean) {
+</span><span class='line'>    Object exposedObject = bean;
+</span><span class='line'>    if (bean != null && !mbd.isSynthetic() && hasInstantiationAwareBeanPostProcessors()) {
+</span><span class='line'>        for (BeanPostProcessor bp : getBeanPostProcessors()) {
+</span><span class='line'>            if (bp instanceof SmartInstantiationAwareBeanPostProcessor) {
+</span><span class='line'>                SmartInstantiationAwareBeanPostProcessor ibp = (SmartInstantiationAwareBeanPostProcessor) bp;
+</span><span class='line'>                exposedObject = ibp.getEarlyBeanReference(exposedObject, beanName);     //---逐层包装bean
+</span><span class='line'>                if (exposedObject == null) {
+</span><span class='line'>                    return exposedObject;
+</span><span class='line'>                }
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>    return exposedObject;
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<ol>
+<li>触发代理类对象的创建，见 AbstractAutoProxyCreator，这个其实是一个 BeanPostProcessor，关于BeanPostProcessor的作用见它的注释：</li>
+</ol>
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> * Factory hook that allows for custom modification of new bean instances,
+</span><span class='line'> * e.g. checking for marker interfaces or wrapping them with proxies.</span></code></pre></td></tr></table></div></figure>
+
+
+<p>AbstractAutoProxyCreator代码：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public Object getEarlyBeanReference(Object bean, String beanName) throws BeansException {
+</span><span class='line'>    Object cacheKey = getCacheKey(bean.getClass(), beanName);
+</span><span class='line'>    this.earlyProxyReferences.put(cacheKey, Boolean.TRUE);
+</span><span class='line'>    return wrapIfNecessary(bean, beanName, cacheKey);
+</span><span class='line'>}
+</span><span class='line'>protected Object wrapIfNecessary(Object bean, String beanName, Object cacheKey) {
+</span><span class='line'>    // 获取被代理bean上的所有的 Advisor
+</span><span class='line'>    Object[] specificInterceptors = getAdvicesAndAdvisorsForBean(bean.getClass(), beanName, null);
+</span><span class='line'>    if (specificInterceptors != DO_NOT_PROXY) {
+</span><span class='line'>        this.advisedBeans.put(cacheKey, Boolean.TRUE);
+</span><span class='line'>        //为制定类创建代理bean
+</span><span class='line'>        Object proxy = createProxy(bean.getClass(), beanName, specificInterceptors, new SingletonTargetSource(bean));
+</span><span class='line'>        this.proxyTypes.put(cacheKey, proxy.getClass());
+</span><span class='line'>        return proxy;
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>protected Object createProxy(
+</span><span class='line'>        Class&lt;?&gt; beanClass, String beanName, Object[] specificInterceptors, TargetSource targetSource) {
+</span><span class='line'>    // ProxyFactory 继承自 ProxyConfig，局部变量
+</span><span class='line'>    ProxyFactory proxyFactory = new ProxyFactory();
+</span><span class='line'>    proxyFactory.copyFrom(this);
+</span><span class='line'>
+</span><span class='line'>    // shouldProxyTargetClass表示显示的定义了proxy-target-class="true"
+</span><span class='line'>    // 没有定义则可能需要被代理类的 interface 信息
+</span><span class='line'>    if (!shouldProxyTargetClass(beanClass, beanName)) {
+</span><span class='line'>        Class&lt;?&gt;[] targetInterfaces = ClassUtils.getAllInterfacesForClass(beanClass, this.proxyClassLoader);
+</span><span class='line'>        for (Class&lt;?&gt; targetInterface : targetInterfaces) {
+</span><span class='line'>            proxyFactory.addInterface(targetInterface);
+</span><span class='line'>        }
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    Advisor[] advisors = buildAdvisors(beanName, specificInterceptors);
+</span><span class='line'>    for (Advisor advisor : advisors) {
+</span><span class='line'>        proxyFactory.addAdvisor(advisor);
+</span><span class='line'>    }
+</span><span class='line'>
+</span><span class='line'>    proxyFactory.setTargetSource(targetSource); //被代理者
+</span><span class='line'>    ...
+</span><span class='line'>    // 创建代理对象
+</span><span class='line'>    return proxyFactory.getProxy(this.proxyClassLoader);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ProxyFactory.java:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public Object getProxy(ClassLoader classLoader) {
+</span><span class='line'>    return createAopProxy().getProxy(classLoader);
+</span><span class='line'>}
+</span><span class='line'>protected final synchronized AopProxy createAopProxy() {
+</span><span class='line'>    if (!this.active) {
+</span><span class='line'>        activate();
+</span><span class='line'>    }
+</span><span class='line'>    return getAopProxyFactory().createAopProxy(this);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>DefaultAopProxyFactory.java的createAopProxy，回到了我们 1.1 代理类型选择 中涉及的内容，整个过程串起来了。</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2564,568 +3288,6 @@ DefaultAopProxyFactory</p>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2016/01/28/who-eat-jvms-memory/">Who Eats JVM's Memory</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2016-01-28T13:40:27+08:00'><span class='date'><span class='date-month'>Jan</span> <span class='date-day'>28</span><span class='date-suffix'>th</span>, <span class='date-year'>2016</span></span> <span class='time'>1:40 pm</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><ul>
-<li><a href="#1.JVM%E5%86%85%E5%AD%98%E5%8D%A0%E7%94%A8%E4%B8%8A%E9%99%90">1.JVM内存占用上限</a></li>
-<li><a href="#2.JVM%20RES%E6%95%B0%E6%8D%AE%E6%9D%A5%E6%BA%90">2.JVM RES数据来源</a>
-
-<ul>
-<li><a href="#2.1%20/proc/pid%E5%86%85%E5%AE%B9">2.1 /proc/pid内容</a></li>
-<li><a href="#2.2%20/proc/pid%E4%B8%8B%E5%86%85%E5%AD%98%E7%9B%B8%E5%85%B3%E6%96%87%E4%BB%B6">2.2 /proc/pid下内存相关文件</a></li>
-<li><a href="#2.3%20top%E5%91%BD%E4%BB%A4RES%E6%95%B0%E6%8D%AE%E6%9D%A5%E6%BA%90">2.3 top命令RES数据来源</a></li>
-</ul>
-</li>
-<li><a href="#3.%E8%B0%81%E5%90%83%E4%BA%86JVM%E5%86%85%E5%AD%98">3.谁吃了JVM内存</a></li>
-</ul>
-
-
-<h2 id="1.JVM内存占用上限">1.JVM内存占用上限</h2>
-
-
-<p>关于JVM的一些基础知识,可以看 <a href="http://blog.jamesdbloom.com/JVMInternals.html">JVM Internals</a>,曾经我尝试翻译过,地址:<a href="http://xiaobaoqiu.github.io/blog/2014/09/11/internal-jvm/">http://xiaobaoqiu.github.io/blog/2014/09/11/internal-jvm/</a></p>
-
-<p>这里要说的是,那些参数决定了JVM内存上限,比如常用的内存配置如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>-Xms1024m -Xmx1024m -XX:PermSize=256m</span></code></pre></td></tr></table></div></figure>
-
-
-<p>说明堆(Heap)的大小1G,永久代大小256M.</p>
-
-<p>另外,64位的操作系统(Linux服务器),线程的栈空间大小最大为1M:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ...]$ java -XX:+PrintFlagsFinal -version | grep ThreadStackSize
-</span><span class='line'>     intx CompilerThreadStackSize                   = 0               {pd product}        
-</span><span class='line'>     intx ThreadStackSize                           = 1024            {pd product}        
-</span><span class='line'>     intx VMThreadStackSize                         = 1024            {pd product}        
-</span><span class='line'>java version "1.7.0_45"
-</span><span class='line'>Java(TM) SE Runtime Environment (build 1.7.0_45-b18)
-</span><span class='line'>Java HotSpot(TM) 64-Bit Server VM (build 24.45-b08, mixed mode)</span></code></pre></td></tr></table></div></figure>
-
-
-<p>JVM的占用上限由一下几个因素决定:</p>
-
-<pre><code>1. 堆内存
-2. 持久代
-3. 线程栈空间
-4. 堆外内存
-</code></pre>
-
-<p>堆外内存参考: <a href="http://www.infoq.com/cn/news/2014/12/external-memory-heap-memory">http://www.infoq.com/cn/news/2014/12/external-memory-heap-memory</a></p>
-
-<p>线程数可以如下得到:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$ ps -m 1381 | wc -l
-</span><span class='line'>176</span></code></pre></td></tr></table></div></figure>
-
-
-<p>通常而言,我们只需要计算堆内存,持久代再加上线程栈空间.比如我们的本地一个小服务:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>Max Memory = Heap(1G) + Perm(256M) + 176 * Thread stack (1M)</span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<h2 id="2.JVM RES数据来源">2.JVM RES数据来源</h2>
-
-
-<p>首先得知道top命令中RES数据从哪里来的.再Linux上,万物皆文件,因此RES的数据也是来源于文件.</p>
-
-<h4 id="2.1 /proc/pid内容">2.1 /proc/pid内容</h4>
-
-
-<p>下面是一个典型的Tomcat应用的线程下的内容,进程号为1381,简单说描述每个文件的内容或者作用:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>attr         进程的属性
-</span><span class='line'>autogroup
-</span><span class='line'>auxv
-</span><span class='line'>cgroup
-</span><span class='line'>clear_refs
-</span><span class='line'>cmdline       启动进程时执行的命令
-</span><span class='line'>coredump_filter
-</span><span class='line'>cpuset
-</span><span class='line'>cwd           指向进程当前工作目录的软链
-</span><span class='line'>environ       进程执行时使用的环境变量
-</span><span class='line'>exe           这个就是起这个进程的执行文件
-</span><span class='line'>fd            进程打开的文件描述符,可以知道具体的文件路径
-</span><span class='line'>fdinfo
-</span><span class='line'>io            进程的io统计信息
-</span><span class='line'>limits            进程的软限制，硬限制等信息
-</span><span class='line'>loginuid
-</span><span class='line'>maps          进程相关的内存映射信息
-</span><span class='line'>mem           代进程持有的内存,不可读
-</span><span class='line'>mountinfo
-</span><span class='line'>mounts
-</span><span class='line'>mountstats
-</span><span class='line'>net
-</span><span class='line'>numa_maps
-</span><span class='line'>oom_adj       调节oom-killer的参数
-</span><span class='line'>oom_score         oom-killer打分,当需要是,oom-killer会根据各个进程的分数,kill掉某个进程
-</span><span class='line'>oom_score_adj         调节oom-killer的参数
-</span><span class='line'>pagemap       进程的虚拟页和物理内存页或者swap区的映射关系
-</span><span class='line'>personality
-</span><span class='line'>root          指向进程根目录的软链
-</span><span class='line'>sched
-</span><span class='line'>schedstat
-</span><span class='line'>sessionid
-</span><span class='line'>smaps             This file shows memory consumption for each of the process's mappings.
-</span><span class='line'>stack             This file provides a symbolic trace of the function calls in this process's kernel stack
-</span><span class='line'>stat          进程的状态
-</span><span class='line'>statm         进程使用的内存的状态
-</span><span class='line'>status            进程状态信息,比stat/statm更具可读性
-</span><span class='line'>syscall
-</span><span class='line'>task          进程包含的线程，子目录名是线程的ID
-</span><span class='line'>wchan</span></code></pre></td></tr></table></div></figure>
-
-
-<p>参考: <a href="http://man7.org/linux/man-pages/man5/proc.5.html">http://man7.org/linux/man-pages/man5/proc.5.html</a></p>
-
-<h4 id="2.2 /proc/pid下内存相关文件">2.2 /proc/pid下内存相关文件</h4>
-
-
-<p>和内存相关的文件主要包括(解析各个文件的时间不同,可能内容上存在对不上的情况):</p>
-
-<pre><code>1. statm: 
-2. stat:    
-3. status
-4. maps
-5. smaps
-</code></pre>
-
-<p><em>1. statm</em></p>
-
-<p>进程的内存使用,注意单位是page,内容的解析参考2.3节的内容.</p>
-
-<p><em>2. stat</em></p>
-
-<p>1381这个进程的stat文件及各个字段的含义(含义参见proc命令手册: man proc &ndash;> 搜stat, 见/proc/[pid]/stat):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>1381 pid             进程号
-</span><span class='line'>(java)    comm            应用程序或命令的名字
-</span><span class='line'>S state           任务的状态(RSDZTW中一个字符),R:runnign, S:sleeping in an interruptible wait, D:waiting in uninterruptible disk sleep, Z:zombie, T is  traced  or  stopped, W is paging
-</span><span class='line'>1 ppid            父进程ID
-</span><span class='line'>1374  pgrp            线程组号
-</span><span class='line'>1374  session         该任务所在的会话组ID
-</span><span class='line'>0 tty_nr          进程的控制终端设备号
-</span><span class='line'>-1    tpgid           进程控制终端的前台任务id
-</span><span class='line'>4202496   flags           进程内核标志位
-</span><span class='line'>988135    minflt          任务不需要从硬盘拷数据而发生的缺页(minor faults)的次数
-</span><span class='line'>191   cminflt         任务的所有的waited-for子进程曾经发生的次缺页的次数累计值
-</span><span class='line'>252944    majflt          任务需要从硬盘拷数据而发生的缺页(minor faults)的次数
-</span><span class='line'>5 cmajflt             任务的所有的waited-for子进程需要从硬盘拷数据而发生的缺页(minor faults)的次数
-</span><span class='line'>229942    utime           任务在用户态(User mode)运行的时间，单位为时钟周期(clock ticks)
-</span><span class='line'>102219    stime           任务在内核态(kernel mode)运行的时间，单位为时钟周期(clock ticks)
-</span><span class='line'>0 cutime          任务的所有的waited-for子进程曾经在用户态运行的时间累计值，单位为时钟周期(clock ticks)
-</span><span class='line'>0 cstime          任务的所有的waited-for子进程曾经在核心态运行的时间累计值，单位为时钟周期(clock ticks)
-</span><span class='line'>20    priority            任务的动态优先级
-</span><span class='line'>0 nice            任务的静态优先级
-</span><span class='line'>179   num_threads     进程的线程数
-</span><span class='line'>0 itrealvalue     由于计时间隔导致的下一个 SIGALRM 发送进程的时延,单位jiffies
-</span><span class='line'>2107287914    starttime       任务启动的时间,单位为jiffies
-</span><span class='line'>3968053248    vsize           该任务的虚拟地址空间大小,单位byte
-</span><span class='line'>122542    rss             任务当前驻留物理地址空间的大小,单位page
-</span><span class='line'>18446744073709551615  rsslim          任务能驻留物理地址空间的最大值,单位byte
-</span><span class='line'>4194304   startcode       任务在虚拟地址空间的代码段的起始地址
-</span><span class='line'>4196452   endcode     任务在虚拟地址空间的代码段的结束地址
-</span><span class='line'>140734635670848   startstack      任务在虚拟地址空间的栈的结束地址
-</span><span class='line'>140734635653408   kstkesp         ESP(stack pointer, 栈指针)的当前值
-</span><span class='line'>250460799149  kstkeip         EIP(instruction pointer, 指令指针)的当前值
-</span><span class='line'>0 signal          pending信号的位图(bitmap),十进制数显示
-</span><span class='line'>0 blocked         blocked信号的位图(bitmap),十进制数显示
-</span><span class='line'>2 sigignore       ignored信号的位图(bitmap),十进制数显示
-</span><span class='line'>16800973  sigcatch        caught信号的位图(bitmap),十进制数显示
-</span><span class='line'>18446744073709551615  wchan           进程等待的channel.是系统调用地址
-</span><span class='line'>0 nswap           被swapped的页数(当前不用)
-</span><span class='line'>0 cnswap      所有子进程被swapped的页数的和(当前不用)
-</span><span class='line'>17    exit_signal     该进程结束时,向父进程所发送的信号
-</span><span class='line'>3 processor       进程最后一次执行的CPU号
-</span><span class='line'>0 rt_priority     实时调度优先级
-</span><span class='line'>0 policy          调度策略
-</span><span class='line'>4 delayacct_blkio_ticks   IO阻塞延迟汇总,单位时钟周期(clock ticks)
-</span><span class='line'>0 guest_time      进程的guest time(指费再运行guest操作系统上的时间),单位时钟周期(clock ticks)
-</span><span class='line'>0 cguest_time     子进程guest time</span></code></pre></td></tr></table></div></figure>
-
-
-<p>里面包含我们熟悉的RSS数据,注意其单位是page.</p>
-
-<p><em>3. status</em></p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx /proc/1381]$ sudo cat status
-</span><span class='line'>Name: Java                                        /*当前进程的命令*/
-</span><span class='line'>State:    S (sleeping)                           /*当前进程状态: "R (running)", "S (sleeping)", "D (disk sleep)", "T (stopped)", "T (tracing stop)", "Z (zombie)", or "X (dead)"*/
-</span><span class='line'>Tgid: 1381                                      /*线程组号*/
-</span><span class='line'>Pid:  1381                                             /*线程id*/
-</span><span class='line'>PPid: 1                                            /*父进程的pid*/
-</span><span class='line'>TracerPid:    0                                     /*跟踪进程的pid,如果没有就是0*/
-</span><span class='line'>Uid:  40001   40001   40001   40001      /*uid euid suid fsuid*/
-</span><span class='line'>Gid:  40001   40001   40001   40001      /*gid egid sgid fsgid*/
-</span><span class='line'>Utrace:   0
-</span><span class='line'>FDSize:   512                                        /*FDSize是当前分配的文件描述符*/
-</span><span class='line'>Groups:   40001                             /*这里的groups表示启动这个进程的用户所在的组*/
-</span><span class='line'>VmPeak:    3880116 kB                   /*当前进程运行过程中占用内存的峰值*/
-</span><span class='line'>VmSize:    3875052 kB                         /*进程现在正在占用的内存*/
-</span><span class='line'>VmLck:           0 kB                               /*进程已经锁住的物理内存的大小.锁住的物理内存不能交换到硬盘*/
-</span><span class='line'>VmHWM:      766000 kB                    /*程序得到分配到物理内存的峰值*/
-</span><span class='line'>VmRSS:      490168 kB                          /*程序现在使用的物理内存*/
-</span><span class='line'>VmData:    3718132 kB                   /*进程数据段的大小*/
-</span><span class='line'>VmStk:          88 kB                              /*进程堆栈段的大小*/
-</span><span class='line'>VmExe:           4 kB                              /*进程代码的大小*/
-</span><span class='line'>VmLib:       15720 kB                          /*进程所使用LIB库的大小*/
-</span><span class='line'>VmPTE:        2280 kB                           /*进程所使用LIB库的大小*/
-</span><span class='line'>VmSwap:     303616 kB                   /*进程占用Swap的大小*/
-</span><span class='line'>Threads:  179                                /*当前进程组线程数*/
-</span><span class='line'>SigQ: 0/62812                               /*表示当前待处理信号的个数*/
-</span><span class='line'>SigPnd:   0000000000000000             /*屏蔽位,存储了该线程的待处理信号,等同于线程的PENDING信号*/
-</span><span class='line'>ShdPnd:   0000000000000000      /*屏蔽位,存储了该线程组的待处理信号.等同于进程组的PENDING信号*/
-</span><span class='line'>SigBlk:   0000000000000000             /*放被阻塞的信号,等同于BLOCKED信号*/
-</span><span class='line'>SigIgn:   0000000000000002            /*存放被忽略的信号,等同于IGNORED信号*/
-</span><span class='line'>SigCgt:   2000000181005ccd            /*存放捕获的信号,等同于CAUGHT信号*/
-</span><span class='line'>CapInh:   0000000000000000
-</span><span class='line'>CapPrm:   0000000000000000
-</span><span class='line'>CapEff:   0000000000000000
-</span><span class='line'>CapBnd:   ffffffffffffffff
-</span><span class='line'>Cpus_allowed: f
-</span><span class='line'>Cpus_allowed_list:    0-3
-</span><span class='line'>Mems_allowed: 00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
-</span><span class='line'>Mems_allowed_list:    0
-</span><span class='line'>voluntary_ctxt_switches:  35
-</span><span class='line'>nonvoluntary_ctxt_switches:   9</span></code></pre></td></tr></table></div></figure>
-
-
-<p>关于其中的TracerPid,在Linux下,我们可以使用strace来跟踪命令的运行.</p>
-
-<p>参考: <a href="http://blog.csdn.net/zjl410091917/article/details/8075691">http://blog.csdn.net/zjl410091917/article/details/8075691</a></p>
-
-<p><em>4. maps</em></p>
-
-<p>maps内容如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@l-crm3.des.dev.cn0 ~]$ head -30 maps
-</span><span class='line'>00400000-00401000 r-xp 00000000 fc:07 1179664                            /home/q/java/jdk1.7.0_45/bin/java
-</span><span class='line'>00600000-00601000 rw-p 00000000 fc:07 1179664                            /home/q/java/jdk1.7.0_45/bin/java
-</span><span class='line'>00b78000-00bed000 rw-p 00000000 00:00 0                                  [heap]
-</span><span class='line'>aff80000-100000000 rw-p 00000000 00:00 0 
-</span><span class='line'>3a4fe00000-3a4fe20000 r-xp 00000000 fc:02 2613                           /lib64/ld-2.12.so
-</span><span class='line'>3a5001f000-3a50020000 r--p 0001f000 fc:02 2613                           /lib64/ld-2.12.so
-</span><span class='line'>3a50020000-3a50021000 rw-p 00020000 fc:02 2613                           /lib64/ld-2.12.so
-</span><span class='line'>3a50021000-3a50022000 rw-p 00000000 00:00 0 
-</span><span class='line'>3a50200000-3a5038a000 r-xp 00000000 fc:02 25297                          /lib64/libc-2.12.so
-</span><span class='line'>3a5038a000-3a50589000 ---p 0018a000 fc:02 25297                          /lib64/libc-2.12.so
-</span><span class='line'>3a50589000-3a5058d000 r--p 00189000 fc:02 25297                          /lib64/libc-2.12.so
-</span><span class='line'>3a5058d000-3a5058e000 rw-p 0018d000 fc:02 25297                          /lib64/libc-2.12.so</span></code></pre></td></tr></table></div></figure>
-
-
-<p>第一列代表内存段的虚拟地址
-第二列代表执行权限虚拟内存的权限,r=读,w=写,x=,s=共享,p=私有
-第三列代表在进程地址里的偏移量
-第四列映射文件的主设备号和次设备号
-第五列映像文件的节点号,即inode
-第六列是映像文件的路径</p>
-
-<p>参考: <a href="http://stackoverflow.com/questions/1401359/understanding-linux-proc-id-maps">http://stackoverflow.com/questions/1401359/understanding-linux-proc-id-maps</a></p>
-
-<p><em>5. smaps</em></p>
-
-<p>smaps代表进程的各个线程的内存消耗</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx /proc/1381]$ sudo cat smaps
-</span><span class='line'>在smaps文件中,每一条记录(每块)表示进程虚拟内存空间中一块连续的区域.
-</span><span class='line'>
-</span><span class='line'>...
-</span><span class='line'>00b78000-00bed000 rw-p 00000000 00:00 0                                  [heap]       /*和maps中的内容相同*/
-</span><span class='line'>Size:                468 kB                   /*表示该映射区域在虚拟内存空间中的大小*/
-</span><span class='line'>Rss:                  76 kB                    /*表示该映射区域当前在物理内存中实际占用了多少空间*/
-</span><span class='line'>Pss:                  76 kB                    /*该虚拟内存区域平摊计算后使用的物理内存大小*/
-</span><span class='line'>Shared_Clean:          0 kB             /*和其他进程共享的未被改写的page的大小*/
-</span><span class='line'>Shared_Dirty:          0 kB              /*和其他进程共享的被改写的page的大小*/
-</span><span class='line'>Private_Clean:         0 kB              /*未被改写的私有页面的大小*/
-</span><span class='line'>Private_Dirty:        76 kB
-</span><span class='line'>Referenced:           76 kB
-</span><span class='line'>Anonymous:            76 kB
-</span><span class='line'>AnonHugePages:         0 kB
-</span><span class='line'>Swap:                144 kB                 /*由于物理内存不足被swap到交换空间的大小*/
-</span><span class='line'>KernelPageSize:        4 kB             /*操作系统一个页面大小*/
-</span><span class='line'>MMUPageSize:           4 kB           /*CPU页面大小, MMU表示内存管理单元(Memory Management Unit)*/
-</span><span class='line'>...</span></code></pre></td></tr></table></div></figure>
-
-
-<p>关于其中的Pss,因为进程之间存在内存共享,比如该区域所映射的物理内存部分同时也被另一个进程映射了,且该部分物理内存的大小为1000KB(Rss会是1000KB),那么该进程分摊其中一半的内存,即Pss=500KB。</p>
-
-<p>内存页引用计数>1,则表示是shared,否则是private.</p>
-
-<p>参考: <a href="http://stackoverflow.com/questions/9922928/what-does-pss-mean-in-proc-pid-smaps">stackoverflow: what does pss mean in /proc/pid/smaps</a></p>
-
-<p><a href="http://unix.stackexchange.com/questions/33381/getting-information-about-a-process-memory-usage-from-proc-pid-smaps">Getting information about a process' memory usage from /proc/pid/smaps</a></p>
-
-<p>另外,当前系统的page大小可以通过getconf命令获取,比如我当前的服务器page大小为4k:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx ~]$ getconf PAGESIZE
-</span><span class='line'>4096</span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<h4 id="2.3 top命令RES数据来源">2.3 top命令RES数据来源</h4>
-
-
-<p>top命令RES数据来源于/proc/PID/statm中的第二个字段.还是1381这个进程的statm文件内容和对应的top信息如下:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>[baoqiu.xiao@Xxx /proc/1381]$ sudo cat statm
-</span><span class='line'>968763 122480 558 1 0 929555 0
-</span><span class='line'>
-</span><span class='line'>[baoqiu.xiao@Xxx ~]$ top -p 1381
-</span><span class='line'>  PID  USER      PR   NI  VIRT     RES     SHR  S  %CPU  %MEM    TIME+       COMMAND                                                                                                                             
-</span><span class='line'> 1381 tomcat    20   0   3784m  478m 2228  S  2.0       6.1           54:53.36    java</span></code></pre></td></tr></table></div></figure>
-
-
-<p>/proc/[pid]/statm文件的几个字段的具体意义如下(注意单位是page):</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>size         (1) total program size(same as VmSize in /proc/[pid]/status)
-</span><span class='line'>resident      (2) (resident set size)(same as VmRSS in /proc/[pid]/status),即RSS
-</span><span class='line'>share         (3) shared pages (i.e., backed by a file)
-</span><span class='line'>text          (4) text (code)
-</span><span class='line'>lib               (5) library (unused in Linux 2.6)
-</span><span class='line'>data          (6) data + stack
-</span><span class='line'>dt                (7) dirty pages (unused in Linux 2.6)</span></code></pre></td></tr></table></div></figure>
-
-
-<p>可以验证,1381这个进程的RES大小来源, 和top命令中RES的数字是吻合的:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>122480 * 4096 / (1024 * 1024) = 478.4375 MB</span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<h2 id="3.谁吃了JVM内存">3.谁吃了JVM内存</h2>
-
-
-<p>写到这发现谢步下去了,因为我一开始就写错了.</p>
-
-<p>想知道谁吃了我们JVM的内存,可以jmap dump下来,用MAT分析一下.</p>
-
-<p>想知道谁吃了服务器的内存,建议看看参考里面的<a href="http://blog.yufeng.info/archives/2456">Linux Used内存到底哪里去了</a>这篇文章.</p>
-
-<p>参考:
-<a href="http://tldp.org/LDP/khg/HyperNews/get/memory/linuxmm.html">Linux Memory Management Overview</a></p>
-
-<p><a href="https://techtalk.intersec.com/2013/07/memory-part-2-understanding-process-memory/">Understanding Process memory</a></p>
-
-<p><a href="http://lwn.net/Articles/230975/">How much memory are applications really using</a></p>
-
-<p><a href="http://tldp.org/LDP/tlk/mm/memory.html">Memory Management</a></p>
-
-<p><a href="http://blog.yufeng.info/archives/2456">Linux Used内存到底哪里去了</a></p>
-
-<p><a href="http://www.361way.com/whereis-the-memory/4036.html">也看linux内存去哪儿了</a></p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/4">&larr; Older</a>
@@ -3143,6 +3305,10 @@ DefaultAopProxyFactory</p>
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/04/api-blocking/">Api Blocking</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2017/02/03/shallowetagheaderfilter/">ShallowEtagHeaderFilter</a>
@@ -3180,10 +3346,6 @@ DefaultAopProxyFactory</p>
         <a href="/blog/2016/07/22/%5B%3F%5D-ge-si-suo-wen-ti/">一个死锁问题</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务2-AOP</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -3211,6 +3373,7 @@ DefaultAopProxyFactory</p>
 <li><a class='list-group-item' href='/blog/categories/spring/'>spring (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/system/'>system (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>

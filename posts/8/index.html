@@ -9,10 +9,7 @@
   <meta name="author" content="xiaobaoqiu">
 
   
-  <meta name="description" content="在多系统直接传输文件经常碰到文件编码的问题. 1.查看编码 查看文件的编码有很多种方式 1.1 file file命令输出了文件的格式和编码. 1
-2
-xiaobaoqiu@xiaobaoqiu:~/octopress$ file _config.yml
-_config.yml: UTF-8 &hellip;">
+  <meta name="description" content="昨天CodeReview的时候看到同时使用RateLimiter这个类用作QPS访问限制.学习一下这个类. RateLimiter是Guava的concurrent包下的一个用于限制访问频率的类. 1.限流 每个API接口都是有访问上限的,当访问频率或者并发量超过其承受范围时候, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -78,6 +75,710 @@ _config.yml: UTF-8 &hellip;">
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/07/02/ratelimiter/">RateLimiter</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-07-02T17:24:16+08:00'><span class='date'><span class='date-month'>Jul</span> <span class='date-day'>2</span><span class='date-suffix'>nd</span>, <span class='date-year'>2015</span></span> <span class='time'>5:24 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>昨天CodeReview的时候看到同时使用RateLimiter这个类用作QPS访问限制.学习一下这个类.</p>
+
+<p>RateLimiter是Guava的concurrent包下的一个用于限制访问频率的类.</p>
+
+<h1>1.限流</h1>
+
+<p>每个API接口都是有访问上限的,当访问频率或者并发量超过其承受范围时候,我们就必须考虑限流来保证接口的可用性或者降级可用性.即接口也需要安装上保险丝,以防止非预期的请求对系统压力过大而引起的系统瘫痪.</p>
+
+<p>通常的策略就是拒绝多余的访问,或者让多余的访问排队等待服务,或者引流.</p>
+
+<p>如果要准确的控制QPS,简单的做法是维护一个单位时间内的Counter,如判断单位时间已经过去,则将Counter重置零.此做法被认为没有很好的处理单位时间的边界,比如在前一秒的最后一毫秒里和下一秒的第一毫秒都触发了最大的请求数,将目光移动一下,就看到在两毫秒内发生了两倍的QPS.</p>
+
+<p><img src="/images/guava/simple_RateLimiter.png"></p>
+
+<h1>2.限流算法</h1>
+
+<p>常用的更平滑的限流算法有两种:漏桶算法和令牌桶算法.</p>
+
+<p>很多传统的服务提供商如华为中兴都有类似的专利,参考:
+<a href="http://www.google.com/patents/CN1536815A?cl=zh">http://www.google.com/patents/CN1536815A?cl=zh</a></p>
+
+<h3>2.1 漏桶算法</h3>
+
+<p>漏桶(Leaky Bucket)算法思路很简单,水(请求)先进入到漏桶里,漏桶以一定的速度出水(接口有响应速率),当水流入速度过大会直接溢出(访问频率超过接口响应速率),然后就拒绝请求,可以看出漏桶算法能强行限制数据的传输速率.示意图如下:</p>
+
+<p><img src="/images/guava/rate-limit1.png"></p>
+
+<p>可见这里有两个变量,一个是桶的大小,支持流量突发增多时可以存多少的水(burst),另一个是水桶漏洞的大小(rate)，伪代码如下：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>double rate;               // leak rate in calls/s
+</span><span class='line'>double burst;              // bucket size in calls
+</span><span class='line'>
+</span><span class='line'>long refreshTime;          // time for last water refresh
+</span><span class='line'>double water;              // water count at refreshTime
+</span><span class='line'>
+</span><span class='line'>refreshWater() {
+</span><span class='line'>    long  now = getTimeOfDay();
+</span><span class='line'>    
+</span><span class='line'>    //水随着时间流逝,不断流走,最多就流干到0.
+</span><span class='line'>    water = max(0, water- (now - refreshTime)*rate); 
+</span><span class='line'>    refreshTime = now;
+</span><span class='line'>}
+</span><span class='line'>
+</span><span class='line'>bool permissionGranted() {
+</span><span class='line'>    refreshWater();
+</span><span class='line'>    if (water &lt; burst) { // 水桶还没满,继续加1
+</span><span class='line'>        water ++;
+</span><span class='line'>        return true;
+</span><span class='line'>    } else {
+</span><span class='line'>        return false;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>因为漏桶的漏出速率是固定的参数,所以,即使网络中不存在资源冲突(没有发生拥塞),漏桶算法也不能使流突发(burst)到端口速率.因此,漏桶算法对于存在突发特性的流量来说缺乏效率.</p>
+
+<h3>2.2 令牌桶算法</h3>
+
+<p>令牌桶算法(Token Bucket)和 Leaky Bucket 效果一样但方向相反的算法,更加容易理解.随着时间流逝,系统会按恒定1/QPS时间间隔(如果QPS=100,则间隔是10ms)往桶里加入Token(想象和漏洞漏水相反,有个水龙头在不断的加水),如果桶已经满了就不再加了.新请求来临时,会各自拿走一个Token,如果没有Token可拿了就阻塞或者拒绝服务.</p>
+
+<p><img src="/images/guava/token_bucket.JPG"></p>
+
+<p>令牌桶的另外一个好处是可以方便的改变速度. 一旦需要提高速率,则按需提高放入桶中的令牌的速率.
+一般会定时(比如100毫秒)往桶中增加一定数量的令牌, 有些变种算法则实时的计算应该增加的令牌的数量.</p>
+
+<h1>3.RateLimiter简介</h1>
+
+<p>Google开源工具包Guava提供了限流工具类RateLimiter,该类基于令牌桶算法(Token Bucket)来完成限流,非常易于使用.RateLimiter经常用于限制对一些物理资源或者逻辑资源的访问速率.它支持两种获取permits接口,一种是如果拿不到立刻返回false,一种会阻塞等待一段时间看能不能拿到.</p>
+
+<p>RateLimiter和Java中的信号量(java.util.concurrent.Semaphore)类似,Semaphore通常用于限制并发量.</p>
+
+<p>源码注释中的一个例子,比如我们有很多任务需要执行,但是我们不希望每秒超过两个任务执行,那么我们就可以使用RateLimiter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>final RateLimiter rateLimiter = RateLimiter.create(2.0);
+</span><span class='line'>void submitTasks(List&lt;Runnable&gt; tasks, Executor executor) {
+</span><span class='line'>    for (Runnable task : tasks) {
+</span><span class='line'>        rateLimiter.acquire(); // may wait
+</span><span class='line'>        executor.execute(task);
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外一个例子,假如我们会产生一个数据流,然后我们想以每秒5kb的速度发送出去.我们可以每获取一个令牌(permit)就发送一个byte的数据,这样我们就可以通过一个每秒5000个令牌的RateLimiter来实现:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>final RateLimiter rateLimiter = RateLimiter.create(5000.0);
+</span><span class='line'>void submitPacket(byte[] packet) {
+</span><span class='line'>    rateLimiter.acquire(packet.length);
+</span><span class='line'>    networkService.send(packet);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外,我们也可以使用非阻塞的形式达到降级运行的目的,即使用非阻塞的tryAcquire()方法:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>if(limiter.tryAcquire()) { //未请求到limiter则立即返回false
+</span><span class='line'>    doSomething();
+</span><span class='line'>}else{
+</span><span class='line'>    doSomethingElse();
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>4.RateLimiter主要接口</h1>
+
+<p>RateLimiter其实是一个abstract类,但是它提供了几个static方法用于创建RateLimiter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'>* 创建一个稳定输出令牌的RateLimiter，保证了平均每秒不超过permitsPerSecond个请求
+</span><span class='line'>* 当请求到来的速度超过了permitsPerSecond，保证每秒只处理permitsPerSecond个请求
+</span><span class='line'>* 当这个RateLimiter使用不足(即请求到来速度小于permitsPerSecond)，会囤积最多permitsPerSecond个请求
+</span><span class='line'>*/
+</span><span class='line'>public static RateLimiter create(double permitsPerSecond);
+</span><span class='line'>
+</span><span class='line'>/**
+</span><span class='line'>* 创建一个稳定输出令牌的RateLimiter，保证了平均每秒不超过permitsPerSecond个请求
+</span><span class='line'>* 还包含一个热身期(warmup period),热身期内，RateLimiter会平滑的将其释放令牌的速率加大，直到起达到最大速率
+</span><span class='line'>* 同样，如果RateLimiter在热身期没有足够的请求(unused),则起速率会逐渐降低到冷却状态
+</span><span class='line'>* 
+</span><span class='line'>* 设计这个的意图是为了满足那种资源提供方需要热身时间，而不是每次访问都能提供稳定速率的服务的情况(比如带缓存服务，需要定期刷新缓存的)
+</span><span class='line'>* 参数warmupPeriod和unit决定了其从冷却状态到达最大速率的时间
+</span><span class='line'>*/
+</span><span class='line'>public static RateLimiter create(double permitsPerSecond, long warmupPeriod, TimeUnit unit);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>提供了两个获取令牌的方法,不带参数表示获取一个令牌.如果没有令牌则一直等待,返回等待的时间(单位为秒),没有被限流则直接返回0.0:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public double acquire();
+</span><span class='line'>
+</span><span class='line'>public double acquire(int permits);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>尝试获取令牌,分为待超时时间和不带超时时间两种:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public boolean tryAcquire();
+</span><span class='line'>//尝试获取一个令牌,立即返回
+</span><span class='line'>public boolean tryAcquire(int permits);
+</span><span class='line'>public boolean tryAcquire(long timeout, TimeUnit unit);
+</span><span class='line'>//尝试获取permits个令牌,带超时时间
+</span><span class='line'>public boolean tryAcquire(int permits, long timeout, TimeUnit unit);</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>5.RateLimiter设计</h1>
+
+<p>考虑一下RateLimiter是如何设计的,并且为什么要这样设计.</p>
+
+<p>RateLimiter的主要功能就是提供一个稳定的速率,实现方式就是通过限制请求流入的速度,比如计算请求等待合适的时间阈值.</p>
+
+<p>实现QPS速率的最简单的方式就是记住上一次请求的最后授权时间,然后保证1/QPS秒内不允许请求进入.比如QPS=5,如果我们保证最后一个被授权请求之后的200ms的时间内没有请求被授权,那么我们就达到了预期的速率.如果一个请求现在过来但是最后一个被授权请求是在100ms之前,那么我们就要求当前这个请求等待100ms.按照这个思路,请求15个新令牌(许可证)就需要3秒.</p>
+
+<p>有一点很重要:上面这个设计思路的RateLimiter记忆非常的浅,它的脑容量非常的小,只记得上一次被授权的请求的时间.如果RateLimiter的一个被授权请求q之前很长一段时间没有被使用会怎么样?这个RateLimiter会立马忘记过去这一段时间的利用不足,而只记得刚刚的请求q.</p>
+
+<p>过去一段时间的利用不足意味着有过剩的资源是可以利用的.这种情况下,RateLimiter应该加把劲(speed up for a while)将这些过剩的资源利用起来.比如在向网络中发生数据的场景(限流),过去一段时间的利用不足可能意味着网卡缓冲区是空的,这种场景下,我们是可以加速发送来将这些过程的资源利用起来.</p>
+
+<p>另一方面,过去一段时间的利用不足可能意味着处理请求的服务器对即将到来的请求是准备不足的(less ready for future requests),比如因为很长一段时间没有请求当前服务器的cache是陈旧的,进而导致即将到来的请求会触发一个昂贵的操作(比如重新刷新全量的缓存).</p>
+
+<p>为了处理这种情况,RateLimiter中增加了一个维度的信息,就是过去一段时间的利用不足(past underutilization),代码中使用storedPermits变量表示.当没有利用不足这个变量为0,最大能达到maxStoredPermits(maxStoredPermits表示完全没有利用).因此,请求的令牌可能从两个地方来:</p>
+
+<pre><code>1.过去剩余的令牌(stored permits, 可能没有)
+2.现有的令牌(fresh permits,当前这段时间还没用完的令牌)
+</code></pre>
+
+<p>我们将通过一个例子来解释它是如何工作的:</p>
+
+<p>对一个每秒产生一个令牌的RateLimiter,每有一个没有使用令牌的一秒,我们就将storedPermits加1,如果RateLimiter在10秒都没有使用,则storedPermits变成10.0.这个时候,一个请求到来并请求三个令牌(acquire(3)),我们将从storedPermits中的令牌为其服务,storedPermits变为7.0.这个请求之后立马又有一个请求到来并请求10个令牌,我们将从storedPermits剩余的7个令牌给这个请求,剩下还需要三个令牌,我们将从RateLimiter新产生的令牌中获取.我们已经知道,RateLimiter每秒新产生1个令牌,就是说上面这个请求还需要的3个请求就要求其等待3秒.</p>
+
+<p>想象一个RateLimiter每秒产生一个令牌,现在完全没有使用(处于初始状态),限制一个昂贵的请求acquire(100)过来.如果我们选择让这个请求等待100秒再允许其执行,这显然很荒谬.我们为什么什么也不做而只是傻傻的等待100秒,一个更好的做法是允许这个请求立即执行(和acquire(1)没有区别),然后将随后到来的请求推迟到正确的时间点.这种策略,我们允许这个昂贵的任务立即执行,并将随后到来的请求推迟100秒.这种策略就是让任务的执行和等待同时进行.</p>
+
+<p>一个重要的结论:RateLimiter不会记最后一个请求,而是即下一个请求允许执行的时间.这也可以很直白的告诉我们到达下一个调度时间点的时间间隔.然后定一个一段时间未使用的Ratelimiter也很简单:下一个调度时间点已经过去,这个时间点和现在时间的差就是Ratelimiter多久没有被使用,我们会将这一段时间翻译成storedPermits.所有,如果每秒钟产生一个令牌(rate==1),并且正好每秒来一个请求,那么storedPermits就不会增长.</p>
+
+<h1>6.RateLimiter主要源码</h1>
+
+<p>RateLimiter定义了两个create函数用于构建不同形式的RateLimiter:</p>
+
+<pre><code>1.public static RateLimiter create(double permitsPerSecond)
+用于创建SmoothBursty类型的RateLimiter
+2.public static RateLimiter create(double permitsPerSecond, long warmupPeriod, TimeUnit unit)
+用于创建
+</code></pre>
+
+<p>源码下面以acquire为例子,分析一下RateLimiter如何实现限流:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public double acquire() {
+</span><span class='line'>    return acquire(1);
+</span><span class='line'>}
+</span><span class='line'>public double acquire(int permits) {
+</span><span class='line'>    long microsToWait = reserve(permits);
+</span><span class='line'>    stopwatch.sleepMicrosUninterruptibly(microsToWait);
+</span><span class='line'>    return 1.0 * microsToWait / SECONDS.toMicros(1L);
+</span><span class='line'>}
+</span><span class='line'>final long reserve(int permits) {
+</span><span class='line'>    checkPermits(permits);
+</span><span class='line'>    synchronized (mutex()) {    //应对并发情况需要同步
+</span><span class='line'>      return reserveAndGetWaitLength(permits, stopwatch.readMicros());
+</span><span class='line'>    }
+</span><span class='line'>}
+</span><span class='line'>final long reserveAndGetWaitLength(int permits, long nowMicros) {
+</span><span class='line'>    long momentAvailable = reserveEarliestAvailable(permits, nowMicros);
+</span><span class='line'>    return max(momentAvailable - nowMicros, 0);
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面方法来自RateLimiter的具体实现类SmoothRateLimiter:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>final long reserveEarliestAvailable(int requiredPermits, long nowMicros) {
+</span><span class='line'>    resync(nowMicros);  //补充令牌
+</span><span class='line'>    long returnValue = nextFreeTicketMicros;
+</span><span class='line'>    //这次请求消耗的令牌数目
+</span><span class='line'>    double storedPermitsToSpend = min(requiredPermits, this.storedPermits);
+</span><span class='line'>    double freshPermits = requiredPermits - storedPermitsToSpend;
+</span><span class='line'>
+</span><span class='line'>    long waitMicros = storedPermitsToWaitTime(this.storedPermits, storedPermitsToSpend)
+</span><span class='line'>        + (long) (freshPermits * stableIntervalMicros);
+</span><span class='line'>
+</span><span class='line'>    this.nextFreeTicketMicros = nextFreeTicketMicros + waitMicros;
+</span><span class='line'>    this.storedPermits -= storedPermitsToSpend;
+</span><span class='line'>    return returnValue;
+</span><span class='line'>}
+</span><span class='line'>private void resync(long nowMicros) {
+</span><span class='line'>    // if nextFreeTicket is in the past, resync to now
+</span><span class='line'>    if (nowMicros &gt; nextFreeTicketMicros) {
+</span><span class='line'>        storedPermits = min(maxPermits,
+</span><span class='line'>        storedPermits + (nowMicros - nextFreeTicketMicros) / stableIntervalMicros);
+</span><span class='line'>        nextFreeTicketMicros = nowMicros;
+</span><span class='line'>    }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>另外，对于storedPermits的使用，RateLimiter存在两种策略，二者区别主要体现在使用storedPermits时候需要等待的时间。这个逻辑由storedPermitsToWaitTime函数实现：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'> * Translates a specified portion of our currently stored permits which we want to
+</span><span class='line'> * spend/acquire, into a throttling time. Conceptually, this evaluates the integral
+</span><span class='line'> * of the underlying function we use, for the range of
+</span><span class='line'> * [(storedPermits - permitsToTake), storedPermits].
+</span><span class='line'> *
+</span><span class='line'> * &lt;p&gt;This always holds: {@code 0 &lt;= permitsToTake &lt;= storedPermits}
+</span><span class='line'> */
+</span><span class='line'>abstract long storedPermitsToWaitTime(double storedPermits, double permitsToTake);</span></code></pre></td></tr></table></div></figure>
+
+
+<p>存在两种策略就是为了应对我们上面讲到的，存在资源使用不足大致分为两种情况：
+    (1).资源确实使用不足，这些剩余的资源我们私海可以使用的；
+    (2).提供资源的服务过去还没准备好，比如服务刚启动等；</p>
+
+<p>为此，RateLimiter实际上由两种实现策略，其实现分别见SmoothBursty和SmoothWarmingUp。二者主要的区别就是storedPermitsToWaitTime实现以及maxPermits数量的计算。</p>
+
+<h3>6.1 SmoothBursty</h3>
+
+<p>SmoothBursty使用storedPermits不需要额外等待时间。并且默认maxBurstSeconds未1，因此maxPermits为permitsPerSecond，即最多可以存储1秒的剩余令牌，比如QPS=5，则maxPermits=5.</p>
+
+<p>下面这个RateLimiter的入口就是用来创建SmoothBursty类型的RateLimiter，</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>public static RateLimiter create(double permitsPerSecond)</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/**
+</span><span class='line'>     * This implements a "bursty" RateLimiter, where storedPermits are translated to
+</span><span class='line'>     * zero throttling. The maximum number of permits that can be saved (when the RateLimiter is
+</span><span class='line'>     * unused) is defined in terms of time, in this sense: if a RateLimiter is 2qps, and this
+</span><span class='line'>     * time is specified as 10 seconds, we can save up to 2 * 10 = 20 permits.
+</span><span class='line'>     */
+</span><span class='line'>    static final class SmoothBursty extends SmoothRateLimiter {
+</span><span class='line'>        /** The work (permits) of how many seconds can be saved up if this RateLimiter is unused? */
+</span><span class='line'>        final double maxBurstSeconds;
+</span><span class='line'>
+</span><span class='line'>        SmoothBursty(SleepingStopwatch stopwatch, double maxBurstSeconds) {
+</span><span class='line'>            super(stopwatch);
+</span><span class='line'>            this.maxBurstSeconds = maxBurstSeconds;
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        void doSetRate(double permitsPerSecond, double stableIntervalMicros) {
+</span><span class='line'>            double oldMaxPermits = this.maxPermits;
+</span><span class='line'>            maxPermits = maxBurstSeconds * permitsPerSecond;
+</span><span class='line'>            System.out.println("maxPermits=" + maxPermits);
+</span><span class='line'>            if (oldMaxPermits == Double.POSITIVE_INFINITY) {
+</span><span class='line'>                // if we don't special-case this, we would get storedPermits == NaN, below
+</span><span class='line'>                storedPermits = maxPermits;
+</span><span class='line'>            } else {
+</span><span class='line'>                storedPermits = (oldMaxPermits == 0.0)
+</span><span class='line'>                        ? 0.0 // initial state
+</span><span class='line'>                        : storedPermits * maxPermits / oldMaxPermits;
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        long storedPermitsToWaitTime(double storedPermits, double permitsToTake) {
+</span><span class='line'>            return 0L;
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>一个简单的使用示意图及解释，下面私海一个QPS=4的SmoothBursty:</p>
+
+<pre><code>(1).t=0,这时候storedPermits=0，请求1个令牌，等待时间=0；
+(2).t=1,这时候storedPermits=3，请求3个令牌，等待时间=0；
+(3).t=2,这时候storedPermits=4，请求10个令牌，等待时间=0，超前使用了2个令牌；
+(4).t=3,这时候storedPermits=0，请求1个令牌，等待时间=0.5；
+</code></pre>
+
+<p>代码的输出：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>maxPermits=4.0, storedPermits=7.2E-4, stableIntervalMicros=250000.0, nextFreeTicketMicros=1472
+</span><span class='line'>acquire(1), sleepSecond=0.0
+</span><span class='line'>
+</span><span class='line'>maxPermits=4.0, storedPermits=3.012212, stableIntervalMicros=250000.0, nextFreeTicketMicros=1004345
+</span><span class='line'>acquire(3), sleepSecond=0.0
+</span><span class='line'>
+</span><span class='line'>maxPermits=4.0, storedPermits=4.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=2004668
+</span><span class='line'>acquire(10), sleepSecond=0.0
+</span><span class='line'>
+</span><span class='line'>maxPermits=4.0, storedPermits=0.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=3504668
+</span><span class='line'>acquire(1), sleepSecond=0.499591</span></code></pre></td></tr></table></div></figure>
+
+
+<p><img src="/images/guava/BurstyRateLimiter.png"></p>
+
+<h3>6.2 SmoothWarmingUp</h3>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>static final class SmoothWarmingUp extends SmoothRateLimiter {
+</span><span class='line'>        private final long warmupPeriodMicros;
+</span><span class='line'>        /**
+</span><span class='line'>         * The slope of the line from the stable interval (when permits == 0), to the cold interval
+</span><span class='line'>         * (when permits == maxPermits)
+</span><span class='line'>         */
+</span><span class='line'>        private double slope;
+</span><span class='line'>        private double halfPermits;
+</span><span class='line'>
+</span><span class='line'>        SmoothWarmingUp(SleepingStopwatch stopwatch, long warmupPeriod, TimeUnit timeUnit) {
+</span><span class='line'>            super(stopwatch);
+</span><span class='line'>            this.warmupPeriodMicros = timeUnit.toMicros(warmupPeriod);
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        @Override
+</span><span class='line'>        void doSetRate(double permitsPerSecond, double stableIntervalMicros) {
+</span><span class='line'>            double oldMaxPermits = maxPermits;
+</span><span class='line'>            maxPermits = warmupPeriodMicros / stableIntervalMicros;
+</span><span class='line'>            halfPermits = maxPermits / 2.0;
+</span><span class='line'>            // Stable interval is x, cold is 3x, so on average it's 2x. Double the time -&gt; halve the rate
+</span><span class='line'>            double coldIntervalMicros = stableIntervalMicros * 3.0;
+</span><span class='line'>            slope = (coldIntervalMicros - stableIntervalMicros) / halfPermits;
+</span><span class='line'>            if (oldMaxPermits == Double.POSITIVE_INFINITY) {
+</span><span class='line'>                // if we don't special-case this, we would get storedPermits == NaN, below
+</span><span class='line'>                storedPermits = 0.0;
+</span><span class='line'>            } else {
+</span><span class='line'>                storedPermits = (oldMaxPermits == 0.0)
+</span><span class='line'>                        ? maxPermits // initial state is cold
+</span><span class='line'>                        : storedPermits * maxPermits / oldMaxPermits;
+</span><span class='line'>            }
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        @Override
+</span><span class='line'>        long storedPermitsToWaitTime(double storedPermits, double permitsToTake) {
+</span><span class='line'>            double availablePermitsAboveHalf = storedPermits - halfPermits;
+</span><span class='line'>            long micros = 0;
+</span><span class='line'>            // measuring the integral on the right part of the function (the climbing line)
+</span><span class='line'>            if (availablePermitsAboveHalf &gt; 0.0) {
+</span><span class='line'>                double permitsAboveHalfToTake = min(availablePermitsAboveHalf, permitsToTake);
+</span><span class='line'>                micros = (long) (permitsAboveHalfToTake * (permitsToTime(availablePermitsAboveHalf)
+</span><span class='line'>                        + permitsToTime(availablePermitsAboveHalf - permitsAboveHalfToTake)) / 2.0);
+</span><span class='line'>                permitsToTake -= permitsAboveHalfToTake;
+</span><span class='line'>            }
+</span><span class='line'>            // measuring the integral on the left part of the function (the horizontal line)
+</span><span class='line'>            micros += (stableIntervalMicros * permitsToTake);
+</span><span class='line'>            return micros;
+</span><span class='line'>        }
+</span><span class='line'>
+</span><span class='line'>        private double permitsToTime(double permits) {
+</span><span class='line'>            return stableIntervalMicros + permits * slope;
+</span><span class='line'>        }
+</span><span class='line'>    }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>maxPermits等于热身(warmup)期间能产生的令牌数，比如QPS=4，warmup为2秒，则maxPermits=8.halfPermits为maxPermits的一半.</p>
+
+<p>参考注释中的神图：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'> *          ^ throttling
+</span><span class='line'> *          |
+</span><span class='line'> * 3*stable +                  /
+</span><span class='line'> * interval |                 /.
+</span><span class='line'> *  (cold)  |                / .
+</span><span class='line'> *          |               /  .   &lt;-- "warmup period" is the area of the trapezoid between
+</span><span class='line'> * 2*stable +              /   .       halfPermits and maxPermits
+</span><span class='line'> * interval |             /    .
+</span><span class='line'> *          |            /     .
+</span><span class='line'> *          |           /      .
+</span><span class='line'> *   stable +----------/  WARM . }
+</span><span class='line'> * interval |          .   UP  . } &lt;-- this rectangle (from 0 to maxPermits, and
+</span><span class='line'> *          |          . PERIOD. }     height == stableInterval) defines the cooldown period,
+</span><span class='line'> *          |          .       . }     and we want cooldownPeriod == warmupPeriod
+</span><span class='line'> *          |---------------------------------&gt; storedPermits
+</span><span class='line'> *              (halfPermits) (maxPermits)
+</span><span class='line'> *</span></code></pre></td></tr></table></div></figure>
+
+
+<p>下面是我们QPS=4，warmup为2秒时候对应的图。
+<img src="/images/guava/SmoothWarmingUp.png"></p>
+
+<p>maxPermits=8，halfPermits=4，和SmoothBursty相同的请求序列：</p>
+
+<pre><code>(1).t=0,这时候storedPermits=8，请求1个令牌，使用1个storedPermits消耗时间=1×(0.75+0.625)/2=0.6875秒；
+(2).t=1,这时候storedPermits=8，请求3个令牌，使用3个storedPermits消耗时间=3×(0.75+0.375)/2=1.6875秒(注意已经超过1秒了，意味着下次产生新Permit时间为2.6875)；
+(3).t=2,这时候storedPermits=5，请求10个令牌，使用5个storedPermits消耗时间=1×(0.375+0.25)/2+4*0.25=1.3125秒，再加上额外请求的5个新产生的Permit需要消耗=5*0.25=1.25秒，即总共需要耗时2.5625秒，则下一次产生新的Permit时间为2.6875+2.5625=5.25，注意当前请求私海2.6875才返回的，之前一直阻塞；
+(4).t=3,因为前一个请求阻塞到2.6875，实际这个请求3.6875才到达RateLimiter，请求1个令牌，storedPermits=0，下一次产生新Permit时间为5.25，因此总共需要等待5.25-3.6875=1.5625秒；
+</code></pre>
+
+<p>实际执行结果：</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>warmupPeriodMicros=2000000
+</span><span class='line'>stableIntervalMicros=250000.0, maxPermits=8.0, halfPermits=4.0, coldIntervalMicros=750000.0, slope=125000.0, storedPermits=8.0
+</span><span class='line'>
+</span><span class='line'>maxPermits=8.0, storedPermits=8.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=1524
+</span><span class='line'>acquire(1), sleepSecond=0.0
+</span><span class='line'>
+</span><span class='line'>maxPermits=8.0, storedPermits=8.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=1001946
+</span><span class='line'>acquire(3), sleepSecond=0.0
+</span><span class='line'>
+</span><span class='line'>maxPermits=8.0, storedPermits=5.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=2689446
+</span><span class='line'>acquire(10), sleepSecond=0.687186
+</span><span class='line'>
+</span><span class='line'>maxPermits=8.0, storedPermits=0.0, stableIntervalMicros=250000.0, nextFreeTicketMicros=5251946
+</span><span class='line'>acquire(1), sleepSecond=1.559174</span></code></pre></td></tr></table></div></figure>
+
+
+<h1>7.其他限流器</h1>
+
+<p>ASP.NET版本的一个比较成熟限流器:WebApiThrottle
+参考：<a href="http://www.cnblogs.com/mushroom/archive/2015/07/21/4659200.html">http://www.cnblogs.com/mushroom/archive/2015/07/21/4659200.html</a></p>
+
+<p>参考:
+<a href="https://github.com/springside/springside4/wiki/Rate-Limiter">https://github.com/springside/springside4/wiki/Rate-Limiter</a></p>
+
+<p><a href="https://en.wikipedia.org/wiki/Token_bucket">https://en.wikipedia.org/wiki/Token_bucket</a></p>
+
+<p><a href="https://en.wikipedia.org/wiki/Leaky_bucket">https://en.wikipedia.org/wiki/Leaky_bucket</a></p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1858,299 +2559,6 @@ DDB（Distributed database）是网易杭研院立项最早，应用最为广泛
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2015/05/21/elasticsearchpei-zhi-jie-xi/">Elasticsearch配置解析</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-<time class='entry-date' datetime='2015-05-21T04:31:05+08:00'><span class='date'><span class='date-month'>May</span> <span class='date-day'>21</span><span class='date-suffix'>st</span>, <span class='date-year'>2015</span></span> <span class='time'>4:31 am</span></time>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>可以使用正则grep出各个配置项:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>grep '^#\w' elasticsearch.yml</span></code></pre></td></tr></table></div></figure>
-
-
-<p>解析Elasticsearch的配置文件elasticsearch.yml中各个关键参数的意义:</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-<span class='line-number'>108</span>
-<span class='line-number'>109</span>
-<span class='line-number'>110</span>
-<span class='line-number'>111</span>
-<span class='line-number'>112</span>
-<span class='line-number'>113</span>
-<span class='line-number'>114</span>
-<span class='line-number'>115</span>
-<span class='line-number'>116</span>
-<span class='line-number'>117</span>
-<span class='line-number'>118</span>
-<span class='line-number'>119</span>
-<span class='line-number'>120</span>
-<span class='line-number'>121</span>
-<span class='line-number'>122</span>
-<span class='line-number'>123</span>
-<span class='line-number'>124</span>
-<span class='line-number'>125</span>
-<span class='line-number'>126</span>
-<span class='line-number'>127</span>
-<span class='line-number'>128</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>################################### Cluster ###################################
-</span><span class='line'>elasticsearch的config文件夹里面有两个配置文件：elasticsearch.yml和logging.yml，第一个是es的基本配置文件，第二个是日志配置文件，es也是使用log4j来记录日志的，所以logging.yml里的设置按普通log4j配置文件来设置就行了。下面主要讲解下elasticsearch.yml这个文件中可配置的东西。
-</span><span class='line'>
-</span><span class='line'>cluster.name: elasticsearch
-</span><span class='line'>配置es的集群名称，默认是elasticsearch，es会自动发现在同一网段下的es，如果在同一网段下有多个集群，就可以用这个属性来区分不同的集群。
-</span><span class='line'>
-</span><span class='line'>node.name: "Franz Kafka"
-</span><span class='line'>节点名，默认随机指定一个name列表中名字，该列表在es的jar包中config文件夹里name.txt文件中，其中有很多作者添加的有趣名字。
-</span><span class='line'>
-</span><span class='line'>node.master: true
-</span><span class='line'>指定该节点是否有资格被选举成为node，默认是true，es是默认集群中的第一台机器为master，如果这台机挂了就会重新选举master。
-</span><span class='line'>
-</span><span class='line'>node.data: true
-</span><span class='line'>指定该节点是否存储索引数据，默认为true。
-</span><span class='line'>
-</span><span class='line'>index.number_of_shards: 5
-</span><span class='line'>设置默认索引分片个数，默认为5片。
-</span><span class='line'>
-</span><span class='line'>index.number_of_replicas: 1
-</span><span class='line'>设置默认索引副本个数，默认为1个副本。
-</span><span class='line'>
-</span><span class='line'>path.conf: /path/to/conf
-</span><span class='line'>设置配置文件的存储路径，默认是es根目录下的config文件夹。
-</span><span class='line'>
-</span><span class='line'>path.data: /path/to/data
-</span><span class='line'>设置索引数据的存储路径，默认是es根目录下的data文件夹，可以设置多个存储路径，用逗号隔开，例：
-</span><span class='line'>path.data: /path/to/data1,/path/to/data2
-</span><span class='line'>
-</span><span class='line'>path.work: /path/to/work
-</span><span class='line'>设置临时文件的存储路径，默认是es根目录下的work文件夹。
-</span><span class='line'>
-</span><span class='line'>path.logs: /path/to/logs
-</span><span class='line'>设置日志文件的存储路径，默认是es根目录下的logs文件夹
-</span><span class='line'>
-</span><span class='line'>path.plugins: /path/to/plugins
-</span><span class='line'>设置插件的存放路径，默认是es根目录下的plugins文件夹
-</span><span class='line'>
-</span><span class='line'>bootstrap.mlockall: true
-</span><span class='line'>设置为true来锁住内存。因为当jvm开始swapping时es的效率会降低，所以要保证它不swap，可以把ES_MIN_MEM和ES_MAX_MEM两个环境变量设置成同一个值，并且保证机器有足够的内存分配给es。同时也要允许elasticsearch的进程可以锁住内存，linux下可以通过`ulimit -l unlimited`命令。设置ES_HEAP_SIZE表示ES_MIN_MEM和ES_MAX_MEM相同且为ES_HEAP_SIZE的值.
-</span><span class='line'>
-</span><span class='line'>network.bind_host: 192.168.0.1
-</span><span class='line'>设置绑定的ip地址，可以是ipv4或ipv6的，默认为0.0.0.0。
-</span><span class='line'>
-</span><span class='line'>network.publish_host: 192.168.0.1
-</span><span class='line'>设置其它节点和该节点交互的ip地址，如果不设置它会自动判断，值必须是个真实的ip地址。
-</span><span class='line'>
-</span><span class='line'>network.host: 192.168.0.1
-</span><span class='line'>这个参数是用来同时设置bind_host和publish_host上面两个参数。
-</span><span class='line'>
-</span><span class='line'>transport.tcp.port: 9300
-</span><span class='line'>设置节点间交互的tcp端口，默认是9300。
-</span><span class='line'>
-</span><span class='line'>transport.tcp.compress: true
-</span><span class='line'>设置是否压缩tcp传输时的数据，默认为false，不压缩。
-</span><span class='line'>
-</span><span class='line'>http.port: 9200
-</span><span class='line'>设置对外服务的http端口，默认为9200。
-</span><span class='line'>
-</span><span class='line'>http.max_content_length: 100mb
-</span><span class='line'>设置内容的最大容量，默认100mb
-</span><span class='line'>
-</span><span class='line'>http.enabled: false
-</span><span class='line'>是否使用http协议对外提供服务，默认为true，开启。
-</span><span class='line'>
-</span><span class='line'>gateway.type: local
-</span><span class='line'>gateway的类型，默认为local即为本地文件系统，可以设置为本地文件系统，分布式文件系统，hadoop的HDFS，和amazon的s3服务器，其它文件系统的设置方法下次再详细说。
-</span><span class='line'>
-</span><span class='line'>gateway.recover_after_nodes: 1
-</span><span class='line'>设置集群中N个节点启动时进行数据恢复，默认为1。
-</span><span class='line'>
-</span><span class='line'>gateway.recover_after_time: 5m
-</span><span class='line'>设置初始化数据恢复进程的超时时间，默认是5分钟。
-</span><span class='line'>
-</span><span class='line'>gateway.expected_nodes: 2
-</span><span class='line'>设置这个集群中节点的数量，默认为2.一旦一旦这N个节点启动(并且数字和recover_after_nodes相同),就会立即开始数据恢复而不用等待gateway.recover_after_time时间之后再开始.
-</span><span class='line'>
-</span><span class='line'>cluster.routing.allocation.node_initial_primaries_recoveries: 4
-</span><span class='line'>初始化数据恢复时，并发恢复线程的个数，默认为4。
-</span><span class='line'>
-</span><span class='line'>cluster.routing.allocation.node_concurrent_recoveries: 2
-</span><span class='line'>添加删除节点或负载均衡时并发恢复线程的个数，默认为4。
-</span><span class='line'>
-</span><span class='line'>indices.recovery.max_size_per_sec: 0
-</span><span class='line'>设置数据恢复时限制的带宽，如入100mb，默认为0，即无限制。
-</span><span class='line'>
-</span><span class='line'>indices.recovery.concurrent_streams: 5
-</span><span class='line'>设置这个参数来限制从其它分片恢复数据时最大同时打开并发流的个数，默认为5。
-</span><span class='line'>
-</span><span class='line'>discovery.zen.minimum_master_nodes: 1
-</span><span class='line'>设置这个参数来保证集群中的节点可以知道其它N个有master资格的节点。默认为1，对于大的集群来说，可以设置大一点的值(2-4).
-</span><span class='line'>
-</span><span class='line'>discovery.zen.ping.timeout: 3s
-</span><span class='line'>设置集群中自动发现其它节点时ping连接超时时间，默认为3秒，对于比较差的网络环境可以高点的值来防止自动发现时出错。
-</span><span class='line'>
-</span><span class='line'>discovery.zen.ping.multicast.enabled: false
-</span><span class='line'>设置是否打开多播发现节点，默认是true。使用单播发现节点策略(Unicast discovery)允许显示的控制使用哪个节点去发现集群.
-</span><span class='line'>
-</span><span class='line'>discovery.zen.ping.unicast.hosts: ["host1", "host2:port", "host3[portX-portY]"]
-</span><span class='line'>设置集群中master节点的初始列表，可以通过这些节点来自动发现新加入集群的节点。
-</span><span class='line'>
-</span><span class='line'>下面是一些查询时的慢日志参数设置,默认日志级别为TRACE.
-</span><span class='line'>超过10秒的查询打印warn日志,超过5秒的查询打印info日志,超过2秒的查询打印debug日志,超过0.5秒的查询打印trace日志
-</span><span class='line'>index.search.slowlog.level: TRACE
-</span><span class='line'>index.search.slowlog.threshold.query.warn: 10s
-</span><span class='line'>index.search.slowlog.threshold.query.info: 5s
-</span><span class='line'>index.search.slowlog.threshold.query.debug: 2s
-</span><span class='line'>index.search.slowlog.threshold.query.trace: 500ms
-</span><span class='line'>
-</span><span class='line'>index.search.slowlog.threshold.fetch.warn: 1s
-</span><span class='line'>index.search.slowlog.threshold.fetch.info: 800ms
-</span><span class='line'>index.search.slowlog.threshold.fetch.debug:500ms
-</span><span class='line'>index.search.slowlog.threshold.fetch.trace: 200ms
-</span><span class='line'>
-</span><span class='line'>超过10秒的查检索引打印warn日志,超过5秒的查检索引打印info日志,超过2秒的查检索引打印debug日志,超过0.5秒的查检索引打印trace日志
-</span><span class='line'>index.indexing.slowlog.threshold.index.warn: 10s
-</span><span class='line'>index.indexing.slowlog.threshold.index.info: 5s
-</span><span class='line'>index.indexing.slowlog.threshold.index.debug: 2s
-</span><span class='line'>index.indexing.slowlog.threshold.index.trace: 500ms
-</span><span class='line'>
-</span><span class='line'>下面是GC日志相关的配置,young GC超过1000ms打印warn日志,超过700ms打印info日志,超过400ms打印的debug日志
-</span><span class='line'>monitor.jvm.gc.young.warn: 1000ms
-</span><span class='line'>monitor.jvm.gc.young.info: 700ms
-</span><span class='line'>monitor.jvm.gc.young.debug: 400ms
-</span><span class='line'>
-</span><span class='line'>full GC超过10s打印warn日志,超过5s打印info日志,超过2s打印的debug日志
-</span><span class='line'>monitor.jvm.gc.old.warn: 10s
-</span><span class='line'>monitor.jvm.gc.old.info: 5s
-</span><span class='line'>monitor.jvm.gc.old.debug: 2s</span></code></pre></td></tr></table></div></figure>
-
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/posts/9">&larr; Older</a>
@@ -2168,6 +2576,10 @@ DDB（Distributed database）是网易杭研院立项最早，应用最为广泛
     <h1 class="panel-title">最新文章</h3>
   </div>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2017/02/04/api-blocking/">Api Blocking</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2017/02/03/shallowetagheaderfilter/">ShallowEtagHeaderFilter</a>
@@ -2205,10 +2617,6 @@ DDB（Distributed database）是网易杭研院立项最早，应用最为广泛
         <a href="/blog/2016/07/22/%5B%3F%5D-ge-si-suo-wen-ti/">一个死锁问题</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/07/15/cong-dai-li-dao-springshi-wu-aop/">从代理到Spring事务2-AOP</a>
-      </li>
-    
   </ul>
 </section>
 <section class="panel panel-default">
@@ -2236,6 +2644,7 @@ DDB（Distributed database）是网易杭研院立项最早，应用最为广泛
 <li><a class='list-group-item' href='/blog/categories/spring/'>spring (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/squid/'>squid (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/structure/'>structure (3)</a></li>
+<li><a class='list-group-item' href='/blog/categories/system/'>system (1)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tomcat/'>tomcat (3)</a></li>
 <li><a class='list-group-item' href='/blog/categories/tools/'>tools (8)</a></li>
 <li><a class='list-group-item' href='/blog/categories/web/'>web (1)</a></li>

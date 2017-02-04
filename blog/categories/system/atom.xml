@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: System | xiaobaoqiu Blog]]></title>
+  <link href="http://xiaobaoqiu.github.io/blog/categories/system/atom.xml" rel="self"/>
+  <link href="http://xiaobaoqiu.github.io/"/>
+  <updated>2017-02-04T15:22:24+08:00</updated>
+  <id>http://xiaobaoqiu.github.io/</id>
+  <author>
+    <name><![CDATA[xiaobaoqiu]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Api Blocking]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2017/02/04/api-blocking/"/>
+    <updated>2017-02-04T10:36:10+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2017/02/04/api-blocking</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.%E8%83%8C%E6%99%AF">1.背景</a></li>
+<li><a href="#2.Redis%E5%AE%9E%E7%8E%B0%E9%99%90%E6%B5%81">2.Redis实现限流</a></li>
+<li><a href="#3.%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3%E5%AE%9E%E7%8E%B0%E9%99%90%E6%B5%81">3.滑动窗口实现限流</a></li>
+<li><a href="#4.RateLimiter%E5%AE%9E%E7%8E%B0%E9%99%90%E6%B5%81">4.RateLimiter实现限流</a></li>
+</ul>
+
+
+<h2 id="1.背景">1.背景</h2>
+
+
+<p>接口限流是保证系统稳定性的三大法宝之一(缓存, 限流, 降级).</p>
+
+<p>本文使用三种方式实现Api限流, 并提供了一个用Spring实现的Api限流的简单Demo, Demo的git地址: <a href="https://github.com/xiaobaoqiu/api-blocking,">https://github.com/xiaobaoqiu/api-blocking,</a> 其中接口限流配置在文件 blocking-config.properties 中, 内容实例如下:</p>
+
+<pre><code># 每一块审核一个限流配置,一块内的起始数字相同,数字依次往下递增
+# 每一块由一下四个信息组成:
+#   name - 请求url
+#   redirectUrl - 请求被阻塞的时候跳转的 url
+#   duration,limit - 在 duration 秒的时间内最多访问 limit 次
+
+# 表示接口 /business/detail.json 10 秒只能被访问 2 次, 超过的请求讲被跳转到 /noAuth 上
+0.url=/business/detail.json
+0.redirectUrl=/noAuth
+0.duration=10
+0.limit=2
+</code></pre>
+
+<p>里面包含了三种方式来实现限流, 下面将主要审核分别详细介绍三种方式:</p>
+
+<pre><code>1.Redis
+2.滑动窗口
+3.Guava的RateLimiter
+</code></pre>
+
+<h2 id="2.Redis实现限流">2.Redis实现限流</h2>
+
+
+<p>Redis的官网的命令手册的例子就是如何使用 incr 指令实现接口限流.参见官网: <a href="https://redis.io/commands/incr/">https://redis.io/commands/incr/</a></p>
+
+<p>简单说就是每个请求生成一个key(可以根据IP + 接口url生成, 也可以直接根据接口url生成), value为计数值. 设置过期时间.</p>
+
+<p>需要注意 Redis 的过期策略是混合的:</p>
+
+<pre><code>1.被动删除：当读/写一个已经过期的key时，会触发惰性删除策略，直接删除掉这个过期key;
+2.主动删除：Redis会定期(默认好像是100ms)主动淘汰一批已过期的key;当已用内存超过限定时, 也会触发主动清理策略;
+</code></pre>
+
+<h2 id="3.滑动窗口实现限流">3.滑动窗口实现限流</h2>
+
+
+<p>大家都知道TCP中的滑动窗口有调节发送速率的作用.这里是一个类似的想法.</p>
+
+<p>按照我们的配置, 我们期望 duration 时间内最多 limit 个请求, 我们可以想象有一个事件窗口, 其宽度就是 duration, 因为每个请求都有一个时间戳(可以用Long表示), 每次请求过来的时候, 我们只需要校验当前请求为尾端的时间窗口内的请求数目是否满足 limit 需求就行了.</p>
+
+<p><img src="/images/system/sliding_window.png"></p>
+
+<p>实现很简单, 使用一个环形队列就行.具体参考 demo 代码.</p>
+
+<h2 id="4.RateLimiter实现限流">4.RateLimiter实现限流</h2>
+
+
+<p>直接使用Guava提供的RateLimiter实现.</p>
+
+<p>RateLimiter的原理参考: <a href="http://xiaobaoqiu.github.io/blog/2015/07/02/ratelimiter/">http://xiaobaoqiu.github.io/blog/2015/07/02/ratelimiter/</a></p>
+]]></content>
+  </entry>
+  
+</feed>

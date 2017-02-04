@@ -4,7 +4,7 @@
   <title><![CDATA[xiaobaoqiu Blog]]></title>
   <link href="http://xiaobaoqiu.github.io/atom.xml" rel="self"/>
   <link href="http://xiaobaoqiu.github.io/"/>
-  <updated>2017-02-03T16:01:24+08:00</updated>
+  <updated>2017-02-04T15:22:24+08:00</updated>
   <id>http://xiaobaoqiu.github.io/</id>
   <author>
     <name><![CDATA[xiaobaoqiu]]></name>
@@ -12,6 +12,90 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Api Blocking]]></title>
+    <link href="http://xiaobaoqiu.github.io/blog/2017/02/04/api-blocking/"/>
+    <updated>2017-02-04T10:36:10+08:00</updated>
+    <id>http://xiaobaoqiu.github.io/blog/2017/02/04/api-blocking</id>
+    <content type="html"><![CDATA[<ul>
+<li><a href="#1.%E8%83%8C%E6%99%AF">1.背景</a></li>
+<li><a href="#2.Redis%E5%AE%9E%E7%8E%B0%E9%99%90%E6%B5%81">2.Redis实现限流</a></li>
+<li><a href="#3.%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3%E5%AE%9E%E7%8E%B0%E9%99%90%E6%B5%81">3.滑动窗口实现限流</a></li>
+<li><a href="#4.RateLimiter%E5%AE%9E%E7%8E%B0%E9%99%90%E6%B5%81">4.RateLimiter实现限流</a></li>
+</ul>
+
+
+<h2 id="1.背景">1.背景</h2>
+
+
+<p>接口限流是保证系统稳定性的三大法宝之一(缓存, 限流, 降级).</p>
+
+<p>本文使用三种方式实现Api限流, 并提供了一个用Spring实现的Api限流的简单Demo, Demo的git地址: <a href="https://github.com/xiaobaoqiu/api-blocking,">https://github.com/xiaobaoqiu/api-blocking,</a> 其中接口限流配置在文件 blocking-config.properties 中, 内容实例如下:</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># 每一块审核一个限流配置,一块内的起始数字相同,数字依次往下递增
+</span><span class='line'># 每一块由一下四个信息组成:
+</span><span class='line'>#   name - 请求url
+</span><span class='line'>#   redirectUrl - 请求被阻塞的时候跳转的 url
+</span><span class='line'>#   duration,limit - 在 duration 秒的时间内最多访问 limit 次
+</span><span class='line'>
+</span><span class='line'># 表示接口 /business/detail.json 10 秒只能被访问 2 次, 超过的请求讲被跳转到 /noAuth 上
+</span><span class='line'>0.url=/business/detail.json
+</span><span class='line'>0.redirectUrl=/noAuth
+</span><span class='line'>0.duration=10
+</span><span class='line'>0.limit=2</span></code></pre></td></tr></table></div></figure>
+
+
+<p>里面包含了三种方式来实现限流, 下面将主要审核分别详细介绍三种方式:</p>
+
+<pre><code>1.Redis
+2.滑动窗口
+3.Guava的RateLimiter
+</code></pre>
+
+<h2 id="2.Redis实现限流">2.Redis实现限流</h2>
+
+
+<p>Redis的官网的命令手册的例子就是如何使用 incr 指令实现接口限流.参见官网: <a href="https://redis.io/commands/incr/">https://redis.io/commands/incr/</a></p>
+
+<p>简单说就是每个请求生成一个key(可以根据IP + 接口url生成, 也可以直接根据接口url生成), value为计数值. 设置过期时间.</p>
+
+<p>需要注意 Redis 的过期策略是混合的:</p>
+
+<pre><code>1.被动删除：当读/写一个已经过期的key时，会触发惰性删除策略，直接删除掉这个过期key;
+2.主动删除：Redis会定期(默认好像是100ms)主动淘汰一批已过期的key;当已用内存超过限定时, 也会触发主动清理策略;
+</code></pre>
+
+<h2 id="3.滑动窗口实现限流">3.滑动窗口实现限流</h2>
+
+
+<p>大家都知道TCP中的滑动窗口有调节发送速率的作用.这里是一个类似的想法.</p>
+
+<p>按照我们的配置, 我们期望 duration 时间内最多 limit 个请求, 我们可以想象有一个事件窗口, 其宽度就是 duration, 因为每个请求都有一个时间戳(可以用Long表示), 每次请求过来的时候, 我们只需要校验当前请求为尾端的时间窗口内的请求数目是否满足 limit 需求就行了.</p>
+
+<p><img src="http://xiaobaoqiu.github.io/images/system/sliding_window.png"></p>
+
+<p>实现很简单, 使用一个环形队列就行.具体参考 demo 代码.</p>
+
+<h2 id="4.RateLimiter实现限流">4.RateLimiter实现限流</h2>
+
+
+<p>直接使用Guava提供的RateLimiter实现.</p>
+
+<p>RateLimiter的原理参考: <a href="http://xiaobaoqiu.github.io/blog/2015/07/02/ratelimiter/">http://xiaobaoqiu.github.io/blog/2015/07/02/ratelimiter/</a></p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[ShallowEtagHeaderFilter]]></title>
@@ -6358,381 +6442,6 @@ DefaultAopProxyFactory</p>
 <p>参考：
 <a href="http://blog.couchbase.com/memcached-security">http://blog.couchbase.com/memcached-security</a>
 <a href="http://serverfault.com/questions/424324/how-to-secure-memcached">http://serverfault.com/questions/424324/how-to-secure-memcached</a></p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Libphonenumber]]></title>
-    <link href="http://xiaobaoqiu.github.io/blog/2015/11/18/libphonenumber/"/>
-    <updated>2015-11-18T18:52:58+08:00</updated>
-    <id>http://xiaobaoqiu.github.io/blog/2015/11/18/libphonenumber</id>
-    <content type="html"><![CDATA[<ul>
-<li><a href="#1.%E7%AE%80%E4%BB%8B">1.简介</a></li>
-<li><a href="#2.%E4%BD%BF%E7%94%A8Demo">2.使用Demo</a></li>
-<li><a href="#3.%E6%B3%A8%E6%84%8F%E7%82%B9">3.注意点</a></li>
-</ul>
-
-
-<h2 id="1.简介">1.简介</h2>
-
-
-<p>最近项目中做短信发送相关的工作.涉及到国内手机和国际手机.因此第一步需要解析电话获取国家码.</p>
-
-<p>使用的库是Google提供的著名开源库libphonenumber.有的App的手机号码归属地等功能就是使用这个实现的。支持Java， C++ 和 JavaScript。</p>
-
-<p>libphonenumber是一个手机号码工具类,提供了手机号码的格式化,解析,校验等功能.典型的比如:</p>
-
-<ol>
-<li>解析手机号码,获取国际码;</li>
-<li>根据国家代码和手机号,判断手机号是否有效;</li>
-<li>根据国家代码和手机号,判断手机运营商</li>
-<li>根据国家代码和手机号,手机归属地</li>
-</ol>
-
-
-<p>Git地址： <a href="https://github.com/googlei18n/libphonenumber">https://github.com/googlei18n/libphonenumber</a></p>
-
-<p>国家码参考：<a href="http://country-code.cl/">http://country-code.cl/</a></p>
-
-<h2 id="2.使用Demo">2.使用Demo</h2>
-
-
-<p>Maven引入</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>    &lt;!--手机号解析--&gt;
-</span><span class='line'>    &lt;dependency&gt;
-</span><span class='line'>        &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
-</span><span class='line'>        &lt;artifactId&gt;libphonenumber&lt;/artifactId&gt;
-</span><span class='line'>        &lt;version&gt;7.2.1&lt;/version&gt;
-</span><span class='line'>    &lt;/dependency&gt;
-</span><span class='line'>    &lt;!--手机归属地定位相关--&gt;
-</span><span class='line'>    &lt;dependency&gt;
-</span><span class='line'>        &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
-</span><span class='line'>        &lt;artifactId&gt;geocoder&lt;/artifactId&gt;
-</span><span class='line'>        &lt;version&gt;2.9&lt;/version&gt;
-</span><span class='line'>    &lt;/dependency&gt;
-</span><span class='line'>    &lt;!-- 手机运营商相关 --&gt;
-</span><span class='line'>    &lt;dependency&gt;
-</span><span class='line'>        &lt;groupId&gt;com.googlecode.libphonenumber&lt;/groupId&gt;
-</span><span class='line'>        &lt;artifactId&gt;carrier&lt;/artifactId&gt;
-</span><span class='line'>        &lt;version&gt;1.21&lt;/version&gt;
-</span><span class='line'>    &lt;/dependency&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>简单代码如下</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-<span class='line-number'>19</span>
-<span class='line-number'>20</span>
-<span class='line-number'>21</span>
-<span class='line-number'>22</span>
-<span class='line-number'>23</span>
-<span class='line-number'>24</span>
-<span class='line-number'>25</span>
-<span class='line-number'>26</span>
-<span class='line-number'>27</span>
-<span class='line-number'>28</span>
-<span class='line-number'>29</span>
-<span class='line-number'>30</span>
-<span class='line-number'>31</span>
-<span class='line-number'>32</span>
-<span class='line-number'>33</span>
-<span class='line-number'>34</span>
-<span class='line-number'>35</span>
-<span class='line-number'>36</span>
-<span class='line-number'>37</span>
-<span class='line-number'>38</span>
-<span class='line-number'>39</span>
-<span class='line-number'>40</span>
-<span class='line-number'>41</span>
-<span class='line-number'>42</span>
-<span class='line-number'>43</span>
-<span class='line-number'>44</span>
-<span class='line-number'>45</span>
-<span class='line-number'>46</span>
-<span class='line-number'>47</span>
-<span class='line-number'>48</span>
-<span class='line-number'>49</span>
-<span class='line-number'>50</span>
-<span class='line-number'>51</span>
-<span class='line-number'>52</span>
-<span class='line-number'>53</span>
-<span class='line-number'>54</span>
-<span class='line-number'>55</span>
-<span class='line-number'>56</span>
-<span class='line-number'>57</span>
-<span class='line-number'>58</span>
-<span class='line-number'>59</span>
-<span class='line-number'>60</span>
-<span class='line-number'>61</span>
-<span class='line-number'>62</span>
-<span class='line-number'>63</span>
-<span class='line-number'>64</span>
-<span class='line-number'>65</span>
-<span class='line-number'>66</span>
-<span class='line-number'>67</span>
-<span class='line-number'>68</span>
-<span class='line-number'>69</span>
-<span class='line-number'>70</span>
-<span class='line-number'>71</span>
-<span class='line-number'>72</span>
-<span class='line-number'>73</span>
-<span class='line-number'>74</span>
-<span class='line-number'>75</span>
-<span class='line-number'>76</span>
-<span class='line-number'>77</span>
-<span class='line-number'>78</span>
-<span class='line-number'>79</span>
-<span class='line-number'>80</span>
-<span class='line-number'>81</span>
-<span class='line-number'>82</span>
-<span class='line-number'>83</span>
-<span class='line-number'>84</span>
-<span class='line-number'>85</span>
-<span class='line-number'>86</span>
-<span class='line-number'>87</span>
-<span class='line-number'>88</span>
-<span class='line-number'>89</span>
-<span class='line-number'>90</span>
-<span class='line-number'>91</span>
-<span class='line-number'>92</span>
-<span class='line-number'>93</span>
-<span class='line-number'>94</span>
-<span class='line-number'>95</span>
-<span class='line-number'>96</span>
-<span class='line-number'>97</span>
-<span class='line-number'>98</span>
-<span class='line-number'>99</span>
-<span class='line-number'>100</span>
-<span class='line-number'>101</span>
-<span class='line-number'>102</span>
-<span class='line-number'>103</span>
-<span class='line-number'>104</span>
-<span class='line-number'>105</span>
-<span class='line-number'>106</span>
-<span class='line-number'>107</span>
-<span class='line-number'>108</span>
-<span class='line-number'>109</span>
-<span class='line-number'>110</span>
-<span class='line-number'>111</span>
-<span class='line-number'>112</span>
-<span class='line-number'>113</span>
-<span class='line-number'>114</span>
-<span class='line-number'>115</span>
-<span class='line-number'>116</span>
-<span class='line-number'>117</span>
-<span class='line-number'>118</span>
-<span class='line-number'>119</span>
-<span class='line-number'>120</span>
-<span class='line-number'>121</span>
-<span class='line-number'>122</span>
-<span class='line-number'>123</span>
-<span class='line-number'>124</span>
-<span class='line-number'>125</span>
-<span class='line-number'>126</span>
-<span class='line-number'>127</span>
-<span class='line-number'>128</span>
-<span class='line-number'>129</span>
-<span class='line-number'>130</span>
-<span class='line-number'>131</span>
-<span class='line-number'>132</span>
-<span class='line-number'>133</span>
-<span class='line-number'>134</span>
-<span class='line-number'>135</span>
-<span class='line-number'>136</span>
-<span class='line-number'>137</span>
-<span class='line-number'>138</span>
-<span class='line-number'>139</span>
-<span class='line-number'>140</span>
-<span class='line-number'>141</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>public class LibphonenumberUsage {
-</span><span class='line'>
-</span><span class='line'>    private static final PhoneNumberUtil phoneNumberUtil = PhoneNumberUtil.getInstance();
-</span><span class='line'>
-</span><span class='line'>    private static PhoneNumberToCarrierMapper carrier = PhoneNumberToCarrierMapper.getInstance();
-</span><span class='line'>
-</span><span class='line'>    private static PhoneNumberOfflineGeocoder geocoder = PhoneNumberOfflineGeocoder.getInstance();
-</span><span class='line'>
-</span><span class='line'>    private static final String DEFAULT_COUNTRY = "CN";
-</span><span class='line'>
-</span><span class='line'>    private static final String[] phoneCases = new String[] {
-</span><span class='line'>            "00861861****515",  //中国
-</span><span class='line'>            "008869****7718",   //台湾
-</span><span class='line'>            "00658****994",     //新加坡
-</span><span class='line'>            "1591****718",      //中国
-</span><span class='line'>            "00820****704546",  //Korea
-</span><span class='line'>            "1709****155"       //中国170
-</span><span class='line'>    };
-</span><span class='line'>
-</span><span class='line'>    private static final String[] countryCodes = new String[]{
-</span><span class='line'>            "886",      //台湾
-</span><span class='line'>            "65",       //新加坡
-</span><span class='line'>            "86",       //中国
-</span><span class='line'>            "82",       //Korea
-</span><span class='line'>            "86"        //中国170
-</span><span class='line'>    };
-</span><span class='line'>    private static final String[] phones = new String[]{
-</span><span class='line'>            "972****718",        //台湾
-</span><span class='line'>            "82****94",         //新加坡
-</span><span class='line'>            "1591****718",      //中国
-</span><span class='line'>            "1074****46",       //Korea
-</span><span class='line'>            "1709****155"       //中国170
-</span><span class='line'>    };
-</span><span class='line'>
-</span><span class='line'>    public static final Map&lt;String, String&gt; CHINESE_CARRIER_MAPPER = Maps.newHashMap();
-</span><span class='line'>    static {
-</span><span class='line'>        CHINESE_CARRIER_MAPPER.put("China Mobile", "中国移动");
-</span><span class='line'>        CHINESE_CARRIER_MAPPER.put("China Unicom", "中国联通");
-</span><span class='line'>        CHINESE_CARRIER_MAPPER.put("China Telecom", "中国电信");
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    public static void main(String[] args) {
-</span><span class='line'>//        parsePhone();
-</span><span class='line'>
-</span><span class='line'>//        validPhone();
-</span><span class='line'>
-</span><span class='line'>//        phoneCarrierCase();
-</span><span class='line'>
-</span><span class='line'>        phoneGeoCase();
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 电话解析case
-</span><span class='line'>     */
-</span><span class='line'>    private static void parsePhone() {
-</span><span class='line'>
-</span><span class='line'>
-</span><span class='line'>        for(String phone : phoneCases) {
-</span><span class='line'>            Phonenumber.PhoneNumber pn = doParse(phone);
-</span><span class='line'>            System.out.println(phone + " --&gt; " + pn.getCountryCode() + ", " + pn.getNationalNumber());
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 解析逻辑
-</span><span class='line'>     */
-</span><span class='line'>    private static final Phonenumber.PhoneNumber doParse(String phone) {
-</span><span class='line'>        try {
-</span><span class='line'>            return phoneNumberUtil.parse(phone, DEFAULT_COUNTRY);
-</span><span class='line'>        } catch (NumberParseException e) {
-</span><span class='line'>            throw new NumberFormatException("invalid phone number: " + phone);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 电话解析case
-</span><span class='line'>     */
-</span><span class='line'>    private static void validPhone() {
-</span><span class='line'>        for (int i = 0; i &lt; countryCodes.length; i++) {
-</span><span class='line'>            boolean valid = doValid(countryCodes[i], phones[i]);
-</span><span class='line'>            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + valid);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 手机校验逻辑
-</span><span class='line'>     */
-</span><span class='line'>    private static boolean doValid(String countryCode, String phoneNumber){
-</span><span class='line'>        int ccode = Integer.parseInt(countryCode);
-</span><span class='line'>        long phone = Long.parseLong(phoneNumber);
-</span><span class='line'>
-</span><span class='line'>        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
-</span><span class='line'>        pn.setCountryCode(ccode);
-</span><span class='line'>        pn.setNationalNumber(phone);
-</span><span class='line'>
-</span><span class='line'>        return phoneNumberUtil.isValidNumber(pn);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    private static void phoneCarrierCase() {
-</span><span class='line'>        for (int i = 0; i &lt; countryCodes.length; i++) {
-</span><span class='line'>            String carrier = doCarrier(countryCodes[i], phones[i]);
-</span><span class='line'>            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + (CHINESE_CARRIER_MAPPER.containsKey(carrier)?CHINESE_CARRIER_MAPPER.get(carrier):carrier));
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 手机运营商
-</span><span class='line'>     */
-</span><span class='line'>    private static String doCarrier(String countryCode, String phoneNumber){
-</span><span class='line'>        int ccode = Integer.parseInt(countryCode);
-</span><span class='line'>        long phone = Long.parseLong(phoneNumber);
-</span><span class='line'>
-</span><span class='line'>        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
-</span><span class='line'>        pn.setCountryCode(ccode);
-</span><span class='line'>        pn.setNationalNumber(phone);
-</span><span class='line'>
-</span><span class='line'>        //返回结果只有英文，自己转成成中文
-</span><span class='line'>        return carrier.getNameForNumber(pn, Locale.ENGLISH);
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    private static void phoneGeoCase() {
-</span><span class='line'>        for (int i = 0; i &lt; countryCodes.length; i++) {
-</span><span class='line'>            String geo = doGeo(countryCodes[i], phones[i]);
-</span><span class='line'>            System.out.println(countryCodes[i] + " , " + phones[i] + " --&gt; " + geo);
-</span><span class='line'>        }
-</span><span class='line'>    }
-</span><span class='line'>
-</span><span class='line'>    /**
-</span><span class='line'>     * 手机归属地
-</span><span class='line'>     */
-</span><span class='line'>    public static String doGeo(String countryCode, String phoneNumber){
-</span><span class='line'>        int ccode = Integer.parseInt(countryCode);
-</span><span class='line'>        long phone = Long.parseLong(phoneNumber);
-</span><span class='line'>
-</span><span class='line'>        Phonenumber.PhoneNumber pn = new Phonenumber.PhoneNumber();
-</span><span class='line'>        pn.setCountryCode(ccode);
-</span><span class='line'>        pn.setNationalNumber(phone);
-</span><span class='line'>
-</span><span class='line'>        return geocoder.getDescriptionForNumber(pn, Locale.CHINESE);
-</span><span class='line'>    }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<h2 id="3.注意点">3.注意点</h2>
-
-
-<ol>
-<li><p>电话解析的时候需要加上00前缀才能解析成功，比如008615912345678能解析，但是8615912345678不能解析成功；</p></li>
-<li><p>libphonenumber的基础信息库也是不断更新，比如libphonenumber的7.0.2版本不能解析170号段的电话，7.0.3以后就支持了；</p></li>
-</ol>
-
 ]]></content>
   </entry>
   
